@@ -1,0 +1,92 @@
+name: Deploy Upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy (e.g., v3.7.2)'
+        required: true
+        type: string
+      upstream_repo:
+        description: 'Upstream repository to push to (format: owner/repo)'
+        required: true
+        type: string
+      upstream_branch:
+        description: 'Target branch in the upstream repository'
+        required: false
+        default: 'main'
+        type: string
+
+jobs:
+  deploy-upstream:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate inputs and secrets
+        env:
+          UPSTREAM_TOKEN: ${{ secrets.UPSTREAM_DEPLOY_TOKEN }}
+        run: |
+          if [ ! -f README.md ]; then
+            echo "::error::README.md not found in the checked-out tag."
+            exit 1
+          fi
+          if [ -z "${UPSTREAM_TOKEN}" ]; then
+            echo "::error::UPSTREAM_DEPLOY_TOKEN secret is not configured. Add it in Settings → Secrets → Actions."
+            exit 1
+          fi
+
+      - name: Update source references for upstream repository
+        env:
+          UPSTREAM_REPO: ${{ inputs.upstream_repo }}
+        run: |
+          SOURCE_REPO="turbo5000c/noaa_it_all"
+          SOURCE_URL="https://github.com/turbo5000c/noaa_it_all"
+          UPSTREAM_URL="https://github.com/${UPSTREAM_REPO}"
+
+          FILES="README.md info.md custom_components/noaa_it_all/manifest.json"
+
+          for FILE in $FILES; do
+            if [ -f "${FILE}" ]; then
+              sed -i "s|${SOURCE_URL}|${UPSTREAM_URL}|g" "${FILE}"
+              sed -i "s|${SOURCE_REPO}|${UPSTREAM_REPO}|g" "${FILE}"
+              if grep -q "${SOURCE_REPO}" "${FILE}"; then
+                echo "::warning::Some references to '${SOURCE_REPO}' may remain in ${FILE} after replacement."
+              else
+                echo "${FILE} updated successfully — all source repo references replaced."
+              fi
+            else
+              echo "::warning::${FILE} not found, skipping."
+            fi
+          done
+
+      - name: Squash to single commit and push upstream
+        env:
+          UPSTREAM_TOKEN: ${{ secrets.UPSTREAM_DEPLOY_TOKEN }}
+          UPSTREAM_REPO: ${{ inputs.upstream_repo }}
+          UPSTREAM_BRANCH: ${{ inputs.upstream_branch }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          git config user.name "turbo5000c"
+          git config user.email "turbo5000c@hotmail.com"
+
+          # Create an orphan branch so the pushed history is a single clean commit
+          git checkout --orphan clean-deploy-branch
+          git add -A
+          git commit -m "Release ${TAG}"
+
+          git remote add upstream "https://x-access-token:${UPSTREAM_TOKEN}@github.com/${UPSTREAM_REPO}.git"
+
+          if ! git push upstream "clean-deploy-branch:${UPSTREAM_BRANCH}" --force; then
+            echo "::error::Push to upstream failed. Verify that UPSTREAM_DEPLOY_TOKEN has write access to '${UPSTREAM_REPO}' and that '${UPSTREAM_BRANCH}' is not a protected branch."
+            exit 1
+          fi
+
+          echo "Successfully deployed tag '${TAG}' to '${UPSTREAM_REPO}' branch '${UPSTREAM_BRANCH}'."
