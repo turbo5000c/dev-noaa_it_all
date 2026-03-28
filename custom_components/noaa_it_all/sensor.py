@@ -491,24 +491,23 @@ class HurricaneActivitySensor(Entity):
     async def async_update(self):
         """Fetch hurricane activity status."""
         try:
-            # First check for active storms from National Hurricane Center
             timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
+                # First check for active storms from National Hurricane Center
                 async with session.get(
                     CURRENT_STORMS_URL
                 ) as storms_response:
                     storms_response.raise_for_status()
                     storms_data = await storms_response.json()
-            active_storms = storms_data.get('activeStorms', [])
 
-            # Also check for active alerts
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # Also check for active alerts
                 async with session.get(
                     HURRICANE_ALERTS_URL
                 ) as alerts_response:
                     alerts_response.raise_for_status()
                     alerts_data = await alerts_response.json()
+
+            active_storms = storms_data.get('activeStorms', [])
             features = alerts_data.get('features', [])
 
             # Count alert types
@@ -1402,7 +1401,6 @@ class SolarRadiationStormAlertsSensor(Entity):
             return alert_info
 
         except Exception as e:
-            self._attr_available = False
             _LOGGER.warning("Failed to parse solar radiation alert: %s", e)
             return None
 
@@ -1440,7 +1438,6 @@ class SolarRadiationStormAlertsSensor(Entity):
             if match:
                 return match.group(1)
         except Exception:
-            self._attr_available = False
             pass
         return None
 
@@ -1453,7 +1450,6 @@ class SolarRadiationStormAlertsSensor(Entity):
             # This is a simplified implementation
             return "TBD"  # Would need proper datetime parsing
         except Exception:
-            self._attr_available = False
             return None
 
     def _extract_impacts(self, message):
@@ -1665,19 +1661,18 @@ class WeatherObservationSensor(Entity):
                 ) as response:
                     response.raise_for_status()
                     data = await response.json()
-            properties = data.get('properties', {})
-            stations_url = properties.get('observationStations')
 
-            if not stations_url:
-                _LOGGER.error("No observation stations URL found for lat=%s, lon=%s",
-                              self._latitude, self._longitude)
-                self._station_fetched = True
-                return
+                properties = data.get('properties', {})
+                stations_url = properties.get('observationStations')
 
-            # Fetch list of nearby stations
-            _LOGGER.debug("Fetching stations list from %s", stations_url)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+                if not stations_url:
+                    _LOGGER.error("No observation stations URL found for lat=%s, lon=%s",
+                                  self._latitude, self._longitude)
+                    self._station_fetched = True
+                    return
+
+                # Fetch list of nearby stations
+                _LOGGER.debug("Fetching stations list from %s", stations_url)
                 async with session.get(
                     stations_url,
                     headers={'User-Agent': USER_AGENT}
