@@ -251,11 +251,6 @@ class WeatherObservationSensor(Entity):
             return round(value, 1)
         return value
 
-    @staticmethod
-    def _celsius_to_fahrenheit(value):
-        """Convert Celsius to Fahrenheit."""
-        return celsius_to_fahrenheit(value)
-
 
 class TemperatureSensor(WeatherObservationSensor):
     """Temperature sensor."""

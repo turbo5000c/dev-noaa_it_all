@@ -1,13 +1,8 @@
 """Unit tests for parsers.py — pure functions, no Home Assistant dependency."""
 
-import sys
-import os
 import unittest
 
-# Add the custom_components directory to the path so we can import parsers
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom_components', 'noaa_it_all'))
-
-from parsers import (  # noqa: E402
+from parsers import (
     celsius_to_fahrenheit,
     kmh_to_mph,
     pascals_to_inhg,
