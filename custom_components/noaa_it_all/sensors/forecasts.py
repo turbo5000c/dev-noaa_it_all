@@ -145,6 +145,7 @@ class ExtendedForecastSensor(ForecastBaseSensor):
                           self._latitude, self._longitude)
             self._state = 'Error'
             self._attributes = {'error': 'Unable to get forecast URL for the specified coordinates', 'periods': []}
+            self._attr_available = False
             return
 
         try:
@@ -248,6 +249,7 @@ class HourlyForecastSensor(ForecastBaseSensor):
                 'error': 'Unable to get hourly forecast URL for the specified coordinates',
                 'hourly_periods': []
             }
+            self._attr_available = False
             return
 
         try:

@@ -85,6 +85,7 @@ class CloudCoverSensor(Entity):
             self._state = None
             self._attributes = {'error': 'Unable to get gridpoint URL for the specified coordinates',
                                 'availability': 'Not available for this location'}
+            self._attr_available = False
             return
 
         try:

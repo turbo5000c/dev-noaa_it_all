@@ -89,15 +89,19 @@ class TestSpaceWeatherInterpretation(unittest.TestCase):
         self.assertEqual(interpret_dst_value(-10), 'No Storm (Quiet conditions)')
 
     def test_interpret_dst_minor(self):
+        self.assertEqual(interpret_dst_value(-20), 'Minor Storm')
         self.assertEqual(interpret_dst_value(-30), 'Minor Storm')
 
     def test_interpret_dst_moderate(self):
+        self.assertEqual(interpret_dst_value(-50), 'Moderate Storm')
         self.assertEqual(interpret_dst_value(-75), 'Moderate Storm')
 
     def test_interpret_dst_strong(self):
+        self.assertEqual(interpret_dst_value(-100), 'Strong Storm')
         self.assertEqual(interpret_dst_value(-150), 'Strong Storm')
 
     def test_interpret_dst_severe(self):
+        self.assertEqual(interpret_dst_value(-200), 'Severe Storm')
         self.assertEqual(interpret_dst_value(-250), 'Severe Storm')
 
     def test_interpret_dst_invalid(self):
@@ -111,6 +115,8 @@ class TestSpaceWeatherInterpretation(unittest.TestCase):
         self.assertEqual(rate_kp_index(5), 'high')
         self.assertEqual(rate_kp_index(9), 'high')
         self.assertEqual(rate_kp_index('unknown'), 'unknown')
+        self.assertEqual(rate_kp_index(None), 'unknown')
+        self.assertEqual(rate_kp_index('invalid'), 'unknown')
 
 
 # ---------------------------------------------------------------

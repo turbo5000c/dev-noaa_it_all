@@ -113,6 +113,7 @@ class WeatherObservationSensor(Entity):
                           self._latitude, self._longitude, self._office_code)
             self._state = 'Error'
             self._attributes = {'error': 'Unable to find weather station for the specified coordinates'}
+            self._attr_available = False
             return
 
         try:

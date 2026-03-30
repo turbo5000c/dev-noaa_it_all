@@ -10,7 +10,7 @@ import asyncio
 import logging
 from homeassistant.helpers.entity import Entity, DeviceInfo
 
-from ..const import NWS_SRF_URL, REQUEST_TIMEOUT, DOMAIN
+from ..const import NWS_SRF_URL, REQUEST_TIMEOUT, USER_AGENT, DOMAIN
 from ..parsers import parse_rip_current_risk, parse_surf_height, parse_water_temperature
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ class RipCurrentRiskSensor(Entity):
             session = async_get_clientsession(self.hass)
             async with session.get(
                 url,
+                headers={'User-Agent': USER_AGENT},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
             ) as response:
                 response.raise_for_status()
@@ -134,6 +135,7 @@ class SurfHeightSensor(Entity):
             session = async_get_clientsession(self.hass)
             async with session.get(
                 url,
+                headers={'User-Agent': USER_AGENT},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
             ) as response:
                 response.raise_for_status()
@@ -210,6 +212,7 @@ class WaterTemperatureSensor(Entity):
             session = async_get_clientsession(self.hass)
             async with session.get(
                 url,
+                headers={'User-Agent': USER_AGENT},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
             ) as response:
                 response.raise_for_status()

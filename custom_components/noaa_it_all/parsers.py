@@ -57,11 +57,11 @@ def interpret_dst_value(dst_value: Any) -> str:
     if isinstance(dst_value, (int, float)):
         if dst_value > -20:
             return 'No Storm (Quiet conditions)'
-        elif -20 > dst_value >= -50:
+        elif dst_value > -50:
             return 'Minor Storm'
-        elif -50 > dst_value >= -100:
+        elif dst_value > -100:
             return 'Moderate Storm'
-        elif -100 > dst_value >= -200:
+        elif dst_value > -200:
             return 'Strong Storm'
         else:
             return 'Severe Storm'
@@ -70,11 +70,17 @@ def interpret_dst_value(dst_value: Any) -> str:
 
 def rate_kp_index(kp_value: Any) -> str:
     """Return 'low', 'moderate', or 'high' rating for a Kp index value."""
-    if kp_value == 'unknown':
+    if kp_value == 'unknown' or kp_value is None:
         return 'unknown'
-    if kp_value < 2:
+
+    try:
+        value = float(kp_value)
+    except (TypeError, ValueError):
+        return 'unknown'
+
+    if value < 2:
         return 'low'
-    elif 2 <= kp_value < 5:
+    elif 2 <= value < 5:
         return 'moderate'
     return 'high'
 
