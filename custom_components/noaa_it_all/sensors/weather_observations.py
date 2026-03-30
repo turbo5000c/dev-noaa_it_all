@@ -222,8 +222,8 @@ class WindDirectionSensor(WeatherObservationSensor):
         if self.state is not None:
             try:
                 attrs['cardinal_direction'] = degrees_to_cardinal(self.state)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as err:
+                _LOGGER.debug("Could not convert wind direction %s to cardinal: %s", self.state, err)
         return attrs
 
 
