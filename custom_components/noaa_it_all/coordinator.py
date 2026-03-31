@@ -382,9 +382,6 @@ class SurfCoordinator(DataUpdateCoordinator):
             except Exception as err:
                 _LOGGER.warning("Error fetching NDBC wave height: %s", err)
 
-        if not result.get("forecast_text") and "water_temp_f" not in result and "wave_height_ft" not in result:
-            raise UpdateFailed("All surf data sources failed")
-
         return result
 
 
