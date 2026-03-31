@@ -77,6 +77,10 @@ class SurfHeightSensor(CoordinatorEntity):
         """Return the state of the sensor."""
         if not self.coordinator.data:
             return self._state
+        # Prefer NDBC API wave height, fall back to SRF text parsing
+        wave_ft = self.coordinator.data.get("wave_height_ft")
+        if wave_ft is not None:
+            return wave_ft
         text = self.coordinator.data.get("forecast_text", "")
         surf_height = parse_surf_height(text)
         return surf_height if surf_height else "Unknown"
@@ -96,11 +100,15 @@ class SurfHeightSensor(CoordinatorEntity):
         """Return the state attributes."""
         if not self.coordinator.data:
             return self._attributes
-        return {
+        attrs = {
             'office_code': self._office_code,
             'forecast_source': self.coordinator.data.get("source_url", ""),
             'last_updated': 'Check forecast for timestamp',
         }
+        wave_source = self.coordinator.data.get("wave_height_source")
+        if wave_source:
+            attrs['wave_data_source'] = wave_source
+        return attrs
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -129,9 +137,13 @@ class WaterTemperatureSensor(CoordinatorEntity):
         """Return the state of the sensor."""
         if not self.coordinator.data:
             return self._state
+        # Prefer CO-OPS API water temp, fall back to SRF text parsing
+        water_temp = self.coordinator.data.get("water_temp_f")
+        if water_temp is not None:
+            return water_temp
         text = self.coordinator.data.get("forecast_text", "")
-        water_temp = parse_water_temperature(text)
-        return water_temp if water_temp else "Unknown"
+        parsed = parse_water_temperature(text)
+        return parsed if parsed else "Unknown"
 
     @property
     def unit_of_measurement(self):
@@ -148,11 +160,15 @@ class WaterTemperatureSensor(CoordinatorEntity):
         """Return the state attributes."""
         if not self.coordinator.data:
             return self._attributes
-        return {
+        attrs = {
             'office_code': self._office_code,
             'forecast_source': self.coordinator.data.get("source_url", ""),
             'last_updated': 'Check forecast for timestamp',
         }
+        temp_source = self.coordinator.data.get("water_temp_source")
+        if temp_source:
+            attrs['water_temp_source'] = temp_source
+        return attrs
 
     @property
     def device_info(self) -> DeviceInfo:

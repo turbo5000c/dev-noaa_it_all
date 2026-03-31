@@ -455,6 +455,59 @@ def parse_water_temperature(forecast_text: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# CO-OPS / NDBC API parsing helpers
+# ---------------------------------------------------------------------------
+
+def parse_coops_water_temperature(data: Dict[str, Any]) -> Optional[float]:
+    """Extract water temperature in °F from a CO-OPS JSON response.
+
+    Expects the structure returned by the CO-OPS ``datagetter`` API with
+    ``units=english``.  Returns *None* when the response is missing or
+    the value cannot be converted to a float.
+    """
+    try:
+        records = data.get("data")
+        if not records:
+            return None
+        value = records[-1].get("v")
+        if value is None or value == "":
+            return None
+        return round(float(value), 1)
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+
+
+# Meters-to-feet conversion factor
+_M_TO_FT = 3.28084
+
+
+def parse_ndbc_wave_height(text: str) -> Optional[float]:
+    """Extract significant wave height in feet from NDBC real-time text.
+
+    The text is the standard meteorological data file
+    (``/data/realtime2/{station}.txt``).  The first non-comment line
+    after the two header rows is the most recent observation.
+
+    Returns *None* when no valid reading is found or the value is ``MM``
+    (missing).
+    """
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 9:
+            continue
+        wvht = parts[8]  # WVHT column (significant wave height in metres)
+        if wvht == "MM":
+            return None
+        try:
+            return round(float(wvht) * _M_TO_FT, 1)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+# ---------------------------------------------------------------------------
 # NWS alert parsing helpers
 # ---------------------------------------------------------------------------
 
