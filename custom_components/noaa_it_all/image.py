@@ -37,6 +37,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         "Please remove the YAML configuration and re-add the integration "
         "via the Home Assistant UI config flow."
     )
+    return
 
 
 async def async_setup_entry(

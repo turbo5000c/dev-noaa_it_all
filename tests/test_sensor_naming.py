@@ -366,14 +366,13 @@ class TestNamingConventionFormat(unittest.TestCase):
 # Device grouping: all entities use the same device per office
 # ---------------------------------------------------------------------------
 
-DOMAIN = "noaa_it_all"
-
 
 class TestDeviceInfoGrouping(unittest.TestCase):
     """Verify all entities for a given office share a single device."""
 
     def _expected_device_info(self):
         """Return the expected device_info dict for OFFICE."""
+        from noaa_it_all.const import DOMAIN
         return {
             "identifiers": {(DOMAIN, f"noaa_{OFFICE}")},
             "name": f"NOAA {OFFICE}",
