@@ -1,6 +1,7 @@
 """Hurricane sensors for NOAA Integration."""
 
 import logging
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -23,7 +24,7 @@ def _hurricane_device_info() -> "DeviceInfo":
     )
 
 
-class HurricaneAlertsSensor(CoordinatorEntity):
+class HurricaneAlertsSensor(CoordinatorEntity, SensorEntity):
     """Representation of Hurricane Alerts sensor."""
 
     def __init__(self, coordinator, office_code=None):
@@ -83,7 +84,7 @@ class HurricaneAlertsSensor(CoordinatorEntity):
         return _hurricane_device_info()
 
 
-class HurricaneActivitySensor(CoordinatorEntity):
+class HurricaneActivitySensor(CoordinatorEntity, SensorEntity):
     """Representation of Hurricane Activity sensor for general hurricane status."""
 
     def __init__(self, coordinator, office_code=None):

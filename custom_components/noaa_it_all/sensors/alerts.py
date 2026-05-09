@@ -1,6 +1,7 @@
 """NWS active alerts sensor for NOAA Integration."""
 
 import logging
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from datetime import datetime, timezone
@@ -12,7 +13,7 @@ from ..parsers import parse_nws_alert_features
 _LOGGER = logging.getLogger(__name__)
 
 
-class NWSAlertsSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class NWSAlertsSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of NWS Active Alerts sensor for specific location."""
 
     def __init__(self, coordinator, office_code, latitude, longitude):

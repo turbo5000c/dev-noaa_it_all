@@ -4,6 +4,7 @@ Covers extended (7-day) and hourly NWS forecast data.
 """
 
 import logging
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,7 +19,7 @@ MAX_FORECAST_PERIODS = 14  # 7 days (day + night for each day)
 MAX_HOURLY_PERIODS = 48  # 48 hours of hourly forecasts
 
 
-class ForecastBaseSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class ForecastBaseSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Base class for forecast sensors."""
 
     def __init__(self, coordinator, office_code, latitude, longitude, forecast_type):

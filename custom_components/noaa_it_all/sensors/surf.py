@@ -5,6 +5,7 @@ Surf Zone Forecasts (SRF product).
 """
 
 import logging
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,7 +19,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class RipCurrentRiskSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class RipCurrentRiskSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Rip Current Risk sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):
@@ -64,7 +65,7 @@ class RipCurrentRiskSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Surf Height sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):
@@ -75,6 +76,8 @@ class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_surf_height"
         self._attr_name = f"NOAA {office_code} Surf Height"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_device_class = SensorDeviceClass.DISTANCE
 
     @property
     def state(self):
@@ -96,7 +99,7 @@ class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     @property
     def icon(self):
         """Return the icon."""
-        return 'mdi:wave'
+        return 'mdi:wave'  # Keep custom wave icon for surf
 
     @property
     def extra_state_attributes(self):
@@ -123,7 +126,7 @@ class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class WaterTemperatureSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class WaterTemperatureSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Water Temperature sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):
@@ -134,6 +137,8 @@ class WaterTemperatureSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_water_temperature"
         self._attr_name = f"NOAA {office_code} Water Temperature"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
 
     @property
     def state(self):
@@ -151,11 +156,6 @@ class WaterTemperatureSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     def unit_of_measurement(self):
         """Return the unit of measurement."""
         return '°F'
-
-    @property
-    def icon(self):
-        """Return the icon."""
-        return 'mdi:thermometer-water'
 
     @property
     def extra_state_attributes(self):

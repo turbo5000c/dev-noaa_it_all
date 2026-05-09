@@ -6,6 +6,7 @@ discussion (AFD) text.
 
 import logging
 import re
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -15,7 +16,7 @@ from ..helpers import NoaaEntityIdNormalizationMixin
 _LOGGER = logging.getLogger(__name__)
 
 
-class CloudCoverSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class CloudCoverSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Cloud Cover sensor for specific location."""
 
     def __init__(self, coordinator, office_code, latitude, longitude):
@@ -26,6 +27,7 @@ class CloudCoverSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         self._longitude = longitude
         self._state = None
         self._attributes = {}
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def name(self):
@@ -97,7 +99,7 @@ class CloudCoverSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class RadarTimestampSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class RadarTimestampSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Radar Timestamp sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -164,7 +166,7 @@ class RadarTimestampSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class ForecastDiscussionSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class ForecastDiscussionSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Forecast Discussion sensor for specific location."""
 
     def __init__(self, coordinator, office_code):

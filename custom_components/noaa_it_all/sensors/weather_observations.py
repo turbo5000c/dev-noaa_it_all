@@ -6,6 +6,7 @@ conditions, and feels-like temperature.
 """
 
 import logging
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -22,7 +23,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class WeatherObservationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class WeatherObservationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Base class for weather observation sensors."""
 
     def __init__(self, coordinator, office_code, observation_field, sensor_name,
@@ -140,9 +141,10 @@ class TemperatureSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='°F',
-            icon='mdi:thermometer',
-            device_class='temperature'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.TEMPERATURE
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert Celsius to Fahrenheit."""
@@ -162,9 +164,10 @@ class HumiditySensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='%',
-            icon='mdi:water-percent',
-            device_class='humidity'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.HUMIDITY
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Round humidity to integer."""
@@ -186,8 +189,10 @@ class WindSpeedSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='mph',
-            icon='mdi:weather-windy'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.WIND_SPEED
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert km/h to mph."""
@@ -207,8 +212,9 @@ class WindDirectionSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='°',
-            icon='mdi:compass'
+            icon='mdi:compass'  # No device_class for wind direction, keep custom icon
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert wind direction to round integer."""
@@ -241,9 +247,10 @@ class BarometricPressureSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='inHg',
-            icon='mdi:gauge',
-            device_class='pressure'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.PRESSURE
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert Pascals to inches of mercury."""
@@ -263,9 +270,10 @@ class DewpointSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='°F',
-            icon='mdi:water',
-            device_class='temperature'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.TEMPERATURE
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert Celsius to Fahrenheit."""
@@ -285,8 +293,10 @@ class VisibilitySensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='mi',
-            icon='mdi:eye'
+            icon='mdi:eye',  # Keep visibility icon as it's semantically appropriate
+            device_class=SensorDeviceClass.DISTANCE
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _convert_value(self, value):
         """Convert meters to miles."""
@@ -305,7 +315,7 @@ class SkyConditionsSensor(WeatherObservationSensor):
             'Sky Conditions',
             latitude=latitude,
             longitude=longitude,
-            icon='mdi:weather-partly-cloudy'
+            icon='mdi:weather-partly-cloudy'  # Keep descriptive weather icon
         )
 
     def _convert_value(self, value):
@@ -326,9 +336,10 @@ class FeelsLikeSensor(WeatherObservationSensor):
             latitude=latitude,
             longitude=longitude,
             unit='°F',
-            icon='mdi:thermometer-lines',
-            device_class='temperature'
+            icon=None,  # Let device_class provide icon
+            device_class=SensorDeviceClass.TEMPERATURE
         )
+        self._attr_state_class = SensorStateClass.MEASUREMENT
 
     def _extract_value(self, properties):
         """Extract wind chill or heat index depending on which is available."""

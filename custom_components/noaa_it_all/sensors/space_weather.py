@@ -5,6 +5,7 @@ solar radiation storm alerts.
 """
 
 import logging
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from datetime import timedelta, datetime, timezone
@@ -34,7 +35,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class GeomagneticSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class GeomagneticSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of the Geomagnetic Storm sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -72,7 +73,7 @@ class GeomagneticSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class GeomagneticSensorInterpretation(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class GeomagneticSensorInterpretation(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of the Geomagnetic Storm Interpretation sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -112,7 +113,7 @@ class GeomagneticSensorInterpretation(NoaaEntityIdNormalizationMixin, Coordinato
         )
 
 
-class PlanetaryKIndexSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class PlanetaryKIndexSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of the Planetary K-index sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -150,7 +151,7 @@ class PlanetaryKIndexSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class PlanetaryKIndexSensorRating(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class PlanetaryKIndexSensorRating(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of the Planetary K-index Rating sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -190,7 +191,7 @@ class PlanetaryKIndexSensorRating(NoaaEntityIdNormalizationMixin, CoordinatorEnt
         )
 
 
-class AuroraNextTimeSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class AuroraNextTimeSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Aurora Next Time sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -276,7 +277,7 @@ class AuroraNextTimeSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class AuroraDurationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class AuroraDurationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Aurora Duration sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -345,7 +346,7 @@ class AuroraDurationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
         )
 
 
-class AuroraVisibilityProbabilitySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class AuroraVisibilityProbabilitySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Aurora Visibility Probability sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -420,7 +421,7 @@ class AuroraVisibilityProbabilitySensor(NoaaEntityIdNormalizationMixin, Coordina
         )
 
 
-class SolarRadiationStormAlertsSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
+class SolarRadiationStormAlertsSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, SensorEntity):
     """Representation of Solar Radiation Storm Alerts sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
