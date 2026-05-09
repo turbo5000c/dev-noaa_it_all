@@ -14,6 +14,7 @@ from ..const import (
     AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES,
     SOLAR_RADIATION_KEYWORDS, DOMAIN,
 )
+from ..helpers import NoaaEntityIdNormalizationMixin
 from ..parsers import (
     interpret_dst_value,
     rate_kp_index,
@@ -33,7 +34,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class GeomagneticSensor(CoordinatorEntity):
+class GeomagneticSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of the Geomagnetic Storm sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -71,7 +72,7 @@ class GeomagneticSensor(CoordinatorEntity):
         )
 
 
-class GeomagneticSensorInterpretation(CoordinatorEntity):
+class GeomagneticSensorInterpretation(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of the Geomagnetic Storm Interpretation sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -111,7 +112,7 @@ class GeomagneticSensorInterpretation(CoordinatorEntity):
         )
 
 
-class PlanetaryKIndexSensor(CoordinatorEntity):
+class PlanetaryKIndexSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of the Planetary K-index sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -149,7 +150,7 @@ class PlanetaryKIndexSensor(CoordinatorEntity):
         )
 
 
-class PlanetaryKIndexSensorRating(CoordinatorEntity):
+class PlanetaryKIndexSensorRating(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of the Planetary K-index Rating sensor."""
 
     def __init__(self, coordinator, office_code):
@@ -189,7 +190,7 @@ class PlanetaryKIndexSensorRating(CoordinatorEntity):
         )
 
 
-class AuroraNextTimeSensor(CoordinatorEntity):
+class AuroraNextTimeSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Aurora Next Time sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -275,7 +276,7 @@ class AuroraNextTimeSensor(CoordinatorEntity):
         )
 
 
-class AuroraDurationSensor(CoordinatorEntity):
+class AuroraDurationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Aurora Duration sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -344,7 +345,7 @@ class AuroraDurationSensor(CoordinatorEntity):
         )
 
 
-class AuroraVisibilityProbabilitySensor(CoordinatorEntity):
+class AuroraVisibilityProbabilitySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Aurora Visibility Probability sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -419,7 +420,7 @@ class AuroraVisibilityProbabilitySensor(CoordinatorEntity):
         )
 
 
-class SolarRadiationStormAlertsSensor(CoordinatorEntity):
+class SolarRadiationStormAlertsSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Solar Radiation Storm Alerts sensor for specific location."""
 
     def __init__(self, coordinator, office_code):

@@ -10,11 +10,12 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..helpers import NoaaEntityIdNormalizationMixin
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class CloudCoverSensor(CoordinatorEntity):
+class CloudCoverSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Cloud Cover sensor for specific location."""
 
     def __init__(self, coordinator, office_code, latitude, longitude):
@@ -96,7 +97,7 @@ class CloudCoverSensor(CoordinatorEntity):
         )
 
 
-class RadarTimestampSensor(CoordinatorEntity):
+class RadarTimestampSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Radar Timestamp sensor for specific location."""
 
     def __init__(self, coordinator, office_code):
@@ -163,7 +164,7 @@ class RadarTimestampSensor(CoordinatorEntity):
         )
 
 
-class ForecastDiscussionSensor(CoordinatorEntity):
+class ForecastDiscussionSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Forecast Discussion sensor for specific location."""
 
     def __init__(self, coordinator, office_code):

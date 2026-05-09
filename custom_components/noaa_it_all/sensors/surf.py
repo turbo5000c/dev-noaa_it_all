@@ -9,6 +9,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..helpers import NoaaEntityIdNormalizationMixin
 from ..parsers import (
     parse_rip_current_risk, parse_surf_height, parse_water_temperature,
     normalize_numeric,
@@ -17,7 +18,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class RipCurrentRiskSensor(CoordinatorEntity):
+class RipCurrentRiskSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Rip Current Risk sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):
@@ -63,7 +64,7 @@ class RipCurrentRiskSensor(CoordinatorEntity):
         )
 
 
-class SurfHeightSensor(CoordinatorEntity):
+class SurfHeightSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Surf Height sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):
@@ -122,7 +123,7 @@ class SurfHeightSensor(CoordinatorEntity):
         )
 
 
-class WaterTemperatureSensor(CoordinatorEntity):
+class WaterTemperatureSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Representation of Water Temperature sensor for specific NWS office location."""
 
     def __init__(self, coordinator, office_code):

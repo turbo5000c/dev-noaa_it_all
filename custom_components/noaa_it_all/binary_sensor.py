@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN
+from .helpers import NoaaEntityIdNormalizationMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class UnsafeToSwimBinarySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for unsafe swimming conditions based on rip current forecasts."""
 
     _HIGH_RISK_PATTERNS = [
@@ -125,7 +126,7 @@ class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
         )
 
 
-class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class SevereWeatherAlertBinarySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for severe/hazardous weather warnings (tornado, thunderstorm, etc.)."""
 
     _SEVERE_EVENTS = [
@@ -219,7 +220,7 @@ class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         )
 
 
-class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class FloodWinterAlertBinarySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for flood and winter weather alerts."""
 
     _FLOOD_WINTER_EVENTS = [
@@ -311,7 +312,7 @@ class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         )
 
 
-class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class HeatAirQualityAlertBinarySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for heat, air quality, and other environmental advisories."""
 
     _HEAT_AIRQUALITY_EVENTS = [
@@ -402,7 +403,7 @@ class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         )
 
 
-class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class ActiveAlertsGeneralBinarySensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for general active NWS alerts for the configured location."""
 
     def __init__(self, coordinator, office_code, latitude, longitude):

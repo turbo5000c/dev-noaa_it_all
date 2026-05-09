@@ -10,6 +10,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..helpers import NoaaEntityIdNormalizationMixin
 from ..parsers import (
     celsius_to_fahrenheit,
     kmh_to_mph,
@@ -21,7 +22,7 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class WeatherObservationSensor(CoordinatorEntity):
+class WeatherObservationSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Base class for weather observation sensors."""
 
     def __init__(self, coordinator, office_code, observation_field, sensor_name,

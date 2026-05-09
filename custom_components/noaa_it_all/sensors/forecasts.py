@@ -8,6 +8,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..helpers import NoaaEntityIdNormalizationMixin
 from ..parsers import format_forecast_text, format_forecast_periods, format_hourly_periods
 
 _LOGGER = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ MAX_FORECAST_PERIODS = 14  # 7 days (day + night for each day)
 MAX_HOURLY_PERIODS = 48  # 48 hours of hourly forecasts
 
 
-class ForecastBaseSensor(CoordinatorEntity):
+class ForecastBaseSensor(NoaaEntityIdNormalizationMixin, CoordinatorEntity):
     """Base class for forecast sensors."""
 
     def __init__(self, coordinator, office_code, latitude, longitude, forecast_type):

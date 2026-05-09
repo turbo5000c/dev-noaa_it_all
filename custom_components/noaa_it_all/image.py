@@ -15,6 +15,7 @@ from .const import (
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
     OFFICE_RADAR_SITES, REQUEST_TIMEOUT,
 )
+from .helpers import NoaaEntityIdNormalizationMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -136,7 +137,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class GeoelectricFieldImageEntity(ImageEntity):
+class GeoelectricFieldImageEntity(NoaaEntityIdNormalizationMixin, ImageEntity):
     """Representation of the Geoelectric Field Image."""
 
     def __init__(self, hass, office_code):
@@ -210,7 +211,7 @@ class GeoelectricFieldImageEntity(ImageEntity):
         return b""
 
 
-class AuroraForecastImageEntity(ImageEntity):
+class AuroraForecastImageEntity(NoaaEntityIdNormalizationMixin, ImageEntity):
     """Representation of the aurora Field Image."""
 
     def __init__(self, hass, office_code):
@@ -355,7 +356,7 @@ class HurricaneOutlookImageEntity(ImageEntity):
         return b""
 
 
-class RadarBaseReflectivityImageEntity(ImageEntity):
+class RadarBaseReflectivityImageEntity(NoaaEntityIdNormalizationMixin, ImageEntity):
     """Representation of the Radar Base Reflectivity Image for a specific location."""
 
     def __init__(self, hass, office_code, radar_site):
@@ -435,7 +436,7 @@ class RadarBaseReflectivityImageEntity(ImageEntity):
         return b""
 
 
-class RadarLoopImageEntity(ImageEntity):
+class RadarLoopImageEntity(NoaaEntityIdNormalizationMixin, ImageEntity):
     """Representation of the Radar Loop Image (animated) for a specific location."""
 
     def __init__(self, hass, office_code, radar_site):
