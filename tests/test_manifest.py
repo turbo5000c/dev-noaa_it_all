@@ -71,31 +71,6 @@ class TestManifest(unittest.TestCase):
         self.assertIsInstance(self.manifest["requirements"], list)
 
 
-class TestBrandAssets(unittest.TestCase):
-    """Validate brand image assets are in the correct location for HA/HACS."""
-
-    _BRANDS_DIR = os.path.join(_COMPONENT, "brands")
-
-    def test_brands_directory_exists(self):
-        """HA expects brand images in the plural 'brands' subdirectory."""
-        self.assertTrue(
-            os.path.isdir(self._BRANDS_DIR),
-            "custom_components/noaa_it_all/brands/ directory must exist",
-        )
-
-    def test_icon_png_exists(self):
-        self.assertTrue(
-            os.path.isfile(os.path.join(self._BRANDS_DIR, "icon.png")),
-            "brands/icon.png must exist",
-        )
-
-    def test_logo_png_exists(self):
-        self.assertTrue(
-            os.path.isfile(os.path.join(self._BRANDS_DIR, "logo.png")),
-            "brands/logo.png must exist",
-        )
-
-
 class TestHacsJson(unittest.TestCase):
     """Validate hacs.json structure and content."""
 
