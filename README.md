@@ -7,7 +7,8 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/release/dawg-io/noaa_it_all.svg)](https://github.com/dawg-io/noaa_it_all/releases)
 [![License](https://img.shields.io/github/license/dawg-io/noaa_it_all.svg)](LICENSE)
-
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
+![GitHub all releases](https://img.shields.io/github/downloads/dawg-io/noaa_it_all/total)
 
 <p align="center">
   <img src="https://github.com/dawg-io/noaa_it_all/blob/main/custom_components/noaa_it_all/brand/icon.png" width="120"><br>
