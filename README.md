@@ -114,8 +114,8 @@ Location-specific surf conditions, rip currents, and water temperature
 </p>
 
 #### 📍 NOAA {OFFICE} Weather
-Location-specific weather observations, forecasts, alerts, and radar — **one device per configured NWS office** (e.g., "NOAA WAS Weather" for Washington, NC, "NOAA SGX Weather" for San Diego)
-- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_was_weather`, `noaa_sgx_weather`)
+Location-specific weather observations, forecasts, alerts, and radar — **one device per configured NWS office** (e.g., "NOAA ILM Weather" for Wilmington, NC, "NOAA SGX Weather" for San Diego)
+- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_ilm_weather`, `noaa_sgx_weather`)
 - **Location**: Specific to configured NWS office and coordinates
 - **Update Frequency**: 5 minutes
 - **Radar image**: `image.noaa_{office}_weather_radar_base_reflectivity` (e.g., `image.noaa_sgx_weather_radar_base_reflectivity`)
@@ -239,7 +239,7 @@ Visual representations of current conditions:
 
 The integration supports all NWS offices that issue Surf Zone Forecasts (SRF):
 
-**East Coast**: Norfolk (AKQ), Boston (BOX), Washington (WAS), Charleston (CHS), Jacksonville (JAX), Miami (MFL), Tampa (TBW), etc.
+**East Coast**: Norfolk (AKQ), Boston (BOX), Wilmington (ILM), Charleston (CHS), Jacksonville (JAX), Miami (MFL), Tampa (TBW), etc.
 
 **West Coast**: San Diego (SGX), Los Angeles (LOX), San Francisco (MTR), Portland OR (PQR), Eureka (EKA)
 
@@ -269,7 +269,7 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 - `binary_sensor.noaa_sgx_unsafe_to_swim` — Rip current safety for San Diego
 - `sensor.noaa_hurricane_activity` — Global hurricane activity (NOAA Hurricane device)
 - `image.noaa_hurricane_outlook_image` — Hurricane outlook image (NOAA Hurricane device)
-- `image.noaa_was_weather_radar_base_reflectivity` — Radar for Washington (WAS)
+- `image.noaa_ilm_weather_radar_base_reflectivity` — Radar for Wilmington (ILM)
 - `image.noaa_sgx_weather_radar_base_reflectivity` — Radar for San Diego (SGX)
 
 ### Office Code Usage
