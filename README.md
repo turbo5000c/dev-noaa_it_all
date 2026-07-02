@@ -6,7 +6,7 @@
 
 [![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/dawg-io/noaa_it_all?style=for-the-badge&color=green)](https://github.com/dawg-io/noaa_it_all/releases)
-[![License](https://img.shields.io/github/license/dawg-io/noaa_it_all?style=for-the-badge&color=green)](https://github.com/turbo5000c/dev-noaa_it_all/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/dawg-io/noaa_it_all?style=for-the-badge&color=green)](https://github.com/dawg-io/noaa_it_all/blob/main/LICENSE)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge&color=orange)](https://github.com/hacs/integration)
 ![GitHub all releases](https://img.shields.io/github/downloads/dawg-io/noaa_it_all/total?style=for-the-badge&color=gray)
 ![Tracked Installs](https://img.shields.io/badge/dynamic/json?color=gray&logo=home-assistant&label=Tracked%20Installs&suffix=%2B&cacheSeconds=15600&style=for-the-badge&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.noaa_it_all.total)
