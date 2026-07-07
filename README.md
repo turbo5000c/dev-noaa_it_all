@@ -67,7 +67,7 @@ For location-specific rip current, surf zone, and weather data:
 <p align="left">
 <img width="480" height="794" alt="image" src="https://github.com/user-attachments/assets/2688c4dd-b6c6-4449-9ce2-37f5552335a8" />
 </p>
-**Important:** Starting with version 0.4.0, latitude and longitude are required fields for proper weather entity setup. Weather data is now fetched from the nearest observation station to your spe[...]
+**Important:** Starting with version 0.4.0, latitude and longitude are required fields for proper weather entity setup. Weather data is now fetched from the nearest observation station to your specified coordinates using the weather.gov API, rather than defaulting to the Home Assistant location or using a predefined office-to-station mapping.
 
 #### Legacy YAML Configuration
 For basic sensors without location-specific data:
@@ -125,7 +125,7 @@ Location-specific weather observations, forecasts, alerts, and radar — **one d
   <img width="263" height="910" alt="image" src="https://github.com/user-attachments/assets/63d814c0-832c-485f-9317-f16dba72b6c0" />
 </p>
 
-> **Tip**: In Home Assistant's device view (Settings → Devices & Services), click on any NOAA device to see all related entities grouped together. This makes it easy to create dashboard cards a[...]
+> **Tip**: In Home Assistant's device view (Settings → Devices & Services), click on any NOAA device to see all related entities grouped together. This makes it easy to create dashboard cards and automations for specific categories of data.
 
 ## Available Entities
 
@@ -159,7 +159,7 @@ Real-time monitoring of National Weather Service alerts for your location *(NOAA
   - Full alert details with headlines, descriptions, and instructions
   - Location-specific filtering based on configured coordinates
 
-> **Note**: Alert sensors update every 5 minutes and only include actual alerts (excludes test messages and drafts). All alerts are filtered to your specific location using latitude/longitude coo[...]
+> **Note**: Alert sensors update every 5 minutes and only include actual alerts (excludes test messages and drafts). All alerts are filtered to your specific location using latitude/longitude coordinates from config flow setup. Binary sensors are grouped under NOAA Weather [OFFICE] while the comprehensive sensor is under NOAA Weather.
 
 ### Current Weather Conditions (Config Flow Only)
 Real-time weather observations from your local NWS observation station *(NOAA Weather)*:
@@ -173,7 +173,7 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 - **Sky Conditions**: Current sky conditions description (Clear, Cloudy, Fog, etc.) *(sensor.noaa_{office}_sky_conditions)*
 - **Feels Like**: Apparent temperature incorporating wind chill or heat index *(sensor.noaa_{office}_feels_like)*
 
-> **Note**: Weather observations update every 5 minutes from the primary observation station for your configured NWS office location. Data includes automatic unit conversions to US customary unit[...]
+> **Note**: Weather observations update every 5 minutes from the primary observation station for your configured NWS office location. Data includes automatic unit conversions to US customary units.
 
 ### Aurora Visibility Alerts (Config Flow Only)
 Location-aware aurora visibility predictions *(NOAA Space)*:
@@ -181,7 +181,7 @@ Location-aware aurora visibility predictions *(NOAA Space)*:
 - **Aurora Duration**: Estimated length of aurora visibility in hours based on geomagnetic conditions *(sensor.noaa_{office}_aurora_duration)*
 - **Aurora Visibility Probability**: Percentage chance of aurora visibility from your specific location *(sensor.noaa_{office}_aurora_visibility_probability)*
 
-> **Note**: Aurora predictions are based on real-time Kp index data and your location's magnetic latitude. Northern locations (like Duluth, MN) have much higher visibility potential than southern[...]
+> **Note**: Aurora predictions are based on real-time Kp index data and your location's magnetic latitude. Northern locations (like Duluth, MN) have much higher visibility potential than southern locations (like Miami, FL).
 
 ### Solar Radiation Storm Alerts (Config Flow Only)
 Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
@@ -192,7 +192,7 @@ Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
   - **Location Risk**: Risk assessment based on your magnetic latitude and current storm activity
   - **Real-time Alerts**: Live monitoring of NOAA Space Weather Prediction Center alerts
 
-> **Note**: Solar radiation storm impacts vary by location and magnetic latitude. Higher latitudes (like Alaska and northern Canada) experience more severe effects, while equatorial regions are g[...]
+> **Note**: Solar radiation storm impacts vary by location and magnetic latitude. Higher latitudes (like Alaska and northern Canada) experience more severe effects, while equatorial regions are generally less affected. The integration provides location-specific risk assessments for your configured NWS office.
 
 ### Optional Secondary Sensors (Config Flow Only)
 These sensors provide additional weather data where available from NOAA/NWS *(NOAA Weather)*:
@@ -216,7 +216,7 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
   - Full text available in sensor attributes with summary in state
   - Provides insight into weather patterns and forecast confidence
 
-> **Note**: These sensors gracefully handle missing data by returning `None` or `Unknown` when data is unavailable. The `availability` attribute indicates data source and current status. **UV Ind[...]
+> **Note**: These sensors gracefully handle missing data by returning `None` or `Unknown` when data is unavailable. The `availability` attribute indicates data source and current status. **UV Index is NOT available** through NWS APIs and cannot be provided by this integration.
 
 ### Image Entities
 Visual representations of current conditions:
@@ -315,7 +315,7 @@ If you are upgrading from a previous version, the following image entity IDs hav
 | `image.noaa_weather_noaa_satellite_goes_geocolor` | `image.noaa_hurricane_goes_geocolor` |
 | `image.noaa_weather_radar_base_reflectivity_{office}` | `image.noaa_{office}_weather_radar_base_reflectivity` |
 
-The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & Se[...]
+The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & Services → Entities**, filter by "unavailable", and remove the old image entities. Update any automations or dashboard cards that reference the old entity IDs.
 
 ## Example Automations
 
@@ -963,10 +963,10 @@ content: |
 A: Yes. Adding `noaa_it_all:` to `configuration.yaml` provides global sensors (Kp Index, Geomagnetic Storm, Hurricane data) without location-specific features.
 
 **Q: How do I find my NWS forecast office code?**
-A: Visit [weather.gov](https://www.weather.gov/) and search for your location. The three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?Cit[...]
+A: Visit [weather.gov](https://www.weather.gov/) and search for your location. The three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?CityName=San+Diego&state=CA&site=SGX`).
 
 **Q: Why don't I see aurora predictions?**
-A: Aurora predictions are location-specific and require Config Flow setup. Also, aurora is only visible at high Kp levels for southern latitudes — check the Kp Index value and your office's magnetic[...]
+A: Aurora predictions are location-specific and require Config Flow setup. Also, aurora is only visible at high Kp levels for southern latitudes — check the Kp Index value and your office's magnetic latitude.
 
 **Q: How often does data update?**
 A: All sensors update every 5 minutes.
