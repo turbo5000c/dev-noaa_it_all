@@ -92,10 +92,10 @@ Global space weather monitoring - aurora visibility, geomagnetic storms, and sol
 
 #### 🌀 NOAA Hurricane
 Global hurricane tracking and GOES satellite imagery — **created once**, shared across all configured NWS offices
-- **Device ID**: `noaa_hurricane`
+- **Device ID**: `noaa_weather_hurricane`
 - **Location**: Independent (global NHC/GOES data)
 - **Update Frequency**: 5 minutes
-- **Entities**: `sensor.noaa_hurricane_activity`, `sensor.noaa_hurricane_alerts`, `image.noaa_hurricane_outlook_image`, `image.noaa_hurricane_goes_air_mass`, `image.noaa_hurricane_goes_geocolor`
+- **Entities**: `sensor.noaa_weather_hurricane_activity`, `sensor.noaa_weather_hurricane_alerts`, `image.noaa_weather_hurricane_outlook_image`, `image.noaa_weather_hurricane_goes_air_mass`, `image.noaa_weather_hurricane_goes_geocolor`
 
 <p align="left">
   <img width="327" height="380" alt="image" src="https://github.com/user-attachments/assets/7b484039-abe9-4c14-ab37-91b41d084411" />
@@ -225,9 +225,9 @@ Visual representations of current conditions:
 - **Aurora Forecast Image** — Tonight's aurora coverage forecast *(image.noaa_{office}_aurora_image)*
 
 **NOAA Hurricane** (global, created once):
-- **Outlook Image** — 2-day tropical weather outlook from NHC *(image.noaa_hurricane_outlook_image)*
-- **GOES Air Mass** — GOES-19 Air Mass RGB satellite imagery *(image.noaa_hurricane_goes_air_mass)*
-- **GOES Geocolor** — GOES-19 GeoColor satellite imagery *(image.noaa_hurricane_goes_geocolor)*
+- **Outlook Image** — 2-day tropical weather outlook from NHC *(image.noaa_weather_hurricane_outlook_image)*
+- **GOES Air Mass** — GOES-19 Air Mass RGB satellite imagery *(image.noaa_weather_hurricane_goes_air_mass)*
+- **GOES Geocolor** — GOES-19 GeoColor satellite imagery *(image.noaa_weather_hurricane_goes_geocolor)*
 
 **NOAA {OFFICE} Weather** (one per configured office):
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
@@ -259,7 +259,7 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 
 | Device | Device Name Pattern | Example Entity ID |
 |--------|--------------------|--------------------|
-| NOAA Hurricane | `NOAA Hurricane` | `sensor.noaa_hurricane_activity` |
+| NOAA Hurricane | `NOAA Hurricane` | `sensor.noaa_weather_hurricane_activity` |
 | NOAA {OFFICE} Weather | `NOAA {OFFICE} Weather` | `sensor.noaa_sgx_weather_visibility` |
 | NOAA {OFFICE} Space | `NOAA {OFFICE} Space` | `image.noaa_sgx_geoelectric_image` |
 | NOAA Surf | `NOAA Surf` | `sensor.noaa_sgx_rip_current_risk` |
@@ -267,8 +267,8 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 **Examples:**
 - `sensor.noaa_sgx_temperature` — Temperature for San Diego (SGX office)
 - `binary_sensor.noaa_sgx_unsafe_to_swim` — Rip current safety for San Diego
-- `sensor.noaa_hurricane_activity` — Global hurricane activity (NOAA Hurricane device)
-- `image.noaa_hurricane_outlook_image` — Hurricane outlook image (NOAA Hurricane device)
+- `sensor.noaa_weather_hurricane_activity` — Global hurricane activity (NOAA Hurricane device)
+- `image.noaa_weather_hurricane_outlook_image` — Hurricane outlook image (NOAA Hurricane device)
 - `image.noaa_ilm_weather_radar_base_reflectivity` — Radar for Wilmington (ILM)
 - `image.noaa_sgx_weather_radar_base_reflectivity` — Radar for San Diego (SGX)
 
@@ -299,8 +299,8 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 | Weather Alert Binary | `binary_sensor.noaa_{office}_{alert_type}_alert` | `binary_sensor.noaa_sgx_severe_weather_alert` |
 | Surf Conditions | `sensor.noaa_{office}_{surf_metric}` | `sensor.noaa_sgx_rip_current_risk` |
 | Space Weather | `sensor.noaa_{office}_{metric}` | `sensor.noaa_sgx_aurora_next_time` |
-| Hurricane (global) | `sensor.noaa_hurricane_{metric}` | `sensor.noaa_hurricane_activity` |
-| Hurricane Images | `image.noaa_hurricane_{name}` | `image.noaa_hurricane_outlook_image` |
+| Hurricane (global) | `sensor.noaa_weather_hurricane_{metric}` | `sensor.noaa_weather_hurricane_activity` |
+| Hurricane Images | `image.noaa_weather_hurricane_{name}` | `image.noaa_weather_hurricane_outlook_image` |
 | Radar Image | `image.noaa_{office}_weather_radar_base_reflectivity` | `image.noaa_sgx_weather_radar_base_reflectivity` |
 
 ### Migration: Old Entity IDs
@@ -309,9 +309,9 @@ If you are upgrading from a previous version, the following image entity IDs hav
 
 | Old Entity ID | New Entity ID |
 |---------------|---------------|
-| `image.noaa_weather_hurricane_outlook_image` | `image.noaa_hurricane_outlook_image` |
-| `image.noaa_weather_noaa_satellite_goes_air_mass` | `image.noaa_hurricane_goes_air_mass` |
-| `image.noaa_weather_noaa_satellite_goes_geocolor` | `image.noaa_hurricane_goes_geocolor` |
+| `image.noaa_weather_hurricane_outlook_image` | `image.noaa_weather_hurricane_outlook_image` |
+| `image.noaa_weather_noaa_satellite_goes_air_mass` | `image.noaa_weather_hurricane_goes_air_mass` |
+| `image.noaa_weather_noaa_satellite_goes_geocolor` | `image.noaa_weather_hurricane_goes_geocolor` |
 | `image.noaa_weather_radar_base_reflectivity_{office}` | `image.noaa_{office}_weather_radar_base_reflectivity` |
 
 The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & Services → Entities**, filter by "unavailable", and remove the old image entities. Update any automations or dashboard cards that reference the old entity IDs.
@@ -751,10 +751,10 @@ type: entities
 title: "🌀 Hurricane Activity"
 show_header_toggle: false
 entities:
-  - entity: sensor.noaa_hurricane_alerts
+  - entity: sensor.noaa_weather_hurricane_alerts
     name: "Active Alerts"
     icon: mdi:alert-octagon
-  - entity: sensor.noaa_hurricane_activity
+  - entity: sensor.noaa_weather_hurricane_activity
     name: "Activity Level"
     icon: mdi:weather-hurricane
 ```
