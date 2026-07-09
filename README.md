@@ -58,7 +58,7 @@ For location-specific rip current, surf zone, and weather data:
 <p align="left">
 <img width="485" height="409" alt="image" src="https://github.com/user-attachments/assets/556faa39-2eee-45e7-8ba0-6771a334ef0a" />
 </p>
-4. Select your **NWS Forecast Office** from the dropdown (e.g., SGX for San Diego, LOX for Los Angeles)
+4. Select your **NWS Forecast Office** from the dropdown (e.g., ILM for Wilmington, LOX for Los Angeles)
 <p align="left">
 <img width="490" height="222" alt="image" src="https://github.com/user-attachments/assets/0c9711bc-9c7b-428d-b7de-a405e07299e8" />
 </p>
@@ -114,11 +114,11 @@ Location-specific surf conditions, rip currents, and water temperature
 </p>
 
 #### 📍 NOAA {OFFICE} Weather
-Location-specific weather observations, forecasts, alerts, and radar — **one device per configured NWS office** (e.g., "NOAA ILM Weather" for Wilmington, NC, "NOAA SGX Weather" for San Diego)
-- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_ilm_weather`, `noaa_sgx_weather`)
+Location-specific weather observations, forecasts, alerts, and radar — **one device per configured NWS office** (e.g., "NOAA ILM Weather" for Wilmington, NC, "NOAA ILM Weather" for Wilmington)
+- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_ilm_weather`, `noaa_ilm_weather`)
 - **Location**: Specific to configured NWS office and coordinates
 - **Update Frequency**: 5 minutes
-- **Radar image**: `image.noaa_{office}_weather_radar_base_reflectivity` (e.g., `image.noaa_sgx_weather_radar_base_reflectivity`)
+- **Radar image**: `image.noaa_{office}_weather_radar_base_reflectivity` (e.g., `image.noaa_ilm_weather_radar_base_reflectivity`)
 
 <p align="left">
   <img width="263" height="910" alt="image" src="https://github.com/user-attachments/assets/63d814c0-832c-485f-9317-f16dba72b6c0" />
@@ -241,7 +241,7 @@ The integration supports all NWS offices that issue Surf Zone Forecasts (SRF):
 
 **East Coast**: Norfolk (AKQ), Boston (BOX), Wilmington (ILM), Charleston (CHS), Jacksonville (JAX), Miami (MFL), Tampa (TBW), etc.
 
-**West Coast**: San Diego (SGX), Los Angeles (LOX), San Francisco (MTR), Portland OR (PQR), Eureka (EKA)
+**West Coast**: Wilmington (ILM), Los Angeles (LOX), San Francisco (MTR), Portland OR (PQR), Eureka (EKA)
 
 **Gulf Coast**: Mobile (MOB), Corpus Christi (CRP), Brownsville (BRO), Tallahassee (TAE)
 
@@ -260,20 +260,20 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 | Device | Device Name Pattern | Example Entity ID |
 |--------|--------------------|--------------------|
 | NOAA Hurricane | `NOAA Hurricane` | `sensor.noaa_weather_hurricane_activity` |
-| NOAA {OFFICE} Weather | `NOAA {OFFICE} Weather` | `sensor.noaa_sgx_weather_visibility` |
-| NOAA {OFFICE} Space | `NOAA {OFFICE} Space` | `image.noaa_sgx_geoelectric_image` |
-| NOAA Surf | `NOAA Surf` | `sensor.noaa_sgx_rip_current_risk` |
+| NOAA {OFFICE} Weather | `NOAA {OFFICE} Weather` | `sensor.noaa_ilm_weather_visibility` |
+| NOAA {OFFICE} Space | `NOAA {OFFICE} Space` | `image.noaa_ilm_geoelectric_image` |
+| NOAA Surf | `NOAA Surf` | `sensor.noaa_ilm_rip_current_risk` |
 
 **Examples:**
-- `sensor.noaa_sgx_temperature` — Temperature for San Diego (SGX office)
-- `binary_sensor.noaa_sgx_unsafe_to_swim` — Rip current safety for San Diego
+- `sensor.noaa_ilm_temperature` — Temperature for Wilmington (ILM office)
+- `binary_sensor.noaa_ilm_unsafe_to_swim` — Rip current safety for Wilmington
 - `sensor.noaa_weather_hurricane_activity` — Global hurricane activity (NOAA Hurricane device)
 - `image.noaa_weather_hurricane_outlook_image` — Hurricane outlook image (NOAA Hurricane device)
 - `image.noaa_ilm_weather_radar_base_reflectivity` — Radar for Wilmington (ILM)
-- `image.noaa_sgx_weather_radar_base_reflectivity` — Radar for San Diego (SGX)
+- `image.noaa_ilm_weather_radar_base_reflectivity` — Radar for Wilmington (ILM)
 
 ### Office Code Usage
-- **Office-specific entities**: Include the office code in the device name (e.g., `NOAA SGX Weather`)
+- **Office-specific entities**: Include the office code in the device name (e.g., `NOAA ILM Weather`)
 - **Global hurricane entities**: Always under `NOAA Hurricane` — never duplicated per office
 - **Replace office code**: If you change NWS offices, entity names will include the new code
 
@@ -286,7 +286,7 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 
 1. **Use Device Views**: Access entities by device (Settings → Devices & Services → NOAA It All) for organized browsing
 2. **Create Groups**: Use Home Assistant groups to combine related entities across device boundaries
-3. **Label Your Location**: In automations, use friendly names in messages (e.g., "San Diego" instead of "SGX")
+3. **Label Your Location**: In automations, use friendly names in messages (e.g., "Wilmington" instead of "ILM")
 4. **Check Availability**: Sensors return `unknown` or `None` when data is unavailable - use conditions to verify state
 5. **Binary Sensors for Triggers**: Use binary sensors (`on`/`off`) for automation triggers instead of checking sensor values
 6. **Access Attributes**: Many sensors include detailed information in attributes (e.g., full alert text, forecast periods)
@@ -295,13 +295,13 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 
 | Data Type | Entity Pattern | Example |
 |-----------|---------------|---------|
-| Weather Observation | `sensor.noaa_{office}_weather_{metric}` | `sensor.noaa_sgx_weather_temperature` |
-| Weather Alert Binary | `binary_sensor.noaa_{office}_{alert_type}_alert` | `binary_sensor.noaa_sgx_severe_weather_alert` |
-| Surf Conditions | `sensor.noaa_{office}_{surf_metric}` | `sensor.noaa_sgx_rip_current_risk` |
-| Space Weather | `sensor.noaa_{office}_{metric}` | `sensor.noaa_sgx_aurora_next_time` |
+| Weather Observation | `sensor.noaa_{office}_weather_{metric}` | `sensor.noaa_ilm_weather_temperature` |
+| Weather Alert Binary | `binary_sensor.noaa_{office}_{alert_type}_alert` | `binary_sensor.noaa_ilm_severe_weather_alert` |
+| Surf Conditions | `sensor.noaa_{office}_{surf_metric}` | `sensor.noaa_ilm_rip_current_risk` |
+| Space Weather | `sensor.noaa_{office}_{metric}` | `sensor.noaa_ilm_aurora_next_time` |
 | Hurricane (global) | `sensor.noaa_weather_hurricane_{metric}` | `sensor.noaa_weather_hurricane_activity` |
 | Hurricane Images | `image.noaa_weather_hurricane_{name}` | `image.noaa_weather_hurricane_outlook_image` |
-| Radar Image | `image.noaa_{office}_weather_radar_base_reflectivity` | `image.noaa_sgx_weather_radar_base_reflectivity` |
+| Radar Image | `image.noaa_{office}_weather_radar_base_reflectivity` | `image.noaa_ilm_weather_radar_base_reflectivity` |
 
 ### Migration: Old Entity IDs
 
@@ -327,7 +327,7 @@ automation:
     description: "Alert when rip current conditions become dangerous"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_sgx_unsafe_to_swim
+      entity_id: binary_sensor.noaa_ilm_unsafe_to_swim
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -348,20 +348,20 @@ automation:
     description: "Immediate notification for severe weather warnings"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_sgx_severe_weather_alert
+      entity_id: binary_sensor.noaa_ilm_severe_weather_alert
       to: 'on'
     action:
       - service: notify.mobile_app
         data:
-          title: "⚠️ {{ state_attr('binary_sensor.noaa_sgx_active_alerts','alerts')[0].event }}"
-          message: "{{ state_attr('binary_sensor.noaa_sgx_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
+          title: "⚠️ {{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].event }}"
+          message: "{{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
           data:
             priority: high
             notification_icon: mdi:weather-lightning-rainy
       - service: tts.google_translate_say
         data:
           entity_id: media_player.home_speaker
-          message: "{{ state_attr('binary_sensor.noaa_sgx_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
+          message: "{{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
 ```
 
 #### Winter Storm Alert with Light Flash
@@ -371,7 +371,7 @@ automation:
     description: "Visual and mobile notification for winter weather"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_sgx_flood_winter_alert
+      entity_id: binary_sensor.noaa_ilm_flood_winter_alert
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -395,7 +395,7 @@ automation:
     description: "Auto-adjust cooling when heat advisory is active"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_sgx_heat_air_quality_alert
+      entity_id: binary_sensor.noaa_ilm_heat_air_quality_alert
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -470,16 +470,16 @@ automation:
         at: "08:00:00"
     condition:
       - condition: state
-        entity_id: binary_sensor.noaa_sgx_unsafe_to_swim
+        entity_id: binary_sensor.noaa_ilm_unsafe_to_swim
         state: 'off'
       - condition: numeric_state
-        entity_id: sensor.noaa_sgx_temperature
+        entity_id: sensor.noaa_ilm_temperature
         above: 75
       - condition: numeric_state
-        entity_id: sensor.noaa_sgx_wind_speed
+        entity_id: sensor.noaa_ilm_wind_speed
         below: 15
       - condition: state
-        entity_id: binary_sensor.noaa_sgx_active_alerts
+        entity_id: binary_sensor.noaa_ilm_active_alerts
         state: 'off'
     action:
       - service: notify.mobile_app
@@ -487,10 +487,10 @@ automation:
           title: "🏖️ Perfect Beach Day!"
           message: >
             Great conditions for beach activities:
-            Temperature: {{ states('sensor.noaa_sgx_temperature') }}°F
-            Rip Current Risk: {{ states('sensor.noaa_sgx_rip_current_risk') }}
-            Surf Height: {{ states('sensor.noaa_sgx_surf_height') }} ft
-            Water Temp: {{ states('sensor.noaa_sgx_water_temperature') }}°F
+            Temperature: {{ states('sensor.noaa_ilm_temperature') }}°F
+            Rip Current Risk: {{ states('sensor.noaa_ilm_rip_current_risk') }}
+            Surf Height: {{ states('sensor.noaa_ilm_surf_height') }} ft
+            Water Temp: {{ states('sensor.noaa_ilm_water_temperature') }}°F
           data:
             actions:
               - action: "VIEW_SURF_CONDITIONS"
@@ -505,8 +505,8 @@ automation:
     trigger:
       - platform: state
         entity_id: 
-          - binary_sensor.noaa_sgx_severe_weather_alert
-          - binary_sensor.noaa_sgx_flood_winter_alert
+          - binary_sensor.noaa_ilm_severe_weather_alert
+          - binary_sensor.noaa_ilm_flood_winter_alert
         to: 'on'
     action:
       # Close automated blinds/shades
@@ -553,11 +553,11 @@ script:
         data:
           message: >
             Current conditions: 
-            Temperature {{ states('sensor.noaa_sgx_temperature') }} degrees, 
-            feels like {{ states('sensor.noaa_sgx_feels_like') }} degrees.
-            {{ states('sensor.noaa_sgx_sky_conditions') }} skies.
-            Wind {{ states('sensor.noaa_sgx_wind_speed') }} miles per hour from the {{ states('sensor.noaa_sgx_wind_direction') }}.
-            {% if is_state('binary_sensor.noaa_sgx_active_alerts', 'on') %}
+            Temperature {{ states('sensor.noaa_ilm_temperature') }} degrees, 
+            feels like {{ states('sensor.noaa_ilm_feels_like') }} degrees.
+            {{ states('sensor.noaa_ilm_sky_conditions') }} skies.
+            Wind {{ states('sensor.noaa_ilm_wind_speed') }} miles per hour from the {{ states('sensor.noaa_ilm_wind_direction') }}.
+            {% if is_state('binary_sensor.noaa_ilm_active_alerts', 'on') %}
               Alert: {{ state_attr('sensor.noaa_weather_active_nws_alerts', 'total_alerts') }} weather alerts are currently active.
             {% endif %}
 ```
@@ -579,7 +579,7 @@ script:
             Aurora Visibility: {{ states('sensor.noaa_dlh_aurora_visibility_probability') }}%
             Expected at: {{ states('sensor.noaa_dlh_aurora_next_time') }}
             {% endif %}
-            Solar Radiation: {{ states('sensor.noaa_sgx_solar_radiation_storm_alerts') }}
+            Solar Radiation: {{ states('sensor.noaa_ilm_solar_radiation_storm_alerts') }}
 ```
 
 #### Morning Weather Briefing
@@ -594,14 +594,14 @@ script:
           title: "☀️ Good Morning - Weather Briefing"
           message: >
             **Current Conditions:**
-            🌡️ {{ states('sensor.noaa_sgx_weather_temperature') }}°F (feels like {{ states('sensor.noaa_sgx_feels_like') }}°F)
-            💨 Wind {{ states('sensor.noaa_sgx_weather_wind_speed') }} mph
-            ☁️ {{ states('sensor.noaa_sgx_weather_sky_conditions') }}
+            🌡️ {{ states('sensor.noaa_ilm_weather_temperature') }}°F (feels like {{ states('sensor.noaa_ilm_feels_like') }}°F)
+            💨 Wind {{ states('sensor.noaa_ilm_weather_wind_speed') }} mph
+            ☁️ {{ states('sensor.noaa_ilm_weather_sky_conditions') }}
             
             **Beach Conditions:**
-            🌊 Surf: {{ states('sensor.noaa_sgx_surf_height') }} ft
-            🏊 Rip Current Risk: {{ states('sensor.noaa_sgx_rip_current_risk') }}
-            🌡️ Water: {{ states('sensor.noaa_sgx_water_temperature') }}°F
+            🌊 Surf: {{ states('sensor.noaa_ilm_surf_height') }} ft
+            🏊 Rip Current Risk: {{ states('sensor.noaa_ilm_rip_current_risk') }}
+            🌡️ Water: {{ states('sensor.noaa_ilm_water_temperature') }}°F
             
             **Alerts:**
             {% if is_state('binary_sensor.noaa_weather_active_nws_alerts', 'on') %}
@@ -620,7 +620,7 @@ These examples demonstrate how to create effective dashboard cards organized by 
 #### Weather Alerts Card (NOAA Weather [OFFICE] Group)
 ```yaml
 type: entities
-title: "🚨 NWS Active Alerts - San Diego"
+title: "🚨 NWS Active Alerts - Wilmington"
 show_header_toggle: false
 state_color: true
 entities:
@@ -628,16 +628,16 @@ entities:
     name: "Active Alerts"
     icon: mdi:alert-circle
   - type: divider
-  - entity: binary_sensor.noaa_sgx_severe_weather_alert
+  - entity: binary_sensor.noaa_ilm_severe_weather_alert
     name: "Severe Weather"
     icon: mdi:weather-lightning
-  - entity: binary_sensor.noaa_sgx_flood_winter_alert
+  - entity: binary_sensor.noaa_ilm_flood_winter_alert
     name: "Flood/Winter"
     icon: mdi:weather-snowy-rainy
-  - entity: binary_sensor.noaa_sgx_heat_air_quality_alert
+  - entity: binary_sensor.noaa_ilm_heat_air_quality_alert
     name: "Heat/Air Quality"
     icon: mdi:sun-thermometer
-  - entity: binary_sensor.noaa_sgx_active_alerts
+  - entity: binary_sensor.noaa_ilm_active_alerts
     name: "Any Active Alerts"
     icon: mdi:bell-alert
 ```
@@ -645,19 +645,19 @@ entities:
 #### Beach Conditions Card (NOAA Surf Group)
 ```yaml
 type: entities
-title: "🏖️ Beach Conditions - San Diego"
+title: "🏖️ Beach Conditions - Wilmington"
 show_header_toggle: false
 entities:
-  - entity: sensor.noaa_sgx_rip_current_risk
+  - entity: sensor.noaa_ilm_rip_current_risk
     name: "Rip Current Risk"
     icon: mdi:waves
-  - entity: binary_sensor.noaa_sgx_unsafe_to_swim
+  - entity: binary_sensor.noaa_ilm_unsafe_to_swim
     name: "Safe to Swim"
     icon: mdi:swim
-  - entity: sensor.noaa_sgx_surf_height
+  - entity: sensor.noaa_ilm_surf_height
     name: "Surf Height"
     icon: mdi:wave
-  - entity: sensor.noaa_sgx_water_temperature
+  - entity: sensor.noaa_ilm_water_temperature
     name: "Water Temperature"
     icon: mdi:thermometer-water
 ```
@@ -669,50 +669,50 @@ cards:
   - type: markdown
     content: >
       <div style="display:flex;align-items:center;gap:14px;"> <img src="{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].icon
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].icon
       }}" width="56"> <div> <b>{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].name
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].name
       }} · {{
-      as_timestamp(state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].start_time)
+      as_timestamp(state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].start_time)
       | timestamp_custom('%a %m/%d') }}</b><br> <span
       style="font-size:1.4em;font-weight:700;"> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].temperature
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].temperature
       }}°{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].temperature_unit
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].temperature_unit
       }} </span><br> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[0].detailed_forecast
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[0].detailed_forecast
       }} </div></div>
   - type: markdown
     content: >
       <div style="display:flex;align-items:center;gap:14px;"> <img src="{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].icon
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].icon
       }}" width="56"> <div> <b>{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].name
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].name
       }} · {{
-      as_timestamp(state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].start_time)
+      as_timestamp(state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].start_time)
       | timestamp_custom('%a %m/%d') }}</b><br> <span
       style="font-size:1.4em;font-weight:700;"> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].temperature
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].temperature
       }}°{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].temperature_unit
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].temperature_unit
       }} </span><br> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[1].detailed_forecast
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[1].detailed_forecast
       }} </div></div>
   - type: markdown
     content: >
       <div style="display:flex;align-items:center;gap:14px;"> <img src="{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].icon
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].icon
       }}" width="56"> <div> <b>{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].name
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].name
       }} · {{
-      as_timestamp(state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].start_time)
+      as_timestamp(state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].start_time)
       | timestamp_custom('%a %m/%d') }}</b><br> <span
       style="font-size:1.4em;font-weight:700;"> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].temperature
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].temperature
       }}°{{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].temperature_unit
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].temperature_unit
       }} </span><br> {{
-      state_attr('sensor.noaa_sgx_weather_extended_forecast','periods')[2].detailed_forecast
+      state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].detailed_forecast
       }} </div></div>
 ```
 
@@ -729,13 +729,13 @@ entities:
     name: Geomagnetic Storm
     icon: mdi:earth
   - type: divider
-  - entity: sensor.aurora_visibility_probability_sgx
+  - entity: sensor.aurora_visibility_probability_ilm
     name: Aurora Probability
     icon: mdi:star-shooting
-  - entity: sensor.aurora_next_time_sgx
+  - entity: sensor.aurora_next_time_ilm
     name: Next Aurora
     icon: mdi:clock-outline
-  - entity: sensor.aurora_duration_sgx
+  - entity: sensor.aurora_duration_ilm
     name: Duration
     icon: mdi:timer-outline
   - type: divider
@@ -768,14 +768,14 @@ cards:
     cards:
       - type: conditional
         conditions:
-          - entity: binary_sensor.noaa_sgx_weather_active_alerts
+          - entity: binary_sensor.noaa_ilm_weather_active_alerts
             state: 'on'
         card:
           type: markdown
           content: |
             ## ⚠️ ACTIVE WEATHER ALERTS
-            **{{ state_attr('sensor.noaa_weather_active_sgx_weather_alerts', 'total_alerts') }} Alert(s)**
-            {{ state_attr('sensor.noaa_weather_active_sgx_weather_alerts', 'summary') }}
+            **{{ state_attr('sensor.noaa_weather_active_ilm_weather_alerts', 'total_alerts') }} Alert(s)**
+            {{ state_attr('sensor.noaa_weather_active_ilm_weather_alerts', 'summary') }}
           card_mod:
             style: |
               ha-card {
@@ -785,7 +785,7 @@ cards:
       
       - type: conditional
         conditions:
-          - entity: binary_sensor.noaa_sgx_weather_unsafe_to_swim
+          - entity: binary_sensor.noaa_ilm_weather_unsafe_to_swim
             state: 'on'
         card:
           type: markdown
@@ -804,7 +804,7 @@ cards:
   - type: horizontal-stack
     cards:
       - type: gauge
-        entity: sensor.noaa_sgx_weather_temperature
+        entity: sensor.noaa_ilm_weather_temperature
         name: "Temperature"
         min: 0
         max: 120
@@ -814,7 +814,7 @@ cards:
           red: 95
       
       - type: gauge
-        entity: sensor.noaa_sgx_weather_humidity
+        entity: sensor.noaa_ilm_weather_humidity
         name: "Humidity"
         min: 0
         max: 100
@@ -824,7 +824,7 @@ cards:
           red: 80
       
       - type: gauge
-        entity: sensor.noaa_sgx_space_planetary_k_index
+        entity: sensor.noaa_ilm_space_planetary_k_index
         name: "Kp Index"
         min: 0
         max: 9
@@ -837,21 +837,21 @@ cards:
   - type: entities
     title: "Weather Details"
     entities:
-      - sensor.noaa_sgx_weather_feels_like
-      - sensor.noaa_sgx_weather_wind_speed
-      - sensor.noaa_sgx_weather_barometric_pressure
-      - sensor.noaa_sgx_weather_sky_conditions
+      - sensor.noaa_ilm_weather_feels_like
+      - sensor.noaa_ilm_weather_wind_speed
+      - sensor.noaa_ilm_weather_barometric_pressure
+      - sensor.noaa_ilm_weather_sky_conditions
   
   # Fourth row - Space weather images
   - type: horizontal-stack
     cards:
       - type: picture-entity
-        entity: image.noaa_sgx_space_geoelectric_field_image
+        entity: image.noaa_ilm_space_geoelectric_field_image
         name: "Geomagnetic Field"
         show_state: false
       
       - type: picture-entity
-        entity: image.noaa_sgx_space_aurora_forecast_image
+        entity: image.noaa_ilm_space_aurora_forecast_image
         name: "Aurora Forecast"
         show_state: false
 
@@ -865,17 +865,17 @@ show_name: true
 show_state: true
 columns: 4
 entities:
-  - entity: sensor.noaa_sgx_weather_temperature
+  - entity: sensor.noaa_ilm_weather_temperature
     name: "Temp"
-  - entity: sensor.noaa_sgx_weather_wind_speed
+  - entity: sensor.noaa_ilm_weather_wind_speed
     name: "Wind"
   - entity: sensor.noaa_surf_surf_height
     name: "Surf"
-  - entity: binary_sensor.noaa_sgx_unsafe_to_swim
+  - entity: binary_sensor.noaa_ilm_unsafe_to_swim
     name: "Safe Swim"
-  - entity: sensor.noaa_sgx_space_planetary_k_index_rating
+  - entity: sensor.noaa_ilm_space_planetary_k_index_rating
     name: "Kp Index"
-  - entity: binary_sensor.noaa_sgx_active_alerts
+  - entity: binary_sensor.noaa_ilm_active_alerts
     name: "Alerts"
   - entity: sensor.noaa_weather_hurricane_activity
     name: "Hurricanes"
@@ -889,21 +889,21 @@ type: vertical-stack
 cards:
   - type: markdown
     content: |
-      # 📍 San Diego Weather
-      Updated: {{ as_timestamp(states.sensor.noaa_sgx_temperature.last_changed) | timestamp_custom('%I:%M %p') }}
+      # 📍 Wilmington Weather
+      Updated: {{ as_timestamp(states.sensor.noaa_ilm_temperature.last_changed) | timestamp_custom('%I:%M %p') }}
   
   - type: entities
     entities:
-      - entity: sensor.noaa_sgx_weather_temperature
+      - entity: sensor.noaa_ilm_weather_temperature
         name: "🌡️ Temperature"
-      - entity: sensor.noaa_sgx_weather_feels_like
+      - entity: sensor.noaa_ilm_weather_feels_like
         name: "🤒 Feels Like"
-      - entity: sensor.noaa_sgx_weather_sky_conditions
+      - entity: sensor.noaa_ilm_weather_sky_conditions
         name: "☁️ Conditions"
   
   - type: conditional
     conditions:
-      - entity: binary_sensor.noaa_sgx_weather_active_alerts
+      - entity: binary_sensor.noaa_ilm_weather_active_alerts
         state: 'on'
     card:
       type: button
@@ -921,11 +921,11 @@ cards:
 type: markdown
 title: "📝 Forecast Discussion"
 content: |
-  **{{ state_attr('sensor.noaa_sgx_forecast_discussion', 'office') }}** - Updated {{ state_attr('sensor.noaa_sgx_forecast_discussion', 'issued_time') }}
+  **{{ state_attr('sensor.noaa_ilm_forecast_discussion', 'office') }}** - Updated {{ state_attr('sensor.noaa_ilm_forecast_discussion', 'issued_time') }}
   
-  {{ states('sensor.noaa_sgx_forecast_discussion') }}
+  {{ states('sensor.noaa_ilm_forecast_discussion') }}
   
-  [Read Full Discussion]({{ state_attr('sensor.noaa_sgx_forecast_discussion', 'product_link') }})
+  [Read Full Discussion]({{ state_attr('sensor.noaa_ilm_forecast_discussion', 'product_link') }})
 ```
 
 ## Troubleshooting & FAQ
@@ -962,7 +962,7 @@ content: |
 A: Yes. Adding `noaa_it_all:` to `configuration.yaml` provides global sensors (Kp Index, Geomagnetic Storm, Hurricane data) without location-specific features.
 
 **Q: How do I find my NWS forecast office code?**
-A: Visit [weather.gov](https://www.weather.gov/) and search for your location. The three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?CityName=San+Diego&state=CA&site=SGX`).
+A: Visit [weather.gov](https://www.weather.gov/) and search for your location. The three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?CityName=San+Diego&state=CA&site=ILM`).
 
 **Q: Why don't I see aurora predictions?**
 A: Aurora predictions are location-specific and require Config Flow setup. Also, aurora is only visible at high Kp levels for southern latitudes — check the Kp Index value and your office's magnetic latitude.
