@@ -11,7 +11,7 @@
 ![Tracked Installs](https://img.shields.io/endpoint?url=https://analytics.home-assistant.io/api/badge_custom_integrations_json/noaa_it_all.json&style=for-the-badge&logo=home-assistant&label=Tracked%20Installs&color=gray)
 
 <p align="center">
-  <img src="https://github.com/dawg-io/noaa_it_all/blob/main/custom_components/noaa_it_all/brand/icon.png" width="120"><br>
+  <img src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/icon.png" width="120" alt="NOAA It All"><br>
 </p>
 
 This Home Assistant integration provides comprehensive NOAA data through sensors and images, with the latest addition of location-specific rip current and surf zone forecasts.
