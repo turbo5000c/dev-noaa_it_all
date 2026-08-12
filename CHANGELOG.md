@@ -5,7 +5,28 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.13] - Current
+## [0.4.5] - 2026-08-12
+
+### Fixed
+- README header image now renders. It pointed at a `github.com/.../blob/...` URL, which serves an
+  HTML page rather than an image, so the logo appeared broken on GitHub and on the integration's
+  HACS page (`hacs.json` sets `render_readme`). Now uses `raw.githubusercontent.com`.
+- Corrected the integration domain throughout `.github/copilot-instructions.md`, which referenced a
+  non-existent `custom_components/noaa_integration/` path. Every documented command that named a
+  path was broken as a result. Also refreshed the file-tree listing, which was missing the
+  coordinator, config flow, parsers and the entire `sensors/` package.
+
+### Added
+- `TestReadmeImages` regression test that fails on any `github.com` `/blob/` image URL in the
+  README, so the above cannot silently return.
+
+### Notes
+- No functional changes to the integration; this release is documentation and test coverage only.
+- The HACS store-list icon placeholder is unaffected and is not fixable here. It is served from
+  `brands.home-assistant.io`, backed by `home-assistant/brands`, which stopped accepting new
+  custom-integration submissions on 2026-03-03. It resolves when HACS ships hacs/frontend#937.
+
+## [0.3.13]
 
 ### Added
 - Dedicated `NOAA Hurricane` device that groups all global hurricane / NHC entities (Hurricane Alerts, Hurricane Activity, Hurricane Outlook Image, GOES Air Mass, GOES GeoColor) into a single device, independent of any configured NWS office.
