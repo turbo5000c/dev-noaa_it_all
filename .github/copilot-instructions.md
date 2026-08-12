@@ -23,9 +23,24 @@ NOAA Integration is a Home Assistant custom component that provides NOAA solar a
 
 ### HACS Validation
 - **CRITICAL**: The main validation is through HACS workflow in `.github/workflows/hacs-validate.yml`
-- Run validation manually: Workflow is triggered via `workflow_dispatch` (manual trigger)
+- Runs automatically on push, pull request, and a daily cron; also available via `workflow_dispatch`
 - **TIMING**: HACS validation typically takes 2-5 minutes in CI. NEVER CANCEL.
 - All changes must pass HACS validation to be accepted
+
+### Branding / icons -- READ BEFORE TOUCHING
+**STOP.** If you are here because the HACS store list shows "icon not available": that is an
+upstream HACS bug and **no change to this repository can fix it**. Three attempts have already
+been made and reverted. Read [`docs/BRANDING.md`](../docs/BRANDING.md) before doing anything.
+
+The short version:
+- Brand images live in `custom_components/noaa_it_all/brand/`. The folder name must be exactly
+  `brand` (singular) -- HA core checks `"brand" in top_level_files`. Renaming it breaks branding.
+- Our icons already render correctly everywhere inside Home Assistant. Only the HACS store list
+  is affected, because HACS still reads the legacy `brands.home-assistant.io` CDN, which is
+  closed to new custom integrations.
+- Do not add a root `icon.png` "for HACS", do not rename `brand/`, and do not open a PR against
+  `home-assistant/brands` -- it is auto-closed by a bot.
+- Tracking: `hacs/frontend#937` is the PR that would ship the fix.
 
 ### Comprehensive Validation (Recommended)
 For thorough validation of your changes, run all essential checks:
@@ -77,7 +92,7 @@ python3 -c "import json; print('Valid:', json.load(open('custom_components/noaa_
 ```
 
 ### Configuration Files
-- `.github/workflows/hacs-validate.yml` - HACS validation workflow (currently manual trigger only)
+- `.github/workflows/hacs-validate.yml` - HACS validation workflow (push, PR, daily cron, manual)
 - `hacs.json` - HACS integration configuration
 - `README.md` - Basic setup instructions for users
 
@@ -177,6 +192,6 @@ python3 -c "import json; print('Valid:', json.load(open('custom_components/noaa_
 ### CI/CD Pipeline
 - HACS validation in GitHub Actions: 2-5 minutes - **NEVER CANCEL**
 - No additional build or test phases required
-- Workflow runs on manual trigger (`workflow_dispatch`)
+- Workflow runs on push, pull request, and a daily cron (plus `workflow_dispatch`)
 
 **CRITICAL REMINDER**: Always allow sufficient time for validation. Set timeouts of 10+ minutes for any CI operations. This integration has no traditional build process but relies on validation workflows that must complete successfully.
