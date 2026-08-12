@@ -28,19 +28,20 @@ NOAA Integration is a Home Assistant custom component that provides NOAA solar a
 - All changes must pass HACS validation to be accepted
 
 ### Branding / icons -- READ BEFORE TOUCHING
-**STOP.** If you are here because the HACS store list shows "icon not available": that is an
-upstream HACS bug and **no change to this repository can fix it**. Three attempts have already
-been made and reverted. Read [`docs/BRANDING.md`](../docs/BRANDING.md) before doing anything.
+Three attempts to fix the HACS store-list icon have already been made and reverted. Read
+[`docs/BRANDING.md`](../docs/BRANDING.md) before doing anything here.
 
 The short version:
-- Brand images live in `custom_components/noaa_it_all/brand/`. The folder name must be exactly
-  `brand` (singular) -- HA core checks `"brand" in top_level_files`. Renaming it breaks branding.
-- Our icons already render correctly everywhere inside Home Assistant. Only the HACS store list
-  is affected, because HACS still reads the legacy `brands.home-assistant.io` CDN, which is
-  closed to new custom integrations.
-- Do not add a root `icon.png` "for HACS", do not rename `brand/`, and do not open a PR against
-  `home-assistant/brands` -- it is auto-closed by a bot.
-- Tracking: `hacs/frontend#937` is the PR that would ship the fix.
+- Two separate systems. Icons **inside Home Assistant** come from our local
+  `custom_components/noaa_it_all/brand/` folder and work. The **HACS store list** icon comes from
+  the `home-assistant/brands` CDN, keyed on domain, and `noaa_it_all` is not in that repo -- which
+  is why it shows a placeholder while other custom integrations (alarmo, frigate) show icons.
+- The folder name must be exactly `brand` (singular) -- HA core checks
+  `"brand" in top_level_files`. Renaming it to `brands/` breaks branding entirely.
+- Being in the HACS default store does not grant a CDN icon. We are already in `hacs/default`.
+- Do not add a root `icon.png` "for HACS" -- nothing reads it for that.
+- The only fix available now is getting `custom_integrations/noaa_it_all/` merged into
+  `home-assistant/brands`. Otherwise it waits on `hacs/frontend#937`.
 
 ### Comprehensive Validation (Recommended)
 For thorough validation of your changes, run all essential checks:

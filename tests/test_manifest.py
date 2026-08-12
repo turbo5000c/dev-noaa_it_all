@@ -157,23 +157,12 @@ def _png_corner_alphas(path, width, height):
     )
 
 
-# Expected brand asset dimensions (matches HA brand review guidelines).
-# The logos are a wordmark lockup (icon + "NOAA It All"), trimmed to content.
+# Expected brand asset dimensions (matches HA brand review guidelines)
 _BRAND_ASSETS = {
     "icon.png": (256, 256),
     "icon@2x.png": (512, 512),
-    "logo.png": (1108, 256),
-    "logo@2x.png": (2216, 512),
-    "dark_logo.png": (1108, 256),
-    "dark_logo@2x.png": (2216, 512),
-}
-
-# Dark variants that must carry genuinely different artwork from their light
-# counterpart. A dark file that is a byte-for-byte copy is dead weight: HA's
-# fallback chain already resolves a missing dark_* to the light file.
-_DARK_PAIRS = {
-    "dark_logo.png": "logo.png",
-    "dark_logo@2x.png": "logo@2x.png",
+    "logo.png": (768, 256),
+    "logo@2x.png": (1536, 512),
 }
 
 
@@ -228,20 +217,6 @@ class TestBrandAssets(unittest.TestCase):
                     alpha, 0,
                     f"brand/{filename}: corner pixel is not transparent (alpha={alpha})",
                 )
-
-    def test_dark_variants_are_not_copies(self):
-        """Dark assets must differ from their light counterpart, or they are dead weight."""
-        for dark, light in _DARK_PAIRS.items():
-            with open(os.path.join(self._BRAND_DIR, dark), "rb") as fh:
-                dark_bytes = fh.read()
-            with open(os.path.join(self._BRAND_DIR, light), "rb") as fh:
-                light_bytes = fh.read()
-            self.assertNotEqual(
-                dark_bytes, light_bytes,
-                f"brand/{dark} is byte-identical to brand/{light}. HA already falls back "
-                f"to {light} when {dark} is absent -- ship real dark artwork or no file at all. "
-                "See docs/BRANDING.md.",
-            )
 
     def test_root_icon_exists(self):
         """icon.png at the repository root is the README header image source.
