@@ -221,8 +221,9 @@ class TestBrandAssets(unittest.TestCase):
     def test_root_icon_exists(self):
         """icon.png at the repository root is the README header image source.
 
-        It is NOT read by HACS or Home Assistant for any store or UI display --
-        see docs/BRANDING.md for what actually drives those icons.
+        It is NOT read by HACS or Home Assistant for any store or UI display.
+        Those come from custom_components/noaa_it_all/brand/ (inside HA) and from
+        the home-assistant/brands CDN (the HACS store list).
         """
         root_icon = os.path.join(_REPO, "icon.png")
         self.assertTrue(os.path.isfile(root_icon), "icon.png missing from repository root")
