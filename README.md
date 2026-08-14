@@ -235,6 +235,10 @@ Tsunami monitoring from the National Tsunami Warning Center (NTWC, Palmer AK) an
   - Watches and Information Statements deliberately leave it off — a Watch means a tsunami is merely possible, and firing an evacuation automation on one trains people to ignore it
 - **Data Stale**: Turns on when the feed has stopped answering *(binary_sensor.noaa_tsunami_data_stale)*
   - Attributes include `last_success`, `age_minutes`, and `stale_after_minutes`
+- **Map**: The tsunami map, switching source depending on what is happening *(image.noaa_tsunami_map)*
+  - During an event: the **energy propagation forecast** from the warning center that issued it — the RIFT model's directional beam of wave energy spreading across the ocean
+  - The rest of the time: the **DART buoy network map**, showing the deep-ocean pressure recorders that detect a tsunami in the first place
+  - The `map_type` and `source_url` attributes say which one you are looking at, and `active_center` names the center with a live alert
 
 **Coastal offices only** — created when your configured office is on a tsunami-exposed coast:
 
@@ -287,6 +291,9 @@ Visual representations of current conditions:
 - **Outlook Image** — 2-day tropical weather outlook from NHC *(image.noaa_weather_hurricane_outlook_image)*
 - **GOES Air Mass** — GOES-19 Air Mass RGB satellite imagery *(image.noaa_weather_hurricane_goes_air_mass)*
 - **GOES Geocolor** — GOES-19 GeoColor satellite imagery *(image.noaa_weather_hurricane_goes_geocolor)*
+
+**NOAA Tsunami** (global, created once):
+- **Map** — Energy propagation forecast during an event, DART buoy network map otherwise *(image.noaa_tsunami_map)*
 
 **NOAA {OFFICE} Weather** (one per configured office):
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
@@ -886,6 +893,17 @@ card:
       name: "Last Bulletin"
 ```
 
+The map is a standard `picture-entity`, and because it falls back to the DART network it is worth showing all the time rather than hiding it behind a condition:
+
+```yaml
+type: picture-entity
+entity: image.noaa_tsunami_map
+camera_view: auto
+show_state: false
+show_name: true
+name: "Tsunami Map"
+```
+
 Pair it with an always-visible health card, so a feed outage is never invisible:
 
 ```yaml
@@ -1328,6 +1346,8 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
     forecast point nearest your configured coordinates
   - Parsed with the Python standard library only — no new dependency, and the XML is size-capped
     and DOCTYPE-refused before parsing
+  - Map imagery comes from the warning centers' energy propagation forecasts during an event and
+    from the NDBC DART buoy network map otherwise
 - **Rip Current/Surf Data**: Location-specific NWS Surf Zone Forecasts (SRF products)
 - **Weather Observations**: National Weather Service observation stations (weather.gov API)
   - Real-time temperature, humidity, wind, pressure, and sky conditions

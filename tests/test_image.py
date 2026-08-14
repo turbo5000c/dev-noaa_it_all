@@ -276,6 +276,43 @@ class TestGOESImageEntities(unittest.TestCase):
         self.assertIn((DOMAIN, HURRICANE_DEVICE_ID), entity.device_info["identifiers"])
 
 
+class TestTsunamiMapImageEntityIdentity(unittest.TestCase):
+    """Identity checks only.
+
+    ``noaa_it_all.parsers`` is mocked out in this module, so the source-
+    selection logic is exercised in test_tsunami_sensors.py instead, where the
+    real parsers are importable.
+    """
+
+    def test_unique_id(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertEqual(entity.unique_id, "noaa_tsunami_map")
+
+    def test_name(self):
+        # Local name only; HA prepends "NOAA Tsunami".
+        from noaa_it_all.image import TsunamiMapImageEntity
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertEqual(entity.name, "Map")
+
+    def test_has_entity_name(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        self.assertTrue(TsunamiMapImageEntity._attr_has_entity_name)
+
+    def test_device_info_uses_tsunami_device(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        from noaa_it_all.const import DOMAIN, TSUNAMI_DEVICE_ID
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertIn((DOMAIN, TSUNAMI_DEVICE_ID), entity.device_info["identifiers"])
+
+    def test_defaults_to_dart_before_any_coordinator_data(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        from noaa_it_all.const import TSUNAMI_DART_MAP_URL
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertEqual(entity._source_url, TSUNAMI_DART_MAP_URL)
+        self.assertIn(TSUNAMI_DART_MAP_URL, entity.entity_picture)
+
+
 class TestTwoOfficeSetup(unittest.TestCase):
     """Verify entity structure when two NWS offices (ILM and SGX) are configured.
 

@@ -12,6 +12,7 @@ from .const import (
     HURRICANE_IMAGES_ADDED_KEY, HURRICANE_SENSORS_ADDED_KEY,
     TSUNAMI_COORDINATOR_KEY,
     TSUNAMI_SENSORS_ADDED_KEY, TSUNAMI_BINARY_SENSORS_ADDED_KEY,
+    TSUNAMI_IMAGES_ADDED_KEY,
     OFFICE_RADAR_SITES, OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
 )
 from .coordinator import (
@@ -185,6 +186,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             hass.data[DOMAIN].pop(HURRICANE_COORDINATOR_KEY, None)
             hass.data[DOMAIN].pop(TSUNAMI_SENSORS_ADDED_KEY, None)
             hass.data[DOMAIN].pop(TSUNAMI_BINARY_SENSORS_ADDED_KEY, None)
+            hass.data[DOMAIN].pop(TSUNAMI_IMAGES_ADDED_KEY, None)
             hass.data[DOMAIN].pop(TSUNAMI_COORDINATOR_KEY, None)
 
     return unload_ok

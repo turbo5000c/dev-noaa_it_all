@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `binary_sensor.noaa_tsunami_alert_active` — on for an active Warning or Advisory. Watches and
     Information Statements deliberately leave it off
   - `binary_sensor.noaa_tsunami_data_stale` — on when the feed has stopped answering
+  - `image.noaa_tsunami_map` — the wave energy propagation forecast from the issuing warning
+    center during an event, falling back to the NDBC DART buoy network map the rest of the time,
+    so the tile is never dead. `map_type`, `source_url` and `active_center` attributes report
+    which source is on screen
 - Location-specific tsunami entities on the same device, created only for the 26 coastal offices
   listed in `OFFICE_TSUNAMI_CENTERS`:
   - `sensor.noaa_tsunami_{office}_local_threat` — alert level for your own coordinates
@@ -49,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - XML is size-capped at 512 KB and refused outright if it carries a `DOCTYPE`, since
   `xml.etree.ElementTree` is not hardened against entity-expansion attacks and `defusedxml` is not
   a dependency here.
+- The map entity tries each image source in turn and treats a non-200 response or a non-image
+  content type as "fall through to the next" rather than an error, so an energy map that does not
+  exist for a given event quietly yields the DART map instead of a broken tile.
 - The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) get the six
   global entities and none of the location-specific ones.
 

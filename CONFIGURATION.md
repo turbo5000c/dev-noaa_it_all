@@ -157,6 +157,7 @@ coast.
 - `sensor.noaa_tsunami_last_message`
 - `binary_sensor.noaa_tsunami_alert_active`
 - `binary_sensor.noaa_tsunami_data_stale`
+- `image.noaa_tsunami_map`
 - `sensor.noaa_tsunami_{office}_local_threat` *(coastal offices only)*
 - `sensor.noaa_tsunami_{office}_wave_arrival` *(coastal offices only)*
 - `sensor.noaa_tsunami_{office}_evacuation_status` *(coastal offices only)*

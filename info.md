@@ -23,6 +23,7 @@ Comprehensive NOAA data integration providing real-time space weather, hurricane
 - **Wave Arrival Time** - Estimated arrival at the forecast point nearest you, for coastal offices
 - **Source Earthquake** - Magnitude, depth and epicenter of the quake that caused it
 - **Data Stale Sensor** - Turns on when the feed stops answering, so a silent outage never reads as an all-clear
+- **Tsunami Map** - Wave energy propagation forecast during an event, DART buoy network map the rest of the time
 - **Polled every 2 minutes** - a near-field tsunami can reach the coast in under fifteen
 
 ### 🏄 Surf & Ocean Conditions (Location-Specific)

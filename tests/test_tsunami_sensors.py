@@ -35,6 +35,11 @@ _ha_entity.DeviceInfo = dict
 _ha_binary_sensor = MagicMock()
 _ha_binary_sensor.BinarySensorEntity = type("BinarySensorEntity", (), {})
 
+_ha_image = MagicMock()
+_ha_image.ImageEntity = type("ImageEntity", (), {
+    "__init__": lambda self, hass: setattr(self, "hass", hass),
+})
+
 _MOCK_MODULES = {
     "homeassistant": MagicMock(),
     "homeassistant.helpers": MagicMock(),
@@ -44,6 +49,7 @@ _MOCK_MODULES = {
     "homeassistant.helpers.aiohttp_client": MagicMock(),
     "homeassistant.components": MagicMock(),
     "homeassistant.components.binary_sensor": _ha_binary_sensor,
+    "homeassistant.components.image": _ha_image,
     "homeassistant.const": MagicMock(),
     "homeassistant.config_entries": MagicMock(),
     "homeassistant.core": MagicMock(),
@@ -475,6 +481,114 @@ class TestTsunamiDataStaleBinarySensor(unittest.TestCase):
 
     def test_device_info(self):
         self.assertEqual(self._sensor(None).device_info["name"], "NOAA Tsunami")
+
+
+class TestTsunamiMapImageEntity(unittest.TestCase):
+    """The map switches source depending on whether anything is happening."""
+
+    def _entity(self, data):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        return TsunamiMapImageEntity(MagicMock(), _make_coordinator(data))
+
+    def test_name_and_unique_id(self):
+        entity = self._entity(None)
+        self.assertEqual(entity.name, "Map")
+        self.assertEqual(entity.unique_id, "noaa_tsunami_map")
+
+    def test_has_entity_name(self):
+        self.assertTrue(self._entity(None)._attr_has_entity_name)
+
+    def test_device_info(self):
+        self.assertEqual(self._entity(None).device_info["name"], "NOAA Tsunami")
+
+    def test_quiet_shows_dart_network(self):
+        """No alert means no energy map exists, so DART is the only candidate."""
+        entity = self._entity(_tsunami_payload("tsunami_quiet.json"))
+        candidates = entity._candidate_sources()
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0][0], "DART Network")
+
+    def test_no_data_shows_dart_network(self):
+        entity = self._entity(None)
+        self.assertEqual(entity._candidate_sources()[0][0], "DART Network")
+        self.assertIsNone(entity._active_center())
+
+    def test_active_alert_prefers_energy_map(self):
+        entity = self._entity(_tsunami_payload())
+        candidates = entity._candidate_sources()
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(candidates[0][0], "NTWC Energy Forecast")
+        self.assertIn("energy", candidates[0][1])
+
+    def test_dart_always_remains_the_last_candidate(self):
+        """However the energy map resolves, there is always a fallback."""
+        for payload in (None, _tsunami_payload(), _tsunami_payload("tsunami_quiet.json")):
+            entity = self._entity(payload)
+            self.assertEqual(entity._candidate_sources()[-1][0], "DART Network")
+
+    def test_active_center_from_products(self):
+        entity = self._entity(_tsunami_payload())
+        self.assertEqual(entity._active_center(), "NTWC")
+
+    def test_active_center_falls_back_to_sender_name(self):
+        """An alert can land before the center's Atom feed has been fetched."""
+        data = {
+            "features": _load_fixture("tsunami_alerts.json")["features"],
+            "products": [],
+            "cap": None,
+        }
+        self.assertEqual(self._entity(data)._active_center(), "NTWC")
+
+    def test_active_center_recognises_ptwc_sender(self):
+        """Pacific alerts come from PTWC, spelled out the same way."""
+        features = [{
+            "properties": {
+                "event": "Tsunami Warning",
+                "status": "Actual",
+                "areaDesc": "Oahu",
+                "senderName": "NWS Pacific Tsunami Warning Center",
+            }
+        }]
+        data = {"features": features, "products": [], "cap": None}
+        entity = self._entity(data)
+        self.assertEqual(entity._active_center(), "PTWC")
+        self.assertEqual(
+            entity._candidate_sources()[0][0], "PTWC Energy Forecast"
+        )
+
+    def test_every_sender_hint_maps_to_a_known_center(self):
+        from noaa_it_all.const import (
+            TSUNAMI_CENTER_SENDER_HINTS, TSUNAMI_ATOM_URLS,
+        )
+        self.assertEqual(
+            set(TSUNAMI_CENTER_SENDER_HINTS), set(TSUNAMI_ATOM_URLS)
+        )
+
+    def test_test_message_does_not_select_an_energy_map(self):
+        """A monthly comms test is not an event, so there is no energy map."""
+        data = {
+            "features": _load_fixture("tsunami_test_message.json")["features"],
+            "products": [],
+            "cap": None,
+        }
+        entity = self._entity(data)
+        self.assertIsNone(entity._active_center())
+        self.assertEqual(entity._candidate_sources()[0][0], "DART Network")
+
+    def test_attributes_report_which_map_is_showing(self):
+        entity = self._entity(_tsunami_payload())
+        attrs = entity.extra_state_attributes
+        self.assertIn("map_type", attrs)
+        self.assertIn("source_url", attrs)
+        self.assertEqual(attrs["active_center"], "NTWC")
+
+    def test_entity_picture_is_cache_busted(self):
+        entity = self._entity(None)
+        self.assertIn("?t=", entity.entity_picture)
+
+    def test_every_center_has_an_energy_map_url(self):
+        from noaa_it_all.const import TSUNAMI_ATOM_URLS, TSUNAMI_ENERGY_MAP_URLS
+        self.assertEqual(set(TSUNAMI_ATOM_URLS), set(TSUNAMI_ENERGY_MAP_URLS))
 
 
 class TestTsunamiCoastalOfficeGating(unittest.TestCase):

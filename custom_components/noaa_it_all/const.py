@@ -32,6 +32,7 @@ TSUNAMI_DEVICE_NAME = "NOAA Tsunami"
 
 TSUNAMI_SENSORS_ADDED_KEY = "_tsunami_sensors_added"
 TSUNAMI_BINARY_SENSORS_ADDED_KEY = "_tsunami_binary_sensors_added"
+TSUNAMI_IMAGES_ADDED_KEY = "_tsunami_images_added"
 TSUNAMI_COORDINATOR_KEY = "_tsunami_coordinator"
 
 # Configuration keys
@@ -89,6 +90,36 @@ TSUNAMI_ATOM_URLS = {
 TSUNAMI_CAP_URLS = {
     "NTWC": "https://www.tsunami.gov/events/xml/PAAQCAP.xml",
     "PTWC": "https://www.tsunami.gov/events/xml/PHEBCAP.xml",
+}
+
+# Tsunami map imagery.
+#
+# Two sources, because neither alone is any good. The energy propagation
+# forecast is *the* tsunami map — the RIFT model's directional beam of wave
+# energy fanning across the ocean — but the warning centers only produce one
+# during an actual event, which on a normal install means never. The DART
+# buoy network map is always available but shows detection coverage rather
+# than threat. TsunamiMapImageEntity serves the energy map when there is one
+# and the DART map the rest of the time, so the tile is never dead.
+#
+# NOTE: these URLs could not be verified against live NOAA when written — the
+# development sandbox blocks every NOAA host. The entity treats a failed fetch
+# as "fall through to the next source" rather than an error, so a wrong URL
+# degrades to a blank or a fallback image instead of breaking. If you are
+# correcting one, it is a one-line change here and nothing else moves.
+TSUNAMI_ENERGY_MAP_URLS = {
+    "NTWC": "https://www.tsunami.gov/images/energy/PAAQ_energy.png",
+    "PTWC": "https://www.tsunami.gov/images/energy/PHEB_energy.png",
+}
+TSUNAMI_DART_MAP_URL = "https://www.ndbc.noaa.gov/images/dart/dart_map.png"
+
+# How each center identifies itself in the NWS alert ``senderName`` field.
+# Needed to attribute a live alert to a center before that center's Atom feed
+# has been fetched — the alert spells the name out ("NWS National Tsunami
+# Warning Center") rather than using the four-letter abbreviation.
+TSUNAMI_CENTER_SENDER_HINTS = {
+    "NTWC": ("NTWC", "NATIONAL TSUNAMI WARNING CENTER"),
+    "PTWC": ("PTWC", "PACIFIC TSUNAMI WARNING CENTER"),
 }
 
 # How many quiet update cycles to skip between warning-center polls.
