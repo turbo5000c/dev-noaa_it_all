@@ -15,7 +15,7 @@ from .const import (
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
     OFFICE_RADAR_SITES, REQUEST_TIMEOUT,
     TSUNAMI_DEVICE_ID, TSUNAMI_DEVICE_NAME, TSUNAMI_IMAGES_ADDED_KEY,
-    TSUNAMI_ENERGY_MAP_URLS, TSUNAMI_DART_MAP_URL,
+    TSUNAMI_ENERGY_MAP_URLS, TSUNAMI_DART_MAP_URLS,
     TSUNAMI_CENTER_SENDER_HINTS,
     TSUNAMI_SCAN_INTERVAL, TSUNAMI_THREAT_LEVELS,
 )
@@ -792,7 +792,7 @@ class TsunamiMapImageEntity(ImageEntity):
         self.hass = hass
         self._coordinator = coordinator
         self._map_type = 'DART Network'
-        self._source_url = TSUNAMI_DART_MAP_URL
+        self._source_url = TSUNAMI_DART_MAP_URLS[0]
         self._image_url = self.get_cache_busted_url()
 
     @property
@@ -863,7 +863,7 @@ class TsunamiMapImageEntity(ImageEntity):
             candidates.append(
                 (f'{center} Energy Forecast', TSUNAMI_ENERGY_MAP_URLS[center])
             )
-        candidates.append(('DART Network', TSUNAMI_DART_MAP_URL))
+        candidates.extend(('DART Network', url) for url in TSUNAMI_DART_MAP_URLS)
         return candidates
 
     def get_cache_busted_url(self):
@@ -920,8 +920,12 @@ class TsunamiMapImageEntity(ImageEntity):
                     content = await response.read()
                     self._map_type = map_type
                     self._source_url = base_url
-                    _LOGGER.debug(
-                        "Fetched tsunami %s map (%d bytes)", map_type, len(content)
+                    # Logged at info, not debug: several candidate URLs ship
+                    # unverified, and this line is how the working one gets
+                    # identified from a real install's log.
+                    _LOGGER.info(
+                        "Tsunami map served from %s (%s, %d bytes)",
+                        base_url, map_type, len(content),
                     )
                     return content
             except aiohttp.ClientError as e:

@@ -639,10 +639,23 @@ TSUNAMI_XML_MAX_BYTES = 512 * 1024
 _ATOM_NS = "{http://www.w3.org/2005/Atom}"
 _CAP_NS = "{urn:oasis:names:tc:emergency:cap:1.2}"
 
-#: Magnitude as written in tsunami product titles, e.g. "M 7.2" or "M7.2".
-_MAGNITUDE_RE = re.compile(r"\bM\s*=?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
-#: Depth as written in product summaries, e.g. "depth 35 km".
-_DEPTH_RE = re.compile(r"\bdepth\D{0,12}?(\d+(?:\.\d+)?)\s*(km|mi)\b", re.IGNORECASE)
+#: Magnitude, tried in order. The centers do not write it one way: a headline
+#: may say "M 7.2" while the body says "preliminary magnitude 7.2". The spelled
+#: out form is tried first, because a pattern anchored on a bare "M" would
+#: otherwise match the leading letter of "magnitude" and then fail on the
+#: letters that follow it — which is exactly what happened on a live feed.
+_MAGNITUDE_PATTERNS = (
+    re.compile(r"magnitude\s*(?:of\s*)?[:=]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
+    re.compile(r"\bM(?:\.?w)?\s*[:=]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
+)
+#: Sanity bounds. Anything outside this is a false positive, not a quake.
+_MAGNITUDE_RANGE = (0.0, 10.0)
+
+#: Depth, e.g. "depth 35 km", "depth of 35 km", "35 km deep".
+_DEPTH_PATTERNS = (
+    re.compile(r"\bdepth\D{0,12}?(\d+(?:\.\d+)?)\s*(km|mi)\b", re.IGNORECASE),
+    re.compile(r"(\d+(?:\.\d+)?)\s*(km|mi)\s+deep\b", re.IGNORECASE),
+)
 #: A decimal coordinate pair with hemisphere letters, e.g. "54.2N 161.5W".
 _COORD_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*([NS])[\s,]+(\d+(?:\.\d+)?)\s*([EW])", re.IGNORECASE
@@ -902,16 +915,24 @@ def summarize_tsunami_source(entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     summary = entry.get('summary') or ''
     haystack = f"{title} {summary}"
 
-    magnitude_match = _MAGNITUDE_RE.search(haystack)
-    if magnitude_match:
-        result['magnitude'] = float(magnitude_match.group(1))
+    for pattern in _MAGNITUDE_PATTERNS:
+        match = pattern.search(haystack)
+        if not match:
+            continue
+        value = float(match.group(1))
+        if _MAGNITUDE_RANGE[0] <= value <= _MAGNITUDE_RANGE[1]:
+            result['magnitude'] = value
+            break
 
-    depth_match = _DEPTH_RE.search(haystack)
-    if depth_match:
-        depth = float(depth_match.group(1))
-        if depth_match.group(2).lower() == 'mi':
+    for pattern in _DEPTH_PATTERNS:
+        match = pattern.search(haystack)
+        if not match:
+            continue
+        depth = float(match.group(1))
+        if match.group(2).lower() == 'mi':
             depth = round(depth * 1.60934, 1)
         result['depth_km'] = depth
+        break
 
     coord_match = _COORD_RE.search(haystack)
     if coord_match:
@@ -930,6 +951,31 @@ def summarize_tsunami_source(entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     result['origin_time'] = entry.get('updated')
 
     return result
+
+
+def find_source_earthquake(
+    entries: Optional[List[Dict[str, Any]]], max_scan: int = 12
+) -> Dict[str, Any]:
+    """Return the newest product that actually names an earthquake.
+
+    The most recent product is often a routine statement carrying no quake
+    parameters at all, so taking ``entries[0]`` and giving up leaves the sensor
+    blank while the answer sits one entry further down. This scans back until
+    it finds a magnitude, and falls back to the newest entry so callers still
+    get its region, title and link even when no magnitude is recoverable.
+
+    On a quiet day this is the most interesting thing the domain has to say:
+    the last earthquake the warning centers looked at and decided was harmless.
+    """
+    if not entries:
+        return summarize_tsunami_source(None)
+
+    for entry in entries[:max_scan]:
+        source = summarize_tsunami_source(entry)
+        if source['magnitude'] is not None:
+            return source
+
+    return summarize_tsunami_source(entries[0])
 
 
 def _cap_parameters(parent: ET.Element) -> Dict[str, str]:

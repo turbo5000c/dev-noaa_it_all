@@ -227,8 +227,9 @@ Tsunami monitoring from the National Tsunami Warning Center (NTWC, Palmer AK) an
   - Attributes include `alerts`, `alert_count`, `by_level`, `areas`, `issuing_centers`, `highest_severity`, `latest_issued`, and `last_test_message`
   - Reads `unknown` — not `None` — when no fetch has succeeded yet, so automations can tell "no threat" apart from "no data"
 - **Active Alerts**: How many tsunami alerts are in effect nationally *(sensor.noaa_tsunami_active_alerts)*
-- **Source Earthquake**: Preliminary magnitude of the quake behind the most recent product *(sensor.noaa_tsunami_source_earthquake)*
-  - Attributes include `depth_km`, `epicenter_latitude`, `epicenter_longitude`, `region`, `origin_time`, and the issuing `center`
+- **Source Earthquake**: Preliminary magnitude of the last earthquake the warning centers evaluated — **not** only ones that caused a tsunami *(sensor.noaa_tsunami_source_earthquake)*
+  - Attributes include `depth_km`, `epicenter_latitude`, `epicenter_longitude`, `region`, `origin_time`, the issuing `center`, and the product `title`, `summary` and `link`
+  - The centers publish a statement for every notable quake and most come to nothing, so on a quiet day this is the most interesting thing the domain has to say: the last quake they looked at and dismissed. It scans back through recent products rather than reading only the newest, since the newest is often a routine statement carrying no quake parameters
 - **Last Message**: When the warning centers last issued a product *(sensor.noaa_tsunami_last_message)*
   - Attributes include `center`, `title`, `message_type` (New/Update/Cancellation/Final), `link`, and the five most `recent_products`
 - **Alert Active**: Turns on for an active Warning **or** Advisory *(binary_sensor.noaa_tsunami_alert_active)*
@@ -245,6 +246,7 @@ Tsunami monitoring from the National Tsunami Warning Center (NTWC, Palmer AK) an
 - **{OFFICE} Local Threat**: The alert level for your own coordinates rather than the nation *(sensor.noaa_tsunami_{office}_local_threat)*
 - **{OFFICE} Wave Arrival**: Estimated wave arrival time at the forecast point nearest you *(sensor.noaa_tsunami_{office}_wave_arrival)*
   - Attributes include `forecast_point`, `distance_km`, `center`, and `forecast_points_available`
+  - Reads `No active event` when the feed is healthy and there is simply nothing to forecast, and `unknown` only when no data has been fetched — `unknown` on a working feed reads like a fault
 - **{OFFICE} Evacuation Status**: What to actually do — `Move to high ground`, `Stay out of the water`, `Stay alert for updates`, or `No action required` *(sensor.noaa_tsunami_{office}_evacuation_status)*
   - The full official `instruction` text is an attribute, suitable for a TTS announcement
 

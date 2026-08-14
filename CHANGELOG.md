@@ -59,7 +59,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) get the six
   global entities and none of the location-specific ones.
 
+### Fixed
+- `sensor.noaa_tsunami_source_earthquake` read `Unknown` on a working feed. Two causes, both
+  found against a live install:
+  - The magnitude pattern was anchored on a bare `M`, so it matched the leading letter of
+    "magnitude" and then failed on the letters after it. Products written as "preliminary
+    magnitude 6.2" — which is how the centers usually write it — never matched. Several wordings
+    are now tried in order (`magnitude 6.2`, `magnitude of 6.2`, `M 7.8`, `M7.8`, `M=5.9`,
+    `Mw 8.1`), with an implausible-value guard so a message number cannot become an earthquake.
+  - Only the newest product was inspected. That is frequently a routine statement carrying no
+    quake parameters, which blanked the sensor while the answer sat one entry further down.
+    `find_source_earthquake` now scans back through recent products.
+- `sensor.noaa_tsunami_{office}_wave_arrival` sat on `unknown` whenever no event was in progress,
+  which reads like a fault. It now says `No active event` when the feed is healthy and reserves
+  `unknown` for "nothing fetched".
+
 ### Changed
+- The quiet-day map is now a list of candidate URLs tried in turn rather than a single guess, and
+  the URL that succeeds is logged at info level so the working one can be identified from a real
+  install and the list trimmed.
 - `manifest.json` version bumped to 0.6.0. No new requirements — the tsunami feature adds no
   dependency beyond the standard library.
 

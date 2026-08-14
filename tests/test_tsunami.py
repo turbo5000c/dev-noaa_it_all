@@ -22,6 +22,7 @@ if os.path.join(_REPO, "custom_components", "noaa_it_all") not in sys.path:
 from parsers import (  # noqa: E402
     classify_tsunami_threat_level,
     estimate_wave_arrival,
+    find_source_earthquake,
     haversine_km,
     is_tsunami_test_message,
     parse_tsunami_alert_features,
@@ -281,6 +282,91 @@ class TestSummarizeTsunamiSource(unittest.TestCase):
     def test_empty_entry_yields_all_none(self):
         source = summarize_tsunami_source(None)
         self.assertTrue(all(v is None for v in source.values()))
+
+
+class TestMagnitudeWordings(unittest.TestCase):
+    """The centers do not write magnitude one way.
+
+    A live install showed Source Earthquake as Unknown while the feed was
+    working: the original pattern was anchored on a bare "M", which matched the
+    leading letter of "magnitude" and then failed on the letters after it.
+    """
+
+    def _magnitude(self, text):
+        return summarize_tsunami_source({"title": text, "summary": ""})["magnitude"]
+
+    def test_spelled_out_magnitude(self):
+        self.assertEqual(self._magnitude("Preliminary magnitude 6.2"), 6.2)
+
+    def test_magnitude_of(self):
+        self.assertEqual(self._magnitude("magnitude of 7.1"), 7.1)
+
+    def test_abbreviated_with_space(self):
+        self.assertEqual(self._magnitude("Tsunami Warning M 7.8 near Alaska"), 7.8)
+
+    def test_abbreviated_without_space(self):
+        self.assertEqual(self._magnitude("Statement M6.4"), 6.4)
+
+    def test_equals_form(self):
+        self.assertEqual(self._magnitude("Event M=5.9"), 5.9)
+
+    def test_moment_magnitude_form(self):
+        self.assertEqual(self._magnitude("Mw 8.1 offshore"), 8.1)
+
+    def test_spelled_out_wins_over_stray_m(self):
+        self.assertEqual(
+            self._magnitude("Statement Number 3 - preliminary magnitude 6.6"), 6.6
+        )
+
+    def test_implausible_values_rejected(self):
+        """A stray match must not produce a magnitude 47 earthquake."""
+        self.assertIsNone(self._magnitude("Message 47 issued at 1200 UTC"))
+
+    def test_no_magnitude_present(self):
+        self.assertIsNone(self._magnitude("Tsunami Information Statement"))
+
+    def test_depth_deep_wording(self):
+        source = summarize_tsunami_source(
+            {"title": "M 6.0", "summary": "The quake was 35 km deep."}
+        )
+        self.assertEqual(source["depth_km"], 35.0)
+
+
+class TestFindSourceEarthquake(unittest.TestCase):
+    """One uninformative newest product must not blank the sensor."""
+
+    def test_scans_past_a_product_without_a_magnitude(self):
+        entries = [
+            {"title": "Tsunami Information Statement", "summary": "", "updated": "3"},
+            {"title": "Statement", "summary": "magnitude 6.5", "updated": "2"},
+        ]
+        self.assertEqual(find_source_earthquake(entries)["magnitude"], 6.5)
+
+    def test_prefers_the_newest_product_that_has_one(self):
+        entries = [
+            {"title": "No quake here", "summary": "", "updated": "3"},
+            {"title": "M 7.0", "summary": "", "updated": "2"},
+            {"title": "M 5.0", "summary": "", "updated": "1"},
+        ]
+        self.assertEqual(find_source_earthquake(entries)["magnitude"], 7.0)
+
+    def test_falls_back_to_newest_when_none_have_a_magnitude(self):
+        entries = [
+            {"title": "Statement - Kodiak Island", "summary": "", "updated": "2"},
+            {"title": "Statement - Elsewhere", "summary": "", "updated": "1"},
+        ]
+        source = find_source_earthquake(entries)
+        self.assertIsNone(source["magnitude"])
+        self.assertEqual(source["region"], "Kodiak Island")
+
+    def test_empty_and_none(self):
+        self.assertIsNone(find_source_earthquake([])["magnitude"])
+        self.assertIsNone(find_source_earthquake(None)["magnitude"])
+
+    def test_scan_is_bounded(self):
+        entries = [{"title": "nothing", "summary": ""} for _ in range(50)]
+        entries.append({"title": "M 9.0", "summary": ""})
+        self.assertIsNone(find_source_earthquake(entries, max_scan=5)["magnitude"])
 
 
 class TestParseTsunamiCap(unittest.TestCase):

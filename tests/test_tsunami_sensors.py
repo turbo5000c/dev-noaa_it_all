@@ -315,8 +315,11 @@ class TestTsunamiWaveArrivalSensor(unittest.TestCase):
     def test_state_before_first_refresh(self):
         self.assertIsNone(self._sensor(None).state)
 
-    def test_state_when_no_cap(self):
-        self.assertIsNone(self._sensor({"features": [], "cap": None}).state)
+    def test_state_when_no_cap_reads_as_quiet_not_unknown(self):
+        """A healthy feed with no event says so, rather than looking broken."""
+        self.assertEqual(
+            self._sensor({"features": [], "cap": None}).state, "No active event"
+        )
 
     def test_name_and_unique_id(self):
         sensor = self._sensor(None)
@@ -502,11 +505,11 @@ class TestTsunamiMapImageEntity(unittest.TestCase):
         self.assertEqual(self._entity(None).device_info["name"], "NOAA Tsunami")
 
     def test_quiet_shows_dart_network(self):
-        """No alert means no energy map exists, so DART is the only candidate."""
+        """No alert means no energy map exists, so only DART candidates remain."""
         entity = self._entity(_tsunami_payload("tsunami_quiet.json"))
         candidates = entity._candidate_sources()
-        self.assertEqual(len(candidates), 1)
-        self.assertEqual(candidates[0][0], "DART Network")
+        self.assertTrue(candidates)
+        self.assertTrue(all(c[0] == "DART Network" for c in candidates))
 
     def test_no_data_shows_dart_network(self):
         entity = self._entity(None)
@@ -516,9 +519,22 @@ class TestTsunamiMapImageEntity(unittest.TestCase):
     def test_active_alert_prefers_energy_map(self):
         entity = self._entity(_tsunami_payload())
         candidates = entity._candidate_sources()
-        self.assertEqual(len(candidates), 2)
         self.assertEqual(candidates[0][0], "NTWC Energy Forecast")
         self.assertIn("energy", candidates[0][1])
+        self.assertGreater(len(candidates), 1, "energy map must have a fallback")
+
+    def test_all_dart_candidates_are_tried(self):
+        """Several DART URLs ship unverified; every one must be attempted."""
+        from noaa_it_all.const import TSUNAMI_DART_MAP_URLS
+        entity = self._entity(None)
+        urls = [url for label, url in entity._candidate_sources()
+                if label == "DART Network"]
+        self.assertEqual(urls, list(TSUNAMI_DART_MAP_URLS))
+
+    def test_candidate_urls_are_unique(self):
+        entity = self._entity(_tsunami_payload())
+        urls = [url for _, url in entity._candidate_sources()]
+        self.assertEqual(len(urls), len(set(urls)))
 
     def test_dart_always_remains_the_last_candidate(self):
         """However the energy map resolves, there is always a fallback."""

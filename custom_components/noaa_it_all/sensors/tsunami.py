@@ -29,7 +29,7 @@ from ..const import (
     DOMAIN, TSUNAMI_DEVICE_ID, TSUNAMI_DEVICE_NAME, TSUNAMI_THREAT_LEVELS,
 )
 from ..parsers import (
-    parse_tsunami_alert_features, summarize_tsunami_source, estimate_wave_arrival,
+    parse_tsunami_alert_features, find_source_earthquake, estimate_wave_arrival,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -92,9 +92,14 @@ class _TsunamiBaseSensor(CoordinatorEntity):
         return alerts
 
     @property
+    def _products(self):
+        """Return all recent NTWC/PTWC product entries, newest first."""
+        return self._data.get("products") or []
+
+    @property
     def _latest_product(self):
         """Return the most recent NTWC/PTWC product entry, or ``None``."""
-        products = self._data.get("products") or []
+        products = self._products
         return products[0] if products else None
 
     @property
@@ -179,7 +184,13 @@ class TsunamiActiveAlertsSensor(_TsunamiBaseSensor):
 
 
 class TsunamiSourceEarthquakeSensor(_TsunamiBaseSensor):
-    """Magnitude of the earthquake behind the most recent tsunami product."""
+    """Magnitude of the last earthquake the warning centers evaluated.
+
+    Not only quakes that caused a tsunami. The centers publish a statement for
+    every notable one and most come to nothing, so on a quiet day this reports
+    the most recent quake they looked at and dismissed — which is the most
+    interesting thing this domain has to say when nothing is wrong.
+    """
 
     @property
     def name(self):
@@ -192,9 +203,14 @@ class TsunamiSourceEarthquakeSensor(_TsunamiBaseSensor):
         return "noaa_tsunami_source_earthquake"
 
     @property
+    def _source(self):
+        """Return the newest product that names a quake."""
+        return find_source_earthquake(self._products)
+
+    @property
     def state(self):
         """Return the preliminary magnitude, or ``None`` when unknown."""
-        return summarize_tsunami_source(self._latest_product)["magnitude"]
+        return self._source["magnitude"]
 
     @property
     def icon(self):
@@ -203,8 +219,13 @@ class TsunamiSourceEarthquakeSensor(_TsunamiBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        """Return the state attributes."""
-        source = summarize_tsunami_source(self._latest_product)
+        """Return the state attributes.
+
+        The product title and link are always present, even when no magnitude
+        could be recovered, so the entity is never a dead end — there is always
+        something to read and somewhere to click through to.
+        """
+        source = self._source
         product = self._latest_product or {}
         return {
             "depth_km": source["depth_km"],
@@ -214,6 +235,9 @@ class TsunamiSourceEarthquakeSensor(_TsunamiBaseSensor):
             "origin_time": source["origin_time"],
             "center": product.get("center"),
             "product": product.get("title"),
+            "summary": product.get("summary"),
+            "link": product.get("link"),
+            "products_available": len(self._products),
         }
 
 
@@ -347,14 +371,24 @@ class TsunamiWaveArrivalSensor(_TsunamiOfficeSensor):
 
     @property
     def state(self):
-        """Return the estimated arrival time, or ``None`` when not forecast."""
+        """Return the estimated arrival time, or a plain-language quiet state.
+
+        ``None`` (Home Assistant ``unknown``) is reserved for "no data has been
+        fetched". Once the feed is answering and simply has no event to report,
+        the state says so in words rather than sitting on ``unknown``, which
+        reads like a fault.
+        """
         arrival = self._arrival
-        return arrival["arrival_time"] if arrival else None
+        if arrival:
+            return arrival["arrival_time"]
+        if not self.coordinator.data:
+            return None
+        return "No active event"
 
     @property
     def icon(self):
         """Return the icon."""
-        return "mdi:clock-alert-outline" if self.state else "mdi:clock-outline"
+        return "mdi:clock-alert-outline" if self._arrival else "mdi:clock-outline"
 
     @property
     def extra_state_attributes(self):

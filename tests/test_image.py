@@ -307,10 +307,10 @@ class TestTsunamiMapImageEntityIdentity(unittest.TestCase):
 
     def test_defaults_to_dart_before_any_coordinator_data(self):
         from noaa_it_all.image import TsunamiMapImageEntity
-        from noaa_it_all.const import TSUNAMI_DART_MAP_URL
+        from noaa_it_all.const import TSUNAMI_DART_MAP_URLS
         entity = TsunamiMapImageEntity(HASS)
-        self.assertEqual(entity._source_url, TSUNAMI_DART_MAP_URL)
-        self.assertIn(TSUNAMI_DART_MAP_URL, entity.entity_picture)
+        self.assertEqual(entity._source_url, TSUNAMI_DART_MAP_URLS[0])
+        self.assertIn(TSUNAMI_DART_MAP_URLS[0], entity.entity_picture)
 
 
 class TestTwoOfficeSetup(unittest.TestCase):

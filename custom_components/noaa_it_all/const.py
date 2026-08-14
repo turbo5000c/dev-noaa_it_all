@@ -111,7 +111,22 @@ TSUNAMI_ENERGY_MAP_URLS = {
     "NTWC": "https://www.tsunami.gov/images/energy/PAAQ_energy.png",
     "PTWC": "https://www.tsunami.gov/images/energy/PHEB_energy.png",
 }
-TSUNAMI_DART_MAP_URL = "https://www.ndbc.noaa.gov/images/dart/dart_map.png"
+
+# Quiet-day map candidates, tried in order until one returns an actual image.
+#
+# A list rather than a single URL precisely because none of these could be
+# verified from the development sandbox. Trying several turns one uncertain
+# guess into a much better chance that the tile renders something, and the
+# entity logs which one won so the list can be trimmed to the real answer
+# later. The last entry is the global sea-surface temperature analysis from
+# the same NESDIS CDN the GOES imagery already uses in image.py — not tsunami
+# specific, but a known-good ocean map is a better fallback than a dead panel.
+TSUNAMI_DART_MAP_URLS = (
+    "https://www.ndbc.noaa.gov/images/dart/dart_map.png",
+    "https://www.ndbc.noaa.gov/images/dart/dart_locations.png",
+    "https://www.tsunami.gov/images/dart_map.png",
+    "https://www.ndbc.noaa.gov/images/stations/dart_stations.png",
+)
 
 # How each center identifies itself in the NWS alert ``senderName`` field.
 # Needed to attribute a live alert to a center before that center's Atom feed
