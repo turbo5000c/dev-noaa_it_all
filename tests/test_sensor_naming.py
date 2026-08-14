@@ -942,5 +942,138 @@ class TestBinarySensorNaming(unittest.TestCase):
             self.assertEqual(sensor._attr_unique_id, expected[name], f"{name} unique_id")
 
 
+class TestTsunamiNaming(unittest.TestCase):
+    """Tsunami entities live on the global NOAA Tsunami device.
+
+    Their entity IDs are therefore ``noaa_tsunami_*`` rather than
+    ``noaa_{office}_*`` — same as the hurricane entities — which is why they
+    are checked here instead of in ``test_all_names_produce_correct_entity_prefix``.
+    """
+
+    def _global(self, cls):
+        return cls(COORD)
+
+    def _office(self, cls):
+        return cls(COORD, OFFICE, LAT, LON)
+
+    def test_global_entity_ids(self):
+        from noaa_it_all.sensors.tsunami import (
+            TsunamiThreatLevelSensor, TsunamiActiveAlertsSensor,
+            TsunamiSourceEarthquakeSensor, TsunamiLastMessageSensor,
+        )
+        expected = {
+            TsunamiThreatLevelSensor: "noaa_tsunami_threat_level",
+            TsunamiActiveAlertsSensor: "noaa_tsunami_active_alerts",
+            TsunamiSourceEarthquakeSensor: "noaa_tsunami_source_earthquake",
+            TsunamiLastMessageSensor: "noaa_tsunami_last_message",
+        }
+        for cls, entity_id in expected.items():
+            self.assertEqual(
+                _entity_id_slug(self._global(cls)), entity_id, cls.__name__
+            )
+
+    def test_office_entity_ids_include_office_code(self):
+        from noaa_it_all.sensors.tsunami import (
+            TsunamiLocalThreatSensor, TsunamiWaveArrivalSensor,
+            TsunamiEvacuationStatusSensor,
+        )
+        expected = {
+            TsunamiLocalThreatSensor: f"noaa_tsunami_{OFFICE.lower()}_local_threat",
+            TsunamiWaveArrivalSensor: f"noaa_tsunami_{OFFICE.lower()}_wave_arrival",
+            TsunamiEvacuationStatusSensor:
+                f"noaa_tsunami_{OFFICE.lower()}_evacuation_status",
+        }
+        for cls, entity_id in expected.items():
+            self.assertEqual(
+                _entity_id_slug(self._office(cls)), entity_id, cls.__name__
+            )
+
+    def test_unique_ids(self):
+        from noaa_it_all.sensors.tsunami import (
+            TsunamiThreatLevelSensor, TsunamiActiveAlertsSensor,
+            TsunamiSourceEarthquakeSensor, TsunamiLastMessageSensor,
+            TsunamiLocalThreatSensor, TsunamiWaveArrivalSensor,
+            TsunamiEvacuationStatusSensor,
+        )
+        self.assertEqual(
+            self._global(TsunamiThreatLevelSensor).unique_id,
+            "noaa_tsunami_threat_level",
+        )
+        self.assertEqual(
+            self._global(TsunamiActiveAlertsSensor).unique_id,
+            "noaa_tsunami_active_alerts",
+        )
+        self.assertEqual(
+            self._global(TsunamiSourceEarthquakeSensor).unique_id,
+            "noaa_tsunami_source_earthquake",
+        )
+        self.assertEqual(
+            self._global(TsunamiLastMessageSensor).unique_id,
+            "noaa_tsunami_last_message",
+        )
+        self.assertEqual(
+            self._office(TsunamiLocalThreatSensor).unique_id,
+            f"noaa_tsunami_{OFFICE}_local_threat",
+        )
+        self.assertEqual(
+            self._office(TsunamiWaveArrivalSensor).unique_id,
+            f"noaa_tsunami_{OFFICE}_wave_arrival",
+        )
+        self.assertEqual(
+            self._office(TsunamiEvacuationStatusSensor).unique_id,
+            f"noaa_tsunami_{OFFICE}_evacuation_status",
+        )
+
+    def test_unique_ids_are_distinct(self):
+        """Two coastal offices on one shared device must not collide."""
+        from noaa_it_all.sensors.tsunami import TsunamiWaveArrivalSensor
+        ilm = TsunamiWaveArrivalSensor(COORD, "ILM", LAT, LON)
+        eka = TsunamiWaveArrivalSensor(COORD, "EKA", 40.98, -124.11)
+        self.assertNotEqual(ilm.unique_id, eka.unique_id)
+
+    def test_device_info_matches_const(self):
+        from noaa_it_all.const import (
+            DOMAIN, TSUNAMI_DEVICE_ID, TSUNAMI_DEVICE_NAME,
+        )
+        from noaa_it_all.sensors.tsunami import TsunamiThreatLevelSensor
+        self.assertEqual(
+            self._global(TsunamiThreatLevelSensor).device_info,
+            {
+                "identifiers": {(DOMAIN, TSUNAMI_DEVICE_ID)},
+                "name": TSUNAMI_DEVICE_NAME,
+                "manufacturer": "NOAA",
+            },
+        )
+
+    def test_binary_sensor_entity_ids(self):
+        """The stubbed base class has no ``name`` property, so fall back to
+        ``_attr_name`` exactly as TestBinarySensorNaming._local_name does."""
+        from noaa_it_all.binary_sensor import (
+            TsunamiAlertBinarySensor, TsunamiDataStaleBinarySensor,
+        )
+        expected = {
+            TsunamiAlertBinarySensor: "noaa_tsunami_alert_active",
+            TsunamiDataStaleBinarySensor: "noaa_tsunami_data_stale",
+        }
+        for cls, entity_id in expected.items():
+            sensor = cls(COORD)
+            device = _slugify(sensor.device_info["name"])
+            self.assertEqual(
+                f"{device}_{_slugify(sensor._attr_name)}", entity_id, cls.__name__
+            )
+            self.assertEqual(sensor._attr_unique_id, entity_id, cls.__name__)
+
+    def test_binary_sensor_names_are_local_only(self):
+        """A name embedding the device prefix would duplicate it in the entity ID."""
+        from noaa_it_all.binary_sensor import (
+            TsunamiAlertBinarySensor, TsunamiDataStaleBinarySensor,
+        )
+        for cls in (TsunamiAlertBinarySensor, TsunamiDataStaleBinarySensor):
+            sensor = cls(COORD)
+            self.assertTrue(sensor._attr_has_entity_name, cls.__name__)
+            self.assertNotIn("NOAA", sensor._attr_name, cls.__name__)
+            self.assertNotIn("Tsunami", sensor._attr_name, cls.__name__)
+
+
 if __name__ == "__main__":
     unittest.main()

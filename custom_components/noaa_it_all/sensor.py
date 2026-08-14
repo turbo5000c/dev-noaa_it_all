@@ -13,7 +13,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
-    HURRICANE_SENSORS_ADDED_KEY,
+    HURRICANE_SENSORS_ADDED_KEY, TSUNAMI_SENSORS_ADDED_KEY,
+    OFFICE_TSUNAMI_CENTERS,
 )
 
 # Re-export every sensor class so that existing code that imports
@@ -52,6 +53,13 @@ from .sensors import (  # noqa: F401
     MeteorShowerActivitySensor,
     NextMeteorShowerSensor,
     MeteorViewingScoreSensor,
+    TsunamiThreatLevelSensor,
+    TsunamiActiveAlertsSensor,
+    TsunamiSourceEarthquakeSensor,
+    TsunamiLastMessageSensor,
+    TsunamiLocalThreatSensor,
+    TsunamiWaveArrivalSensor,
+    TsunamiEvacuationStatusSensor,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,6 +96,7 @@ async def async_setup_entry(
     radar_coord = data["radar_timestamp_coordinator"]
     discussion_coord = data["forecast_discussion_coordinator"]
     meteor_coord = data["meteor_coordinator"]
+    tsunami_coord = data["tsunami_coordinator"]
 
     entities = [
         # Space weather (global, use SpaceWeatherCoordinator)
@@ -188,6 +197,59 @@ async def async_setup_entry(
             NextMeteorShowerSensor(meteor_coord, office_code),
             MeteorViewingScoreSensor(meteor_coord, office_code),
         ])
+
+    # Tsunami sensors are global (NTWC/PTWC) and grouped under a single
+    # dedicated NOAA Tsunami device, so the four national ones are added
+    # only once across all configured offices — same ownership-transfer
+    # dance as the hurricane sensors above.
+    if tsunami_coord and not domain_data.get(TSUNAMI_SENSORS_ADDED_KEY):
+        entities.extend([
+            TsunamiThreatLevelSensor(tsunami_coord),
+            TsunamiActiveAlertsSensor(tsunami_coord),
+            TsunamiSourceEarthquakeSensor(tsunami_coord),
+            TsunamiLastMessageSensor(tsunami_coord),
+        ])
+        domain_data[TSUNAMI_SENSORS_ADDED_KEY] = config_entry.entry_id
+
+        def _release_tsunami_sensor_ownership() -> None:
+            """Release tsunami-sensor ownership and re-create on a remaining entry."""
+            if domain_data.get(TSUNAMI_SENSORS_ADDED_KEY) != config_entry.entry_id:
+                return
+            domain_data.pop(TSUNAMI_SENSORS_ADDED_KEY, None)
+            remaining = [
+                e for e in hass.config_entries.async_entries(DOMAIN)
+                if e.entry_id != config_entry.entry_id
+            ]
+            if remaining:
+                target_entry_id = remaining[0].entry_id
+
+                async def _reload_for_tsunami_sensors() -> None:
+                    try:
+                        await hass.config_entries.async_reload(target_entry_id)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception(
+                            "Failed to reload entry %s to re-create global "
+                            "tsunami sensors", target_entry_id,
+                        )
+
+                hass.async_create_task(_reload_for_tsunami_sensors())
+
+        config_entry.async_on_unload(_release_tsunami_sensor_ownership)
+
+    # Location-specific tsunami sensors, for coastal offices only. These are
+    # per-office rather than global, so they are created on every entry whose
+    # office has coastline — the ten Great Lakes offices get none.
+    if tsunami_coord and office_code in OFFICE_TSUNAMI_CENTERS:
+        entities.append(
+            TsunamiWaveArrivalSensor(tsunami_coord, office_code, latitude, longitude)
+        )
+        if alerts_coord:
+            entities.extend([
+                TsunamiLocalThreatSensor(alerts_coord, office_code, latitude, longitude),
+                TsunamiEvacuationStatusSensor(
+                    alerts_coord, office_code, latitude, longitude
+                ),
+            ])
 
     # Radar timestamp sensor (office-specific, may be None if no radar site)
     if radar_coord:

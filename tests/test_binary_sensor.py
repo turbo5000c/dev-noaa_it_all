@@ -162,6 +162,49 @@ class TestSevereWeatherAlertBinarySensor(unittest.TestCase):
         self.assertEqual(sensor._attr_unique_id, f"noaa_{OFFICE}_severe_weather_alert")
 
 
+class TestSevereWeatherAlertTsunamiBackCompat(unittest.TestCase):
+    """Tsunami events must keep firing the severe-weather sensor.
+
+    The tsunami domain added dedicated entities, but ``_SEVERE_EVENTS`` still
+    lists the tsunami events on purpose. Existing installs have automations
+    bound to ``binary_sensor.noaa_{office}_weather_severe_weather_alert``, and
+    silently dropping tsunamis out of it would break life-safety automations
+    with no error anywhere.
+    """
+
+    def _make(self, event):
+        from noaa_it_all.binary_sensor import SevereWeatherAlertBinarySensor
+        features = [{
+            "properties": {
+                "event": event,
+                "status": "Actual",
+                "severity": "Extreme",
+                "urgency": "Immediate",
+                "certainty": "Likely",
+                "areaDesc": "Coastal Del Norte",
+                "headline": f"{event} in effect",
+                "description": "Test.",
+            }
+        }]
+        coord = _make_coordinator({"features": features})
+        return SevereWeatherAlertBinarySensor(coord, OFFICE, LAT, LON)
+
+    def test_tsunami_warning_still_fires(self):
+        self.assertTrue(self._make("Tsunami Warning").is_on)
+
+    def test_tsunami_watch_still_fires(self):
+        self.assertTrue(self._make("Tsunami Watch").is_on)
+
+    def test_tsunami_advisory_still_fires(self):
+        self.assertTrue(self._make("Tsunami Advisory").is_on)
+
+    def test_severe_events_list_still_contains_tsunami(self):
+        from noaa_it_all.binary_sensor import SevereWeatherAlertBinarySensor
+        events = SevereWeatherAlertBinarySensor._SEVERE_EVENTS
+        for event in ("tsunami warning", "tsunami watch", "tsunami advisory"):
+            self.assertIn(event, events)
+
+
 class TestFloodWinterAlertBinarySensor(unittest.TestCase):
     """Tests for the FloodWinterAlertBinarySensor."""
 

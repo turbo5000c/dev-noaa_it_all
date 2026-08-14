@@ -1,6 +1,6 @@
 # NOAA It All for Home Assistant
 
-Comprehensive NOAA data integration providing real-time space weather, hurricane tracking, surf conditions, weather alerts, and aurora predictions.
+Comprehensive NOAA data integration providing real-time space weather, hurricane tracking, tsunami alerts, surf conditions, weather alerts, and aurora predictions.
 
 ## Features
 
@@ -17,7 +17,15 @@ Comprehensive NOAA data integration providing real-time space weather, hurricane
 - **Upcoming Showers** - The next five showers with peak dates, for dashboard cards and automations
 - **Works Offline** - ~29 showers keyed by solar longitude and computed locally; no API, no key, no extra dependency
 
-### 🌊 Surf & Ocean Conditions (Location-Specific)
+### 🌊 Tsunami Alerts
+- **Threat Level** - Highest tsunami alert in US waters: Warning, Advisory, Watch, Information or None
+- **Evacuation Status** - What to actually do, plus the full official instruction text for TTS announcements
+- **Wave Arrival Time** - Estimated arrival at the forecast point nearest you, for coastal offices
+- **Source Earthquake** - Magnitude, depth and epicenter of the quake that caused it
+- **Data Stale Sensor** - Turns on when the feed stops answering, so a silent outage never reads as an all-clear
+- **Polled every 2 minutes** - a near-field tsunami can reach the coast in under fifteen
+
+### 🏄 Surf & Ocean Conditions (Location-Specific)
 - **Rip Current Risk** - Low/Moderate/High risk assessment with safety alerts
 - **Surf Height** - Wave height estimates from NWS surf zone forecasts
 - **Water Temperature** - Local ocean temperature data

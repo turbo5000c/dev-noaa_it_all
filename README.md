@@ -103,7 +103,15 @@ Global hurricane tracking and GOES satellite imagery — **created once**, share
 
 > **Important**: Hurricane and GOES satellite entities live under **NOAA Hurricane** only. They are never duplicated under office-specific devices, even if multiple NWS offices are configured.
 
-#### 🌊 NOAA Surf
+#### 🌊 NOAA Tsunami
+Tsunami alerts from the two national warning centers — threat level, source earthquake, and, for coastal offices, estimated wave arrival time — **created once**, shared across all configured NWS offices
+- **Device ID**: `noaa_tsunami`
+- **Location**: Global (NTWC/PTWC). Coastal offices additionally get location-specific entities on this same device
+- **Update Frequency**: 2 minutes
+
+> **⚠️ Not a primary warning source.** These entities are for automation and awareness only. Home Assistant, your network, and NOAA's servers can all fail silently. Never rely on this integration for evacuation decisions — use NOAA Weather Radio, Wireless Emergency Alerts, and local sirens. Wire `binary_sensor.noaa_tsunami_data_stale` into a notification so you find out when the feed goes quiet.
+
+#### 🏄 NOAA Surf
 Location-specific surf conditions, rip currents, and water temperature
 - **Device ID**: `noaa_surf`
 - **Location**: Specific to configured NWS office
@@ -209,6 +217,40 @@ Meteor shower alerts and a viewing forecast for your exact location *(NOAA Space
 > **Note on the data source**: NOAA publishes no meteor shower data, and neither does anyone else as a live feed — none is needed. Earth crosses the same debris streams at the same point in its orbit every year, so this feature ships a catalog of ~29 showers keyed by **solar longitude** and computes each year's peak time locally. There is no API call, no API key, and no extra dependency, and it keeps working with no internet connection. Computed peak times are accurate to about ±11 minutes, which is far finer than the hours-wide spread of real shower maxima.
 
 > **Note on the score**: The viewing score measures *sky conditions*, not shower strength — it is the fraction of the ideal meteor rate you would actually achieve, so a minor shower riding high under a new moon scores well while the Perseids behind a full moon score badly. Shower strength is reported separately as `expected_per_hour`. The score accounts for radiant altitude, moonlight and astronomical darkness. It does **not** account for cloud cover; pair it with `sensor.noaa_{office}_weather_cloud_cover` if you want that.
+
+### Tsunami Alerts
+Tsunami monitoring from the National Tsunami Warning Center (NTWC, Palmer AK) and the Pacific Tsunami Warning Center (PTWC, Ewa Beach HI) *(NOAA Tsunami)*.
+
+**Global sensors — every install gets these, inland or not:**
+
+- **Threat Level**: The highest tsunami alert in effect anywhere in US waters — `Warning`, `Advisory`, `Watch`, `Information`, or `None` *(sensor.noaa_tsunami_threat_level)*
+  - Attributes include `alerts`, `alert_count`, `by_level`, `areas`, `issuing_centers`, `highest_severity`, `latest_issued`, and `last_test_message`
+  - Reads `unknown` — not `None` — when no fetch has succeeded yet, so automations can tell "no threat" apart from "no data"
+- **Active Alerts**: How many tsunami alerts are in effect nationally *(sensor.noaa_tsunami_active_alerts)*
+- **Source Earthquake**: Preliminary magnitude of the quake behind the most recent product *(sensor.noaa_tsunami_source_earthquake)*
+  - Attributes include `depth_km`, `epicenter_latitude`, `epicenter_longitude`, `region`, `origin_time`, and the issuing `center`
+- **Last Message**: When the warning centers last issued a product *(sensor.noaa_tsunami_last_message)*
+  - Attributes include `center`, `title`, `message_type` (New/Update/Cancellation/Final), `link`, and the five most `recent_products`
+- **Alert Active**: Turns on for an active Warning **or** Advisory *(binary_sensor.noaa_tsunami_alert_active)*
+  - Watches and Information Statements deliberately leave it off — a Watch means a tsunami is merely possible, and firing an evacuation automation on one trains people to ignore it
+- **Data Stale**: Turns on when the feed has stopped answering *(binary_sensor.noaa_tsunami_data_stale)*
+  - Attributes include `last_success`, `age_minutes`, and `stale_after_minutes`
+
+**Coastal offices only** — created when your configured office is on a tsunami-exposed coast:
+
+- **{OFFICE} Local Threat**: The alert level for your own coordinates rather than the nation *(sensor.noaa_tsunami_{office}_local_threat)*
+- **{OFFICE} Wave Arrival**: Estimated wave arrival time at the forecast point nearest you *(sensor.noaa_tsunami_{office}_wave_arrival)*
+  - Attributes include `forecast_point`, `distance_km`, `center`, and `forecast_points_available`
+- **{OFFICE} Evacuation Status**: What to actually do — `Move to high ground`, `Stay out of the water`, `Stay alert for updates`, or `No action required` *(sensor.noaa_tsunami_{office}_evacuation_status)*
+  - The full official `instruction` text is an attribute, suitable for a TTS announcement
+
+> **Note on inland offices**: The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) have no tsunami exposure, so they get the six global entities and none of the location-specific ones. There are no permanently-dead entities on your dashboard.
+
+> **Note on how it is polled**: The NWS alert query runs every 2 minutes, because a near-field tsunami — one from an earthquake just offshore — can reach the coast in under fifteen. The warning-center feeds are only fetched when an alert is active or roughly every half hour, since they are unchanged for months at a time.
+
+> **Note on testing it**: Real tsunami alerts are rare, so these sensors will read `None` for years. That is the point, but it makes the feature hard to trust. The NWS runs tsunami communications tests monthly; those never move the threat level or trip `binary_sensor.noaa_tsunami_alert_active`, but they do populate the `last_test_message` attribute on the threat level sensor. If that attribute is updating, the pipeline works.
+
+> **Note on the existing severe weather sensor**: `binary_sensor.noaa_{office}_weather_severe_weather_alert` still fires for tsunami events, exactly as before. Nothing was removed — existing automations keep working, and a tsunami will now trip both it and the dedicated entities.
 
 ### Optional Secondary Sensors (Config Flow Only)
 These sensors provide additional weather data where available from NOAA/NWS *(NOAA Weather)*:
@@ -320,6 +362,9 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 | Meteor Shower Binary | `binary_sensor.noaa_{office}_space_meteor_shower_active` | `binary_sensor.noaa_ilm_space_meteor_shower_active` |
 | Hurricane (global) | `sensor.noaa_weather_hurricane_{metric}` | `sensor.noaa_weather_hurricane_activity` |
 | Hurricane Images | `image.noaa_weather_hurricane_{name}` | `image.noaa_weather_hurricane_outlook_image` |
+| Tsunami (global) | `sensor.noaa_tsunami_{metric}` | `sensor.noaa_tsunami_threat_level` |
+| Tsunami Binary (global) | `binary_sensor.noaa_tsunami_{name}` | `binary_sensor.noaa_tsunami_alert_active` |
+| Tsunami (coastal office) | `sensor.noaa_tsunami_{office}_{metric}` | `sensor.noaa_tsunami_ilm_wave_arrival` |
 | Radar Image | `image.noaa_{office}_weather_radar_base_reflectivity` | `image.noaa_ilm_weather_radar_base_reflectivity` |
 
 ### Migration: Old Entity IDs
@@ -397,6 +442,84 @@ automation:
         data:
           entity_id: media_player.home_speaker
           message: "{{ state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
+```
+
+#### Tsunami Evacuation Announcement
+```yaml
+automation:
+  - alias: "Tsunami Warning - Evacuate"
+    description: "Highest-priority alert on a tsunami Warning or Advisory"
+    trigger:
+      platform: state
+      entity_id: binary_sensor.noaa_tsunami_alert_active
+      to: 'on'
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🌊 Tsunami {{ states('sensor.noaa_tsunami_threat_level') }}"
+          message: >-
+            {{ states('sensor.noaa_tsunami_ilm_evacuation_status') }}.
+            {{ state_attr('sensor.noaa_tsunami_ilm_evacuation_status','instruction') }}
+          data:
+            priority: high
+            ttl: 0
+            channel: alarm_stream
+      - service: tts.google_translate_say
+        data:
+          entity_id: media_player.home_speaker
+          message: >-
+            Tsunami {{ states('sensor.noaa_tsunami_threat_level') }}.
+            {{ states('sensor.noaa_tsunami_ilm_evacuation_status') }}.
+      - service: light.turn_on
+        target:
+          entity_id: light.living_room
+        data:
+          flash: long
+          color_name: red
+```
+
+#### Tsunami Wave Arrival Countdown
+```yaml
+automation:
+  - alias: "Tsunami Wave Arrival"
+    description: "Announce the estimated arrival time once it is published"
+    trigger:
+      platform: state
+      entity_id: sensor.noaa_tsunami_ilm_wave_arrival
+    condition:
+      - condition: template
+        value_template: "{{ states('sensor.noaa_tsunami_ilm_wave_arrival') not in ['unknown','unavailable','none'] }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🌊 Estimated wave arrival"
+          message: >-
+            First wave expected at
+            {{ as_timestamp(states('sensor.noaa_tsunami_ilm_wave_arrival')) | timestamp_custom('%-I:%M %p') }}
+            near {{ state_attr('sensor.noaa_tsunami_ilm_wave_arrival','forecast_point') }}
+            ({{ (as_timestamp(states('sensor.noaa_tsunami_ilm_wave_arrival')) - as_timestamp(now())) / 60 | round(0) }} minutes).
+          data:
+            priority: high
+```
+
+#### Tsunami Feed Went Quiet
+```yaml
+automation:
+  - alias: "Tsunami Feed Stale"
+    description: "A silent failure on life-safety data is the failure mode that matters"
+    trigger:
+      platform: state
+      entity_id: binary_sensor.noaa_tsunami_data_stale
+      to: 'on'
+      for: "00:15:00"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Tsunami feed not responding"
+          message: >-
+            No successful tsunami data fetch for
+            {{ state_attr('binary_sensor.noaa_tsunami_data_stale','age_minutes') }} minutes.
+            Do not rely on the tsunami sensors until this clears.
 ```
 
 #### Winter Storm Alert with Light Flash
@@ -731,6 +854,56 @@ entities:
   - entity: binary_sensor.noaa_ilm_weather_active_alerts
     name: "Any Active Alerts"
     icon: mdi:bell-alert
+```
+
+#### Tsunami Card (NOAA Tsunami Group)
+
+A conditional card, so it stays invisible on the 99.99% of days when nothing is happening and appears only when there is something to act on:
+
+```yaml
+type: conditional
+conditions:
+  - entity: sensor.noaa_tsunami_threat_level
+    state_not: "None"
+  - entity: sensor.noaa_tsunami_threat_level
+    state_not: "unknown"
+card:
+  type: entities
+  title: "🌊 Tsunami"
+  show_header_toggle: false
+  state_color: true
+  entities:
+    - entity: sensor.noaa_tsunami_threat_level
+      name: "Threat Level"
+    - entity: sensor.noaa_tsunami_ilm_evacuation_status
+      name: "What To Do"
+    - entity: sensor.noaa_tsunami_ilm_wave_arrival
+      name: "Estimated Arrival"
+    - type: divider
+    - entity: sensor.noaa_tsunami_source_earthquake
+      name: "Source Magnitude"
+    - entity: sensor.noaa_tsunami_last_message
+      name: "Last Bulletin"
+```
+
+Pair it with an always-visible health card, so a feed outage is never invisible:
+
+```yaml
+type: entities
+title: "🌊 Tsunami Monitoring"
+show_header_toggle: false
+state_color: true
+entities:
+  - entity: binary_sensor.noaa_tsunami_alert_active
+    name: "Alert Active"
+  - entity: binary_sensor.noaa_tsunami_data_stale
+    name: "Feed Stale"
+  - entity: sensor.noaa_tsunami_active_alerts
+    name: "Alerts Nationwide"
+  - type: attribute
+    entity: sensor.noaa_tsunami_threat_level
+    attribute: last_test_message
+    name: "Last Monthly Test"
 ```
 
 #### Beach Conditions Card (NOAA Surf Group)
@@ -1145,6 +1318,16 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
   - Location-specific severe weather warnings and watches
   - Flood, winter storm, and environmental alerts
   - Real-time alert monitoring with automatic filtering
+- **Tsunami Alerts**: NWS weather.gov API plus the two national tsunami warning centers
+  - Alert state comes from `api.weather.gov/alerts/active`, filtered on the VTEC-derived codes
+    `TSW`/`TSA`/`TSY` rather than on event-name strings, so it survives NWS wording changes
+  - Source earthquake and product history come from the NTWC (Palmer, AK — US and Canadian
+    mainland coasts, Puerto Rico) and PTWC (Ewa Beach, HI — Hawaii, Pacific territories,
+    Caribbean) Atom feeds at tsunami.gov
+  - Estimated wave arrival times come from those centers' CAP 1.2 documents, matched to the
+    forecast point nearest your configured coordinates
+  - Parsed with the Python standard library only — no new dependency, and the XML is size-capped
+    and DOCTYPE-refused before parsing
 - **Rip Current/Surf Data**: Location-specific NWS Surf Zone Forecasts (SRF products)
 - **Weather Observations**: National Weather Service observation stations (weather.gov API)
   - Real-time temperature, humidity, wind, pressure, and sky conditions
@@ -1156,6 +1339,13 @@ Most sensors update every 10 minutes to provide current conditions while respect
 Meteor shower entities update every 30 minutes. They fetch nothing, so there is no rate limit to
 respect — but the best-of-night result is stable for hours, so a slower cadence keeps the recorder
 database smaller for no loss of accuracy.
+
+Tsunami alerts update every 2 minutes, the fastest cadence in the integration. A near-field
+tsunami — one generated by an earthquake just offshore — can reach the coast in under fifteen
+minutes, so a ten-minute poll could burn most of the available warning time before the sensor
+changed state. Only the NWS alert query runs at that rate; the warning-center feeds are fetched
+when an alert is active or roughly every half hour, so a quiet install is not hammering
+tsunami.gov for bytes that have not changed in months.
 
 **Note:** Legacy YAML configurations without lat/lon will continue to work but will use the fallback office-to-station mapping for weather data. Config Flow setups require the new fields.
 

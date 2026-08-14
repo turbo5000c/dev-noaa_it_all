@@ -5,7 +5,65 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - Current
+## [0.6.0] - Current
+
+### Added
+- **Tsunami alerts**, in a new global `NOAA Tsunami` device group (`noaa_tsunami`), created once
+  and shared across every configured office. Global entities, present on every install:
+  - `sensor.noaa_tsunami_threat_level` — highest tsunami alert in effect anywhere in US waters:
+    `Warning`, `Advisory`, `Watch`, `Information` or `None`. Reads `unknown` rather than `None`
+    before the first successful fetch, so automations can tell "no threat" from "no data"
+  - `sensor.noaa_tsunami_active_alerts` — count of tsunami alerts in effect nationally
+  - `sensor.noaa_tsunami_source_earthquake` — preliminary magnitude of the causative quake, with
+    depth, epicenter and region as attributes
+  - `sensor.noaa_tsunami_last_message` — when the warning centers last issued a product, with
+    message type (New/Update/Cancellation/Final) and the five most recent products
+  - `binary_sensor.noaa_tsunami_alert_active` — on for an active Warning or Advisory. Watches and
+    Information Statements deliberately leave it off
+  - `binary_sensor.noaa_tsunami_data_stale` — on when the feed has stopped answering
+- Location-specific tsunami entities on the same device, created only for the 26 coastal offices
+  listed in `OFFICE_TSUNAMI_CENTERS`:
+  - `sensor.noaa_tsunami_{office}_local_threat` — alert level for your own coordinates
+  - `sensor.noaa_tsunami_{office}_wave_arrival` — estimated arrival at the nearest forecast point
+  - `sensor.noaa_tsunami_{office}_evacuation_status` — the action to take, with the full official
+    instruction text as an attribute
+- `TsunamiCoordinator` in `coordinator.py`, polling `api.weather.gov/alerts/active` every 2
+  minutes and the NTWC/PTWC Atom and CAP feeds at tsunami.gov when an alert is active or roughly
+  every half hour.
+- Seven pure tsunami parsing functions in `parsers.py`, including CAP 1.2 and Atom parsing using
+  only the Python standard library.
+
+### Notes
+- **This is not a primary warning source.** These entities are for automation and awareness only.
+  Home Assistant, your network, and NOAA's servers can all fail silently. Never rely on this
+  integration for evacuation decisions — use NOAA Weather Radio, Wireless Emergency Alerts, and
+  local sirens.
+- The 2-minute poll is the fastest in the integration and is deliberate: a near-field tsunami can
+  reach the coast in under fifteen minutes, so a ten-minute poll could burn most of the available
+  warning time before the sensor changed state.
+- Tsunami alerts are queried by the VTEC-derived codes `TSW`/`TSA`/`TSY` rather than by event-name
+  strings, so the query survives NWS wording changes.
+- Monthly NWS tsunami communications tests never move the threat level or trip the alert binary
+  sensor, but do populate the `last_test_message` attribute. On a normal install that is the only
+  traffic this domain will ever see, and it is how you confirm the pipeline still works.
+- XML is size-capped at 512 KB and refused outright if it carries a `DOCTYPE`, since
+  `xml.etree.ElementTree` is not hardened against entity-expansion attacks and `defusedxml` is not
+  a dependency here.
+- The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) get the six
+  global entities and none of the location-specific ones.
+
+### Changed
+- `manifest.json` version bumped to 0.6.0. No new requirements — the tsunami feature adds no
+  dependency beyond the standard library.
+
+### Unchanged (deliberately)
+- `SevereWeatherAlertBinarySensor._SEVERE_EVENTS` still lists `tsunami warning`, `tsunami watch`
+  and `tsunami advisory`. Existing automations bound to
+  `binary_sensor.noaa_{office}_weather_severe_weather_alert` keep firing for tsunamis. Removing
+  them would have silently broken life-safety automations, so a tsunami now trips both that sensor
+  and the dedicated tsunami entities. A regression test enforces this.
+
+## [0.5.0]
 
 ### Added
 - **Meteor shower alerts and viewing forecast**, in the `NOAA Space` device group:
