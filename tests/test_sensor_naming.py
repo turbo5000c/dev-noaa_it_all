@@ -82,18 +82,25 @@ LAT = 32.7157
 LON = -117.1611
 
 
+def _slugify(value):
+    """Lowercase and underscore a name the way Home Assistant's slugify does.
+
+    Every run of non-alphanumeric characters collapses to a single underscore, so "Flood/Winter
+    Alert" becomes "flood_winter_alert" — the slash becomes a separator rather than being
+    dropped. Confirmed against a live Home Assistant instance, which registered
+    ``binary_sensor.noaa_ilm_weather_flood_winter_alert``.
+    """
+    import re
+    return re.sub(r'[^a-z0-9]+', '_', value.lower()).strip('_')
+
+
 def _entity_id_slug(sensor):
     """Derive the entity ID slug as HA does for _attr_has_entity_name=True entities.
 
-    HA combines slugify(device_name) + "_" + slugify(local_name), where slugify
-    lowercases and replaces spaces and hyphens with underscores.
+    HA combines slugify(device_name) + "_" + slugify(local_name).
     """
-    import re
-
-    def _slug(s):
-        return re.sub(r'[^a-z0-9_]', '', s.lower().replace(' ', '_').replace('-', '_'))
     dev_name = sensor.device_info.get('name', '') if isinstance(sensor.device_info, dict) else ''
-    return _slug(dev_name) + '_' + _slug(sensor.name)
+    return _slugify(dev_name) + '_' + _slugify(sensor.name)
 
 
 # ---------------------------------------------------------------------------
@@ -801,6 +808,112 @@ class TestSuggestedObjectIdFormat(unittest.TestCase):
         self.assertTrue(s._attr_has_entity_name)
         self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_meteor_shower_active")
         self.assertEqual(s._attr_unique_id, f"noaa_{OFFICE}_meteor_shower_active")
+
+
+# ---------------------------------------------------------------------------
+# Binary sensors must not repeat the device prefix
+# ---------------------------------------------------------------------------
+
+class TestBinarySensorNaming(unittest.TestCase):
+    """Binary sensor names must be local-only, so the device prefix is not duplicated.
+
+    A binary sensor that sets a full ``_attr_name`` such as ``NOAA ILM Unsafe to Swim`` *and*
+    carries a device gets that device's name prepended again, producing
+    ``binary_sensor.noaa_ilm_surf_noaa_ilm_unsafe_to_swim`` and the friendly name
+    "NOAA ILM Surf NOAA ILM Unsafe to Swim". This was observed on a live Home Assistant
+    instance. The fix is ``_attr_has_entity_name = True`` plus a local-only name, which is
+    also what every sensor in this integration does.
+    """
+
+    @staticmethod
+    def _local_name(sensor):
+        """Return the entity's local name the way Home Assistant resolves it.
+
+        Real ``Entity.name`` falls back to ``_attr_name``; the stubbed CoordinatorEntity used by
+        these tests has no such property, so classes that set ``_attr_name`` in ``__init__``
+        instead of defining a ``name`` property need that fallback applied here.
+        """
+        name = getattr(sensor, "name", None)
+        return name if isinstance(name, str) else sensor._attr_name
+
+    def _all_binary_sensors(self):
+        from noaa_it_all.binary_sensor import (
+            ActiveAlertsGeneralBinarySensor,
+            FloodWinterAlertBinarySensor,
+            HeatAirQualityAlertBinarySensor,
+            MeteorShowerActiveBinarySensor,
+            SevereWeatherAlertBinarySensor,
+            UnsafeToSwimBinarySensor,
+        )
+        return [
+            UnsafeToSwimBinarySensor(COORD, OFFICE),
+            SevereWeatherAlertBinarySensor(COORD, OFFICE, LAT, LON),
+            FloodWinterAlertBinarySensor(COORD, OFFICE, LAT, LON),
+            HeatAirQualityAlertBinarySensor(COORD, OFFICE, LAT, LON),
+            ActiveAlertsGeneralBinarySensor(COORD, OFFICE, LAT, LON),
+            MeteorShowerActiveBinarySensor(COORD, OFFICE),
+        ]
+
+    def test_all_binary_sensors_use_has_entity_name(self):
+        for sensor in self._all_binary_sensors():
+            self.assertTrue(
+                sensor._attr_has_entity_name,
+                f"{type(sensor).__name__} must set _attr_has_entity_name",
+            )
+
+    def test_names_do_not_embed_the_office_code(self):
+        """A name containing 'NOAA {office}' is what causes the duplicated prefix."""
+        for sensor in self._all_binary_sensors():
+            local = self._local_name(sensor)
+            self.assertNotIn(
+                OFFICE, local,
+                f"{type(sensor).__name__}.name should be local-only, got {local!r}",
+            )
+            self.assertNotIn(
+                "NOAA", local,
+                f"{type(sensor).__name__}.name should be local-only, got {local!r}",
+            )
+
+    def _slug(self, sensor):
+        dev = sensor.device_info.get("name", "")
+        return (_slugify(dev) + "_" + _slugify(self._local_name(sensor)))
+
+    def test_entity_ids_have_no_duplicated_prefix(self):
+        import re
+        for sensor in self._all_binary_sensors():
+            slug = self._slug(sensor)
+            self.assertIsNone(
+                re.search(rf"noaa_{OFFICE.lower()}_[a-z]+_noaa_{OFFICE.lower()}_", slug),
+                f"{type(sensor).__name__} produces a duplicated prefix: {slug}",
+            )
+
+    def test_expected_entity_ids(self):
+        expected = {
+            "UnsafeToSwimBinarySensor": f"noaa_{OFFICE.lower()}_surf_unsafe_to_swim",
+            "SevereWeatherAlertBinarySensor": f"noaa_{OFFICE.lower()}_weather_severe_weather_alert",
+            "FloodWinterAlertBinarySensor": f"noaa_{OFFICE.lower()}_weather_flood_winter_alert",
+            "HeatAirQualityAlertBinarySensor":
+                f"noaa_{OFFICE.lower()}_weather_heat_air_quality_alert",
+            "ActiveAlertsGeneralBinarySensor": f"noaa_{OFFICE.lower()}_weather_active_alerts",
+            "MeteorShowerActiveBinarySensor": f"noaa_{OFFICE.lower()}_space_meteor_shower_active",
+        }
+        for sensor in self._all_binary_sensors():
+            name = type(sensor).__name__
+            self.assertEqual(self._slug(sensor), expected[name], f"{name} entity_id")
+
+    def test_unique_ids_are_unchanged(self):
+        """unique_id must stay put so existing installs keep their registered entity IDs."""
+        expected = {
+            "UnsafeToSwimBinarySensor": f"noaa_{OFFICE}_unsafe_to_swim",
+            "SevereWeatherAlertBinarySensor": f"noaa_{OFFICE}_severe_weather_alert",
+            "FloodWinterAlertBinarySensor": f"noaa_{OFFICE}_flood_winter_alert",
+            "HeatAirQualityAlertBinarySensor": f"noaa_{OFFICE}_heat_air_quality_alert",
+            "ActiveAlertsGeneralBinarySensor": f"noaa_{OFFICE}_active_alerts",
+            "MeteorShowerActiveBinarySensor": f"noaa_{OFFICE}_meteor_shower_active",
+        }
+        for sensor in self._all_binary_sensors():
+            name = type(sensor).__name__
+            self.assertEqual(sensor._attr_unique_id, expected[name], f"{name} unique_id")
 
     # Weather extra sensors
     def test_cloud_cover_suggested_object_id(self):

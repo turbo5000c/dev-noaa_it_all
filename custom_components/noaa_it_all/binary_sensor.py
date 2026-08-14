@@ -57,6 +57,8 @@ async def async_setup_entry(
 class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for unsafe swimming conditions based on rip current forecasts."""
 
+    _attr_has_entity_name = True
+
     _HIGH_RISK_PATTERNS = [
         r"high\s+rip\s+current\s+risk",
         r"dangerous\s+rip\s+currents",
@@ -77,7 +79,7 @@ class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._state = False
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_unsafe_to_swim"
-        self._attr_name = f"NOAA {office_code} Unsafe to Swim"
+        self._attr_name = "Unsafe to Swim"
 
     def _check_risk(self):
         """Return (high_risk_found, moderate_risk_found) from coordinator data."""
@@ -135,6 +137,8 @@ class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for severe/hazardous weather warnings (tornado, thunderstorm, etc.)."""
 
+    _attr_has_entity_name = True
+
     _SEVERE_EVENTS = [
         'tornado warning', 'tornado watch',
         'severe thunderstorm warning', 'severe thunderstorm watch',
@@ -159,7 +163,7 @@ class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._state = False
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_severe_weather_alert"
-        self._attr_name = f"NOAA {office_code} Severe Weather Alert"
+        self._attr_name = "Severe Weather Alert"
 
     def _get_filtered_alerts(self):
         """Return list of active severe weather alerts from coordinator data."""
@@ -229,6 +233,8 @@ class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for flood and winter weather alerts."""
 
+    _attr_has_entity_name = True
+
     _FLOOD_WINTER_EVENTS = [
         'flood warning', 'flood watch', 'flash flood warning', 'flash flood watch',
         'coastal flood warning', 'coastal flood watch', 'lakeshore flood warning',
@@ -251,7 +257,7 @@ class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._state = False
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_flood_winter_alert"
-        self._attr_name = f"NOAA {office_code} Flood/Winter Alert"
+        self._attr_name = "Flood/Winter Alert"
 
     def _get_filtered_alerts(self):
         """Return list of active flood/winter alerts from coordinator data."""
@@ -321,6 +327,8 @@ class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for heat, air quality, and other environmental advisories."""
 
+    _attr_has_entity_name = True
+
     _HEAT_AIRQUALITY_EVENTS = [
         'excessive heat warning', 'excessive heat watch', 'heat advisory',
         'extreme heat warning', 'extreme heat watch',
@@ -342,7 +350,7 @@ class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._state = False
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_heat_air_quality_alert"
-        self._attr_name = f"NOAA {office_code} Heat/Air Quality Alert"
+        self._attr_name = "Heat/Air Quality Alert"
 
     def _get_filtered_alerts(self):
         """Return list of active heat/air quality alerts from coordinator data."""
@@ -412,6 +420,8 @@ class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
 class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for general active NWS alerts for the configured location."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, office_code, latitude, longitude):
         """Initialize the binary sensor."""
         super().__init__(coordinator)
@@ -421,7 +431,7 @@ class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._state = False
         self._attributes = {}
         self._attr_unique_id = f"noaa_{office_code}_active_alerts"
-        self._attr_name = f"NOAA {office_code} Active Alerts"
+        self._attr_name = "Active Alerts"
 
     def _get_filtered_alerts(self):
         """Return list of all active alerts and type counts from coordinator data."""

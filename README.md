@@ -144,10 +144,10 @@ Location-specific weather observations, forecasts, alerts, and radar — **one d
 Real-time monitoring of National Weather Service alerts for your location *(NOAA Weather [OFFICE])*:
 
 **Binary Sensors (True/False):**
-- **Severe Weather Alert**: Active tornado, thunderstorm, hurricane, or extreme wind warnings/watches *(binary_sensor.noaa_{office}_severe_weather_alert)*
-- **Flood/Winter Alert**: Active flood, winter storm, snow, ice, or freezing rain warnings/watches *(binary_sensor.noaa_{office}_flood_winter_alert)*
-- **Heat/Air Quality Alert**: Active heat, air quality, fire weather, or environmental advisories *(binary_sensor.noaa_{office}_heat_air_quality_alert)*
-- **Active Alerts**: General indicator for any active NWS alerts *(binary_sensor.noaa_{office}_active_alerts)*
+- **Severe Weather Alert**: Active tornado, thunderstorm, hurricane, or extreme wind warnings/watches *(binary_sensor.noaa_{office}_weather_severe_weather_alert)*
+- **Flood/Winter Alert**: Active flood, winter storm, snow, ice, or freezing rain warnings/watches *(binary_sensor.noaa_{office}_weather_flood_winter_alert)*
+- **Heat/Air Quality Alert**: Active heat, air quality, fire weather, or environmental advisories *(binary_sensor.noaa_{office}_weather_heat_air_quality_alert)*
+- **Active Alerts**: General indicator for any active NWS alerts *(binary_sensor.noaa_{office}_weather_active_alerts)*
 
 **Comprehensive Sensor:**
 - **Active NWS Alerts**: Detailed alert information including *(NOAA Weather)*:
@@ -282,7 +282,7 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 
 **Examples:**
 - `sensor.noaa_ilm_temperature` — Temperature for Wilmington (ILM office)
-- `binary_sensor.noaa_ilm_unsafe_to_swim` — Rip current safety for Wilmington
+- `binary_sensor.noaa_ilm_surf_unsafe_to_swim` — Rip current safety for Wilmington
 - `sensor.noaa_weather_hurricane_activity` — Global hurricane activity (NOAA Hurricane device)
 - `image.noaa_weather_hurricane_outlook_image` — Hurricane outlook image (NOAA Hurricane device)
 - `image.noaa_ilm_weather_radar_base_reflectivity` — Radar for Wilmington (ILM)
@@ -312,7 +312,7 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 | Data Type | Entity Pattern | Example |
 |-----------|---------------|---------|
 | Weather Observation | `sensor.noaa_{office}_weather_{metric}` | `sensor.noaa_ilm_weather_temperature` |
-| Weather Alert Binary | `binary_sensor.noaa_{office}_{alert_type}_alert` | `binary_sensor.noaa_ilm_severe_weather_alert` |
+| Weather Alert Binary | `binary_sensor.noaa_{office}_weather_{alert_type}_alert` | `binary_sensor.noaa_ilm_weather_severe_weather_alert` |
 | Surf Conditions | `sensor.noaa_{office}_{surf_metric}` | `sensor.noaa_ilm_rip_current_risk` |
 | Space Weather | `sensor.noaa_{office}_{metric}` | `sensor.noaa_ilm_aurora_next_time` |
 | Meteor Showers | `sensor.noaa_{office}_space_{metric}` | `sensor.noaa_ilm_space_meteor_viewing_score` |
@@ -334,6 +334,22 @@ If you are upgrading from a previous version, the following image entity IDs hav
 
 The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & Services → Entities**, filter by "unavailable", and remove the old image entities. Update any automations or dashboard cards that reference the old entity IDs.
 
+#### Binary sensor names (0.5.0)
+
+Before 0.5.0 the binary sensors set a full name that already contained `NOAA {office}`, which Home Assistant then prefixed with the device name again. The result was a doubled entity ID and friendly name:
+
+| Before 0.5.0 | From 0.5.0 |
+|---|---|
+| `binary_sensor.noaa_{office}_surf_noaa_{office}_unsafe_to_swim` | `binary_sensor.noaa_{office}_surf_unsafe_to_swim` |
+| `binary_sensor.noaa_{office}_weather_noaa_{office}_severe_weather_alert` | `binary_sensor.noaa_{office}_weather_severe_weather_alert` |
+| `binary_sensor.noaa_{office}_weather_noaa_{office}_flood_winter_alert` | `binary_sensor.noaa_{office}_weather_flood_winter_alert` |
+| `binary_sensor.noaa_{office}_weather_noaa_{office}_heat_air_quality_alert` | `binary_sensor.noaa_{office}_weather_heat_air_quality_alert` |
+| `binary_sensor.noaa_{office}_weather_noaa_{office}_active_alerts` | `binary_sensor.noaa_{office}_weather_active_alerts` |
+
+**Existing installations keep their current entity IDs and nothing breaks.** The `unique_id` values are unchanged, so Home Assistant's entity registry holds on to whatever ID it already assigned — your automations and dashboard cards keep working untouched. What does change is the displayed friendly name, which loses the stutter (for example "NOAA ILM Surf NOAA ILM Unsafe to Swim" becomes "NOAA ILM Surf Unsafe to Swim").
+
+Only fresh installations get the shorter entity IDs. If you would like an existing installation to match, rename the entities yourself in **Settings → Devices & Services → Entities**, then update any automations that reference the old IDs.
+
 ## Example Automations
 
 ### Binary Sensor Triggers for Safety Alerts
@@ -345,7 +361,7 @@ automation:
     description: "Alert when rip current conditions become dangerous"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_ilm_unsafe_to_swim
+      entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -366,20 +382,20 @@ automation:
     description: "Immediate notification for severe weather warnings"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_ilm_severe_weather_alert
+      entity_id: binary_sensor.noaa_ilm_weather_severe_weather_alert
       to: 'on'
     action:
       - service: notify.mobile_app
         data:
-          title: "⚠️ {{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].event }}"
-          message: "{{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
+          title: "⚠️ {{ state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts')[0].event }}"
+          message: "{{ state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
           data:
             priority: high
             notification_icon: mdi:weather-lightning-rainy
       - service: tts.google_translate_say
         data:
           entity_id: media_player.home_speaker
-          message: "{{ state_attr('binary_sensor.noaa_ilm_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
+          message: "{{ state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts')[0].description | replace('\r\n',' ') }}"
 ```
 
 #### Winter Storm Alert with Light Flash
@@ -389,7 +405,7 @@ automation:
     description: "Visual and mobile notification for winter weather"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_ilm_flood_winter_alert
+      entity_id: binary_sensor.noaa_ilm_weather_flood_winter_alert
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -413,7 +429,7 @@ automation:
     description: "Auto-adjust cooling when heat advisory is active"
     trigger:
       platform: state
-      entity_id: binary_sensor.noaa_ilm_heat_air_quality_alert
+      entity_id: binary_sensor.noaa_ilm_weather_heat_air_quality_alert
       to: 'on'
     action:
       - service: notify.mobile_app
@@ -544,7 +560,7 @@ automation:
         at: "08:00:00"
     condition:
       - condition: state
-        entity_id: binary_sensor.noaa_ilm_unsafe_to_swim
+        entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
         state: 'off'
       - condition: numeric_state
         entity_id: sensor.noaa_ilm_temperature
@@ -553,7 +569,7 @@ automation:
         entity_id: sensor.noaa_ilm_wind_speed
         below: 15
       - condition: state
-        entity_id: binary_sensor.noaa_ilm_active_alerts
+        entity_id: binary_sensor.noaa_ilm_weather_active_alerts
         state: 'off'
     action:
       - service: notify.mobile_app
@@ -579,8 +595,8 @@ automation:
     trigger:
       - platform: state
         entity_id: 
-          - binary_sensor.noaa_ilm_severe_weather_alert
-          - binary_sensor.noaa_ilm_flood_winter_alert
+          - binary_sensor.noaa_ilm_weather_severe_weather_alert
+          - binary_sensor.noaa_ilm_weather_flood_winter_alert
         to: 'on'
     action:
       # Close automated blinds/shades
@@ -631,7 +647,7 @@ script:
             feels like {{ states('sensor.noaa_ilm_feels_like') }} degrees.
             {{ states('sensor.noaa_ilm_sky_conditions') }} skies.
             Wind {{ states('sensor.noaa_ilm_wind_speed') }} miles per hour from the {{ states('sensor.noaa_ilm_wind_direction') }}.
-            {% if is_state('binary_sensor.noaa_ilm_active_alerts', 'on') %}
+            {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}
               Alert: {{ state_attr('sensor.noaa_weather_active_nws_alerts', 'total_alerts') }} weather alerts are currently active.
             {% endif %}
 ```
@@ -702,16 +718,16 @@ entities:
     name: "Active Alerts"
     icon: mdi:alert-circle
   - type: divider
-  - entity: binary_sensor.noaa_ilm_severe_weather_alert
+  - entity: binary_sensor.noaa_ilm_weather_severe_weather_alert
     name: "Severe Weather"
     icon: mdi:weather-lightning
-  - entity: binary_sensor.noaa_ilm_flood_winter_alert
+  - entity: binary_sensor.noaa_ilm_weather_flood_winter_alert
     name: "Flood/Winter"
     icon: mdi:weather-snowy-rainy
-  - entity: binary_sensor.noaa_ilm_heat_air_quality_alert
+  - entity: binary_sensor.noaa_ilm_weather_heat_air_quality_alert
     name: "Heat/Air Quality"
     icon: mdi:sun-thermometer
-  - entity: binary_sensor.noaa_ilm_active_alerts
+  - entity: binary_sensor.noaa_ilm_weather_active_alerts
     name: "Any Active Alerts"
     icon: mdi:bell-alert
 ```
@@ -725,7 +741,7 @@ entities:
   - entity: sensor.noaa_ilm_rip_current_risk
     name: "Rip Current Risk"
     icon: mdi:waves
-  - entity: binary_sensor.noaa_ilm_unsafe_to_swim
+  - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
     name: "Safe to Swim"
     icon: mdi:swim
   - entity: sensor.noaa_ilm_surf_height
@@ -918,7 +934,7 @@ cards:
       
       - type: conditional
         conditions:
-          - entity: binary_sensor.noaa_ilm_weather_unsafe_to_swim
+          - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
             state: 'on'
         card:
           type: markdown
@@ -1004,11 +1020,11 @@ entities:
     name: "Wind"
   - entity: sensor.noaa_surf_surf_height
     name: "Surf"
-  - entity: binary_sensor.noaa_ilm_unsafe_to_swim
+  - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
     name: "Safe Swim"
   - entity: sensor.noaa_ilm_space_planetary_k_index_rating
     name: "Kp Index"
-  - entity: binary_sensor.noaa_ilm_active_alerts
+  - entity: binary_sensor.noaa_ilm_weather_active_alerts
     name: "Alerts"
   - entity: sensor.noaa_weather_hurricane_activity
     name: "Hurricanes"

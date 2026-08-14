@@ -38,6 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account for cloud cover; pair it with the existing Cloud Cover sensor if you want that.
 - No new dependencies: `requirements` remains `aiohttp` and `voluptuous`.
 
+### Fixed
+- **Binary sensors no longer repeat the device name.** All five existing binary sensors set a
+  full `_attr_name` containing `NOAA {office}` while also carrying a device, so Home Assistant
+  prefixed the device name a second time — producing
+  `binary_sensor.noaa_ilm_surf_noaa_ilm_unsafe_to_swim` and the friendly name
+  "NOAA ILM Surf NOAA ILM Unsafe to Swim". They now use `_attr_has_entity_name = True` with a
+  local-only name, matching every sensor in the integration. Found by running the integration on
+  a live Home Assistant instance.
+  - **Existing installations are unaffected in any way that breaks automations.** The `unique_id`
+    values are unchanged, so the entity registry keeps the entity IDs it already assigned. Only
+    the displayed friendly name changes. Fresh installations get the shorter IDs
+    (`binary_sensor.noaa_{office}_surf_unsafe_to_swim`); see the migration table in the README.
+- Corrected the binary sensor entity IDs throughout README.md and CONFIGURATION.md. They
+  previously documented IDs such as `binary_sensor.noaa_ilm_unsafe_to_swim`, which Home Assistant
+  never actually produced.
+
 ### Changed
 - Meteor shower entities refresh every 30 minutes rather than the integration default of 10,
   since nothing is fetched and the best-of-night result is stable for hours.
