@@ -71,6 +71,10 @@ BEST_WINDOW_STEP_MINUTES = 10
 #: Fraction of the peak rate that still counts as being inside the "best window".
 BEST_WINDOW_RATE_FRACTION = 0.5
 
+#: Floor for a slope derived from the activity window rather than taken from the catalog.
+#: Roughly a two-day full-width-half-maximum, which is already broad for a minor shower.
+MIN_DERIVED_SLOPE = 0.15
+
 #: Score thresholds, highest first. Hardcoded here rather than in ``const.py``, mirroring
 #: ``parsers.get_visibility_class``.
 _SCORE_RATINGS = (
@@ -94,19 +98,26 @@ FACTOR_DARKNESS = "darkness"
 def activity_slope(shower: Dict[str, Any]) -> float:
     """Return the activity-profile slope ``B`` for *shower*.
 
-    When the catalog supplies a published ``b`` it wins. Otherwise the slope is derived from the
-    activity window so the profile stays consistent with the data we do have: ZHR falls to about
-    a tenth of maximum at the nearer window edge. Broad showers such as the Taurids get a shallow
-    slope; sharp ones such as the Draconids get a steep one.
+    A published ``b`` from the catalog always wins. Only when none is available is the slope
+    derived from the activity window, by assuming activity has decayed to roughly the naked-eye
+    detection threshold of about one meteor per hour at the nearer window edge.
+
+    That derivation is a weak substitute and is deliberately floored. An activity window records
+    where a shower is detectable *at all*, which for a sharp shower is far wider than its peak:
+    deriving the Quadrantid slope from its window gives 0.145 against a published 2.2, which
+    stretches a fourteen-hour peak across a fortnight. The floor stops the fallback from ever
+    producing a profile that broad, at the cost of being too sharp for a genuinely wide minor
+    shower — the safer direction, since it under-reports rather than crying wolf.
     """
     published = shower.get("b")
-    if published:
+    if published is not None:
         return float(published)
 
     to_start = abs(astro.wrap180(shower["sol_lon_max"] - shower["sol_lon_start"]))
     to_end = abs(astro.wrap180(shower["sol_lon_end"] - shower["sol_lon_max"]))
-    half_width = min(to_start, to_end)
-    return 1.0 / max(half_width, 0.5)
+    half_width = max(min(to_start, to_end), 0.5)
+    decades = math.log10(max(shower["zhr"], 2.0))
+    return max(decades / half_width, MIN_DERIVED_SLOPE)
 
 
 def zhr_at(shower: Dict[str, Any], solar_longitude: float) -> float:
@@ -237,12 +248,11 @@ class SkySample:
     candidate shower.
     """
 
-    __slots__ = ("when", "jd", "lst", "moon_alt", "moon_illumination", "limiting_mag")
+    __slots__ = ("when", "lst", "moon_alt", "moon_illumination", "limiting_mag")
 
-    def __init__(self, when: datetime, jd: float, lst: float, moon_alt: float,
+    def __init__(self, when: datetime, lst: float, moon_alt: float,
                  moon_illumination: float, limiting_mag: float) -> None:
         self.when = when
-        self.jd = jd
         self.lst = lst
         self.moon_alt = moon_alt
         self.moon_illumination = moon_illumination
@@ -267,12 +277,15 @@ def sample_night(
         if when > dark_end:
             when = dark_end
         jd = astro.julian_day(when)
-        illumination = astro.moon_illuminated_fraction(jd)
-        altitude = astro.moon_altitude(jd, latitude, longitude)
+        sidereal = astro.local_sidereal_time(jd, longitude)
+        # moon_equatorial is the most expensive routine in astro; compute it once and derive
+        # both the altitude and the illuminated fraction from it.
+        moon_ra, moon_dec = astro.moon_equatorial(jd)
+        altitude, _ = astro.equatorial_to_horizontal(moon_ra, moon_dec, latitude, sidereal)
+        illumination = astro.moon_illuminated_fraction_from(jd, moon_ra, moon_dec)
         samples.append(SkySample(
             when=when,
-            jd=jd,
-            lst=astro.local_sidereal_time(jd, longitude),
+            lst=sidereal,
             moon_alt=altitude,
             moon_illumination=illumination,
             limiting_mag=limiting_magnitude(illumination, altitude, darkness),
@@ -293,6 +306,11 @@ def nearest_peak(shower: Dict[str, Any], now: datetime) -> datetime:
     upcoming = astro.next_solar_longitude_after(shower["sol_lon_max"], now)
     previous = astro.previous_solar_longitude_before(shower["sol_lon_max"], now)
     return previous if (now - previous) < (upcoming - now) else upcoming
+
+
+def _local_noon(day: date, tz: tzinfo) -> datetime:
+    """Return local noon on *day*, the instant an observing night is labelled from."""
+    return datetime.combine(day, datetime.min.time(), tzinfo=tz) + timedelta(hours=12)
 
 
 def _observing_night(now_local: datetime) -> date:
@@ -341,7 +359,14 @@ def _evaluate_shower(
         altitudes.append(altitude)
         rates.append(observed_rate(zhr_now, altitude, shower["r"], sample.limiting_mag))
 
-    best_index = max(range(len(rates)), key=lambda i: rates[i]) if rates else None
+    if not rates:
+        best_index = None
+    elif max(rates) > 0.0:
+        best_index = max(range(len(rates)), key=lambda i: rates[i])
+    else:
+        # The radiant never clears the horizon tonight. Report the moment it comes closest
+        # rather than an arbitrary first sample, so the altitude attribute stays meaningful.
+        best_index = max(range(len(altitudes)), key=lambda i: altitudes[i])
     best_rate = rates[best_index] if best_index is not None else 0.0
 
     window_start = window_end = None
@@ -414,11 +439,17 @@ def build_meteor_forecast(
     jd_now = astro.julian_day(now)
     solar_longitude = astro.sun_apparent_longitude(jd_now)
 
-    now_local = now.astimezone(tz)
-    night_of = _observing_night(now_local)
-    night_start_local = datetime.combine(night_of, datetime.min.time(), tzinfo=tz) + timedelta(hours=12)
+    night_of = _observing_night(now.astimezone(tz))
+    dark_start, dark_end, darkness = astro.find_dark_window(night_of, latitude, longitude)
 
-    dark_start, dark_end, darkness = astro.find_dark_window(night_of, latitude, longitude, tz)
+    # Once tonight's darkness has run out, look ahead to the next night rather than keep
+    # reporting a window that has already closed. Without this the forecast spends every morning
+    # advertising a "best viewing" window that ended hours earlier, in daylight.
+    if dark_end is not None and now > dark_end:
+        night_of = night_of + timedelta(days=1)
+        dark_start, dark_end, darkness = astro.find_dark_window(night_of, latitude, longitude)
+
+    night_start_local = _local_noon(night_of, tz)
 
     if dark_start is not None and dark_end is not None:
         samples = sample_night(dark_start, dark_end, latitude, longitude, darkness)
@@ -435,6 +466,12 @@ def build_meteor_forecast(
         if is_active(shower, solar_longitude)
     ]
     active.sort(key=lambda item: (item["expected_per_hour"], item["zhr_now"]), reverse=True)
+
+    # Only a shower whose radiant actually clears the horizon during the dark window can be the
+    # one worth watching. Without this check the headline sensor happily names a shower whose
+    # radiant sits tens of degrees below the horizon all night — the Quadrantids seen from
+    # Sydney, for instance, which is true of roughly a quarter of the year there.
+    observable = [item for item in active if item["radiant_altitude"] > 0.0]
 
     upcoming = []
     for shower in catalog:
@@ -472,6 +509,6 @@ def build_meteor_forecast(
         "moon_illumination": moon_illumination,
         "moon_altitude": moon_alt,
         "active": active,
-        "best": active[0] if active else None,
+        "best": observable[0] if observable else None,
         "upcoming": upcoming[:upcoming_count],
     }

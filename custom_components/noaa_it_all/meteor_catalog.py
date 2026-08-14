@@ -41,6 +41,22 @@ Field reference:
 ``variable``        ``True`` for showers with unpredictable outburst behaviour
 ``b``               Activity-profile slope; ``None`` means derive it from the window
 ==================  =============================================================
+
+About ``b``
+-----------
+
+The activity profile is ``ZHR = ZHR_max * 10 ** (-b * |delta_solar_longitude|)``, so ``b``
+controls how sharply activity falls away from maximum. It matters more than it looks: the
+Quadrantids are at half maximum for roughly fourteen *hours*, while the Taurids run for weeks,
+and no single default describes both.
+
+Values here come from the IMO Meteor Shower Calendar working list (originally Jenniskens 1994,
+*Meteor stream activity*). Where a shower has no sourced value, ``b`` is ``None`` and
+:func:`meteor.activity_slope` derives one from the activity window instead. That derivation is a
+fallback, not an equal alternative: an activity window describes where a shower is detectable at
+all, which is far wider than its peak, so a derived slope always comes out too shallow. The
+remaining showers on the fallback are minor ones whose peak rates are low enough that the
+difference does not change what an observer would do.
 """
 
 from __future__ import annotations
@@ -60,7 +76,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 230.0, "dec": 49.0,
         "zhr": 110, "r": 2.1, "v_geo": 41,
         "constellation": "Bootes", "parent": "(196256) 2003 EH1",
-        "variable": False, "b": None,
+        "variable": False, "b": 2.2,
     },
     {
         "code": "GNO", "name": "Gamma Normids",
@@ -76,7 +92,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 271.0, "dec": 34.0,
         "zhr": 18, "r": 2.1, "v_geo": 49,
         "constellation": "Lyra", "parent": "C/1861 G1 Thatcher",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.22,
     },
     {
         "code": "PPU", "name": "Pi Puppids",
@@ -92,7 +108,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 338.0, "dec": -1.0,
         "zhr": 50, "r": 2.4, "v_geo": 66,
         "constellation": "Aquarius", "parent": "1P/Halley",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.08,
     },
     {
         "code": "ELY", "name": "Eta Lyrids",
@@ -124,7 +140,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 307.0, "dec": -10.0,
         "zhr": 5, "r": 2.5, "v_geo": 23,
         "constellation": "Capricornus", "parent": "169P/NEAT",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.056,
     },
     {
         "code": "SDA", "name": "Southern Delta Aquariids",
@@ -132,7 +148,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 340.0, "dec": -16.0,
         "zhr": 25, "r": 3.2, "v_geo": 41,
         "constellation": "Aquarius", "parent": "96P/Machholz",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.091,
     },
     {
         "code": "PER", "name": "Perseids",
@@ -140,7 +156,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 48.0, "dec": 58.0,
         "zhr": 100, "r": 2.2, "v_geo": 59,
         "constellation": "Perseus", "parent": "109P/Swift-Tuttle",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.2,
     },
     {
         "code": "KCG", "name": "Kappa Cygnids",
@@ -148,7 +164,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 286.0, "dec": 59.0,
         "zhr": 3, "r": 3.0, "v_geo": 25,
         "constellation": "Cygnus", "parent": None,
-        "variable": False, "b": None,
+        "variable": False, "b": 0.068,
     },
     {
         "code": "AUR", "name": "Aurigids",
@@ -156,7 +172,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 91.0, "dec": 39.0,
         "zhr": 6, "r": 2.6, "v_geo": 66,
         "constellation": "Auriga", "parent": "C/1911 N1 Kiess",
-        "variable": True, "b": None,
+        "variable": True, "b": 0.19,
     },
     {
         "code": "SPE", "name": "September Epsilon Perseids",
@@ -164,7 +180,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 48.0, "dec": 40.0,
         "zhr": 5, "r": 3.0, "v_geo": 64,
         "constellation": "Perseus", "parent": None,
-        "variable": False, "b": None,
+        "variable": False, "b": 0.19,
     },
     {
         "code": "DRA", "name": "Draconids",
@@ -172,7 +188,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 262.0, "dec": 54.0,
         "zhr": 5, "r": 2.6, "v_geo": 20,
         "constellation": "Draco", "parent": "21P/Giacobini-Zinner",
-        "variable": True, "b": None,
+        "variable": True, "b": 2.5,
     },
     {
         "code": "STA", "name": "Southern Taurids",
@@ -180,7 +196,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 32.0, "dec": 9.0,
         "zhr": 5, "r": 2.3, "v_geo": 27,
         "constellation": "Taurus", "parent": "2P/Encke",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.026,
     },
     {
         "code": "ORI", "name": "Orionids",
@@ -188,7 +204,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 95.0, "dec": 16.0,
         "zhr": 20, "r": 2.5, "v_geo": 66,
         "constellation": "Orion", "parent": "1P/Halley",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.12,
     },
     {
         "code": "LMI", "name": "Leonis Minorids",
@@ -204,7 +220,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 58.0, "dec": 22.0,
         "zhr": 5, "r": 2.3, "v_geo": 29,
         "constellation": "Taurus", "parent": "2P/Encke",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.026,
     },
     {
         "code": "LEO", "name": "Leonids",
@@ -212,7 +228,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 152.0, "dec": 22.0,
         "zhr": 15, "r": 2.5, "v_geo": 71,
         "constellation": "Leo", "parent": "55P/Tempel-Tuttle",
-        "variable": True, "b": None,
+        "variable": True, "b": 0.55,
     },
     {
         "code": "AMO", "name": "Alpha Monocerotids",
@@ -220,7 +236,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 117.0, "dec": 1.0,
         "zhr": 3, "r": 2.4, "v_geo": 65,
         "constellation": "Monoceros", "parent": None,
-        "variable": True, "b": None,
+        "variable": True, "b": 2.5,
     },
     {
         "code": "PHO", "name": "Phoenicids",
@@ -244,7 +260,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 123.0, "dec": -45.0,
         "zhr": 10, "r": 2.9, "v_geo": 40,
         "constellation": "Puppis", "parent": None,
-        "variable": False, "b": None,
+        "variable": False, "b": 0.034,
     },
     {
         "code": "MON", "name": "December Monocerotids",
@@ -252,7 +268,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 100.0, "dec": 8.0,
         "zhr": 3, "r": 3.0, "v_geo": 41,
         "constellation": "Monoceros", "parent": "C/1917 F1 Mellish",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.25,
     },
     {
         "code": "HYD", "name": "Sigma Hydrids",
@@ -268,7 +284,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 112.0, "dec": 33.0,
         "zhr": 150, "r": 2.6, "v_geo": 35,
         "constellation": "Gemini", "parent": "(3200) Phaethon",
-        "variable": False, "b": None,
+        "variable": False, "b": 0.39,
     },
     {
         "code": "COM", "name": "Comae Berenicids",
@@ -276,7 +292,7 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 175.0, "dec": 18.0,
         "zhr": 3, "r": 3.0, "v_geo": 65,
         "constellation": "Coma Berenices", "parent": None,
-        "variable": False, "b": None,
+        "variable": False, "b": 0.18,
     },
     {
         "code": "URS", "name": "Ursids",
@@ -284,9 +300,6 @@ METEOR_SHOWERS: List[Dict[str, Any]] = [
         "ra": 217.0, "dec": 76.0,
         "zhr": 10, "r": 3.0, "v_geo": 33,
         "constellation": "Ursa Minor", "parent": "8P/Tuttle",
-        "variable": True, "b": None,
+        "variable": True, "b": 0.9,
     },
 ]
-
-#: Showers considered "major" — used to keep dashboards and notifications signal-heavy.
-MAJOR_SHOWER_CODES = ("QUA", "LYR", "ETA", "SDA", "PER", "ORI", "LEO", "GEM", "URS")

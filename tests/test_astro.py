@@ -28,6 +28,7 @@ from astro import (
     obliquity_of_ecliptic,
     previous_solar_longitude_before,
     sun_altitude,
+    solar_noon_utc,
     sun_apparent_longitude,
     sun_equatorial,
     wrap180,
@@ -320,14 +321,14 @@ class TestDarkWindow(unittest.TestCase):
     SYDNEY = (-33.87, 151.21)
 
     def test_mid_latitude_summer_night(self):
-        start, end, label = find_dark_window(date(2026, 8, 12), *self.LA, UTC)
+        start, end, label = find_dark_window(date(2026, 8, 12), *self.LA)
         self.assertEqual(label, DARKNESS_ASTRONOMICAL)
         hours = (end - start).total_seconds() / 3600.0
         self.assertGreater(hours, 5.0)
         self.assertLess(hours, 10.0)
 
     def test_sun_is_actually_below_threshold_inside_window(self):
-        start, end, _ = find_dark_window(date(2026, 8, 12), *self.LA, UTC)
+        start, end, _ = find_dark_window(date(2026, 8, 12), *self.LA)
         midpoint = start + (end - start) / 2
         self.assertLess(sun_altitude(julian_day(midpoint), *self.LA), -18.0)
 
@@ -336,25 +337,47 @@ class TestDarkWindow(unittest.TestCase):
 
         The closed-form sunset equation has no solution here; sampling degrades gracefully.
         """
-        start, end, label = find_dark_window(date(2026, 6, 21), *self.REYKJAVIK, UTC)
+        start, end, label = find_dark_window(date(2026, 6, 21), *self.REYKJAVIK)
         self.assertEqual(label, DARKNESS_NONE)
         self.assertIsNone(start)
         self.assertIsNone(end)
 
     def test_high_latitude_winter_has_long_night(self):
-        start, end, label = find_dark_window(date(2026, 12, 21), *self.REYKJAVIK, UTC)
+        start, end, label = find_dark_window(date(2026, 12, 21), *self.REYKJAVIK)
         self.assertEqual(label, DARKNESS_ASTRONOMICAL)
         self.assertGreater((end - start).total_seconds() / 3600.0, 10.0)
 
     def test_southern_hemisphere(self):
-        start, end, label = find_dark_window(date(2026, 8, 12), *self.SYDNEY, UTC)
+        start, end, label = find_dark_window(date(2026, 8, 12), *self.SYDNEY)
         self.assertEqual(label, DARKNESS_ASTRONOMICAL)
         self.assertGreater((end - start).total_seconds() / 3600.0, 5.0)
+
+    def test_window_is_independent_of_the_configured_timezone(self):
+        """The window is anchored on the observer's longitude, not on a civil timezone.
+
+        A Home Assistant left on UTC while pointed at California used to have the night clipped
+        at the search boundary, reporting 9.7 dark hours instead of 11.1.
+        """
+        start, end, label = find_dark_window(date(2026, 12, 21), *self.LA)
+        hours = (end - start).total_seconds() / 3600.0
+        self.assertEqual(label, DARKNESS_ASTRONOMICAL)
+        self.assertGreater(hours, 10.5)
+        # and the sun really is below the threshold right up to the reported end
+        self.assertLess(sun_altitude(julian_day(end - timedelta(minutes=5)), *self.LA), -18.0)
+
+    def test_solar_noon_tracks_longitude(self):
+        """Solar noon runs earlier in UTC the further east the observer is."""
+        greenwich = solar_noon_utc(date(2026, 6, 21), 0.0)
+        self.assertEqual(greenwich.hour, 12)
+        east = solar_noon_utc(date(2026, 6, 21), 15.0)
+        self.assertEqual((greenwich - east).total_seconds() / 3600.0, 1.0)
+        west = solar_noon_utc(date(2026, 6, 21), -15.0)
+        self.assertEqual((west - greenwich).total_seconds() / 3600.0, 1.0)
 
     def test_window_is_ordered(self):
         for observer in (self.LA, self.REYKJAVIK, self.SYDNEY):
             for day in (date(2026, 3, 21), date(2026, 9, 23), date(2026, 12, 21)):
-                start, end, _ = find_dark_window(day, *observer, UTC)
+                start, end, _ = find_dark_window(day, *observer)
                 if start is not None:
                     self.assertLess(start, end)
 

@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Meteor shower alerts and viewing forecast**, in the `NOAA Space` device group:
   - `binary_sensor.noaa_{office}_space_meteor_shower_active` — turns on only when a shower is
     genuinely worth going outside for, gated on both a real predicted rate (>=5/hour) and usable
-    sky conditions (score >=25) so it fires a handful of nights a year rather than sitting on
+    sky conditions (score >=25) so it stays off most nights rather than sitting permanently on
+    (about 50 nights a year measured from Wilmington NC, clustered around the major showers)
   - `sensor.noaa_{office}_space_meteor_shower_activity` — the shower most worth watching now
   - `sensor.noaa_{office}_space_next_meteor_shower` — next shower to peak, with an `upcoming`
     attribute listing the next five for dashboard cards

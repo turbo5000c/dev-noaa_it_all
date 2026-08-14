@@ -73,6 +73,27 @@ class TestActivityProfile(unittest.TestCase):
         shower = dict(PERSEIDS, b=0.35)
         self.assertAlmostEqual(activity_slope(shower), 0.35)
 
+    def test_zero_slope_is_honoured_not_treated_as_missing(self):
+        """A published b of 0 is a real value; a falsy check would silently discard it."""
+        self.assertAlmostEqual(activity_slope(dict(PERSEIDS, b=0.0)), 0.0)
+
+    def test_catalog_majors_use_published_slopes(self):
+        """The derived fallback is far too shallow for sharp showers, so majors must be sourced.
+
+        Deriving the Quadrantid slope from its activity window gives about 0.145 against a
+        published 2.2 — a fourteen-hour peak smeared across a fortnight, which made the
+        "worth going outside" alert fire on 94 nights of the year instead of around 50.
+        """
+        for code in ("QUA", "PER", "GEM", "LEO", "URS", "ORI", "ETA", "LYR"):
+            shower = _by_code(code)
+            self.assertIsNotNone(shower["b"], f"{code} must carry a published activity slope")
+
+    def test_derived_slope_is_floored(self):
+        """An unsourced shower must never get a profile broader than the floor allows."""
+        wide = dict(PERSEIDS, b=None, zhr=3,
+                    sol_lon_max=100.0, sol_lon_start=40.0, sol_lon_end=160.0)
+        self.assertGreaterEqual(activity_slope(wide), 0.15)
+
     def test_slope_is_steeper_for_narrow_showers(self):
         """The Draconids last hours; the Taurids last weeks."""
         self.assertGreater(activity_slope(_by_code("DRA")), activity_slope(_by_code("STA")))
@@ -300,6 +321,41 @@ class TestForecastAssembly(unittest.TestCase):
         self.assertIn("ETA", codes)
         eta = next(s for s in forecast["active"] if s["code"] == "ETA")
         self.assertGreater(eta["radiant_altitude"], 0)
+
+    def test_best_is_never_a_shower_below_the_horizon(self):
+        """The headline sensor must not name a shower whose radiant never clears the horizon.
+
+        Seen from Sydney in early January the Quadrantid radiant sits about 74 degrees *below*
+        the horizon all night, yet it was being reported as the shower worth watching on roughly
+        a quarter of the year's nights.
+        """
+        for observer in (ILM, SYDNEY, TROMSO):
+            for day in range(0, 365, 5):
+                when = datetime(2026, 1, 1, 12, 0, tzinfo=UTC) + timedelta(days=day)
+                best = self._forecast(when, observer)["best"]
+                if best is not None:
+                    self.assertGreater(
+                        best["radiant_altitude"], 0.0,
+                        f"{observer} on day {day}: best is {best['name']} at "
+                        f"{best['radiant_altitude']} deg",
+                    )
+
+    def test_forecast_rolls_forward_once_the_night_is_over(self):
+        """After dawn the forecast must move to the next night, not keep a closed window.
+
+        Otherwise the alert spends every morning advertising a best-viewing window that ended
+        hours earlier, in daylight.
+        """
+        tz = timezone(timedelta(hours=-4))
+        for hour in (7, 9, 11):
+            now = datetime(2026, 8, 14, hour, 0, tzinfo=tz)
+            forecast = build_meteor_forecast(now, ILM[0], ILM[1], tz, METEOR_SHOWERS)
+            end = forecast["dark_window_end"]
+            self.assertIsNotNone(end)
+            self.assertGreater(
+                datetime.fromisoformat(end), now,
+                f"at {hour}:00 the reported dark window had already closed",
+            )
 
     def test_radiant_that_never_rises(self):
         """The Quadrantid radiant at declination +49 stays below the horizon from Sydney."""

@@ -724,22 +724,35 @@ class MeteorShowerCoordinator(DataUpdateCoordinator):
         self.office_code = office_code
         self.latitude = latitude
         self.longitude = longitude
+        self._tz_name: Optional[str] = None
+        self._tz = timezone.utc
 
     def _local_timezone(self):
         """Return the observer's timezone, falling back to UTC.
 
         Read from ``hass.config.time_zone`` rather than ``homeassistant.util.dt`` so this module
-        keeps working under the test-suite's Home Assistant mocks, which do not stub
-        ``homeassistant.util``.
+        keeps working under the test-suite's Home Assistant mocks, which stub ``homeassistant``
+        but not ``homeassistant.util``.
+
+        The resolved zone is cached against the name it came from. Building a ``ZoneInfo`` reads
+        the tz database from disk the first time a given key is used, so without the cache that
+        happens on the event loop on every refresh — and an unresolvable name would log the same
+        warning forty-eight times a day, forever.
         """
         name = getattr(self.hass.config, "time_zone", None)
         if not isinstance(name, str):
             return timezone.utc
+        if name == self._tz_name:
+            return self._tz
+
         try:
-            return ZoneInfo(name)
+            resolved = ZoneInfo(name)
         except (ZoneInfoNotFoundError, ValueError):
             _LOGGER.warning("Unknown Home Assistant time zone %r; using UTC", name)
-            return timezone.utc
+            resolved = timezone.utc
+
+        self._tz_name, self._tz = name, resolved
+        return resolved
 
     async def _async_update_data(self) -> dict:
         if self.latitude is None or self.longitude is None:

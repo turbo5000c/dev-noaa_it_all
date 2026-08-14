@@ -16,7 +16,7 @@ from ..const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-def _space_device_info(office_code) -> DeviceInfo:
+def space_device_info(office_code) -> DeviceInfo:
     """Return the shared NOAA Space device for an office.
 
     Mirrors ``_hurricane_device_info`` in ``sensors/hurricanes.py``. The existing space weather
@@ -56,7 +56,7 @@ class _MeteorBaseSensor(CoordinatorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information to group this entity."""
-        return _space_device_info(self._office_code)
+        return space_device_info(self._office_code)
 
 
 class MeteorShowerActivitySensor(_MeteorBaseSensor):

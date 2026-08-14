@@ -809,6 +809,32 @@ class TestSuggestedObjectIdFormat(unittest.TestCase):
         self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_meteor_shower_active")
         self.assertEqual(s._attr_unique_id, f"noaa_{OFFICE}_meteor_shower_active")
 
+    # Weather extra sensors
+    def test_cloud_cover_suggested_object_id(self):
+        from noaa_it_all.sensors.weather_extra import CloudCoverSensor
+        s = CloudCoverSensor(COORD, OFFICE, LAT, LON)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_cloud_cover")
+
+    def test_radar_timestamp_suggested_object_id(self):
+        from noaa_it_all.sensors.weather_extra import RadarTimestampSensor
+        s = RadarTimestampSensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_radar_timestamp")
+
+    def test_forecast_discussion_suggested_object_id(self):
+        from noaa_it_all.sensors.weather_extra import ForecastDiscussionSensor
+        s = ForecastDiscussionSensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_forecast_discussion")
+
+    # Alerts sensor
+    def test_nws_alerts_suggested_object_id(self):
+        from noaa_it_all.sensors.alerts import NWSAlertsSensor
+        s = NWSAlertsSensor(COORD, OFFICE, LAT, LON)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_active_nws_alerts")
+
 
 # ---------------------------------------------------------------------------
 # Binary sensors must not repeat the device prefix
@@ -914,32 +940,6 @@ class TestBinarySensorNaming(unittest.TestCase):
         for sensor in self._all_binary_sensors():
             name = type(sensor).__name__
             self.assertEqual(sensor._attr_unique_id, expected[name], f"{name} unique_id")
-
-    # Weather extra sensors
-    def test_cloud_cover_suggested_object_id(self):
-        from noaa_it_all.sensors.weather_extra import CloudCoverSensor
-        s = CloudCoverSensor(COORD, OFFICE, LAT, LON)
-        self.assertTrue(s._attr_has_entity_name)
-        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_cloud_cover")
-
-    def test_radar_timestamp_suggested_object_id(self):
-        from noaa_it_all.sensors.weather_extra import RadarTimestampSensor
-        s = RadarTimestampSensor(COORD, OFFICE)
-        self.assertTrue(s._attr_has_entity_name)
-        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_radar_timestamp")
-
-    def test_forecast_discussion_suggested_object_id(self):
-        from noaa_it_all.sensors.weather_extra import ForecastDiscussionSensor
-        s = ForecastDiscussionSensor(COORD, OFFICE)
-        self.assertTrue(s._attr_has_entity_name)
-        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_forecast_discussion")
-
-    # Alerts sensor
-    def test_nws_alerts_suggested_object_id(self):
-        from noaa_it_all.sensors.alerts import NWSAlertsSensor
-        s = NWSAlertsSensor(COORD, OFFICE, LAT, LON)
-        self.assertTrue(s._attr_has_entity_name)
-        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_weather_active_nws_alerts")
 
 
 if __name__ == "__main__":

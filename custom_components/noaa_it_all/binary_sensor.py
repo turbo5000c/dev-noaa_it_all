@@ -13,6 +13,7 @@ from .const import (
     CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
     METEOR_ACTIVE_MIN_RATE, METEOR_ACTIVE_MIN_SCORE,
 )
+from .sensors.meteor_showers import space_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -508,8 +509,13 @@ class MeteorShowerActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     This is the entity to trigger automations from. It is deliberately *not* a bare "is any
     shower active" flag: with around thirty showers catalogued something is technically active on
     most nights of the year, so such a flag would sit permanently on. Instead it requires a real
-    predicted rate and usable sky geometry, which means it turns on a handful of nights a year —
-    exactly when you would actually want to be woken up for it.
+    predicted rate and usable sky geometry.
+
+    Measured over 2026 from Wilmington NC that turns on for roughly 50 nights, clustered tightly
+    around the major showers — about thirteen for the Perseids, eight for the Orionids, seven for
+    the Geminids. That is not an arbitrary number: with a published activity slope of 0.2 the
+    Perseids genuinely stay above five meteors an hour for about six days either side of
+    maximum. Raise ``METEOR_ACTIVE_MIN_RATE`` if you only want to hear about the peak nights.
 
     Unlike the other binary sensors in this module it sets ``_attr_has_entity_name``, matching the
     sensor convention, so the entity ID carries the ``space`` device segment
@@ -586,8 +592,4 @@ class MeteorShowerActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information to group this entity."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"noaa_{self._office_code}_space")},
-            name=f"NOAA {self._office_code} Space",
-            manufacturer="NOAA"
-        )
+        return space_device_info(self._office_code)

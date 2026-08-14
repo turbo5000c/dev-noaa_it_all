@@ -10,7 +10,7 @@ import unittest
 from datetime import datetime, timezone
 
 from astro import next_solar_longitude_after, normalize_degrees, wrap180
-from meteor_catalog import MAJOR_SHOWER_CODES, METEOR_SHOWERS, REQUIRED_FIELDS
+from meteor_catalog import METEOR_SHOWERS, REQUIRED_FIELDS
 
 UTC = timezone.utc
 
@@ -40,11 +40,6 @@ class TestCatalogStructure(unittest.TestCase):
     def test_names_are_non_empty(self):
         for shower in METEOR_SHOWERS:
             self.assertTrue(shower["name"].strip(), f"{shower['code']} has an empty name")
-
-    def test_major_codes_exist_in_catalog(self):
-        codes = {shower["code"] for shower in METEOR_SHOWERS}
-        for code in MAJOR_SHOWER_CODES:
-            self.assertIn(code, codes, f"{code} listed as major but absent from the catalog")
 
 
 class TestCatalogRanges(unittest.TestCase):

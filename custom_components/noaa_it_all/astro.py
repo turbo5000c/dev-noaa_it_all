@@ -432,6 +432,18 @@ def moon_equatorial(jd: float) -> Tuple[float, float]:
     return normalize_degrees(ra), dec
 
 
+def moon_illuminated_fraction_from(jd: float, moon_ra: float, moon_dec: float) -> float:
+    """Return the illuminated fraction given an already-computed lunar position.
+
+    :func:`moon_equatorial` is the most expensive routine in this module, so callers that already
+    have the Moon's position — such as the night sampler, which also needs its altitude — pass it
+    in here rather than paying for it twice per sample.
+    """
+    sun_ra, sun_dec = sun_equatorial(jd)
+    elongation = angular_separation_degrees(sun_ra, sun_dec, moon_ra, moon_dec)
+    return (1.0 - math.cos(math.radians(elongation))) / 2.0
+
+
 def moon_illuminated_fraction(jd: float) -> float:
     """Return the fraction of the Moon's disc that is illuminated, ``0.0``–``1.0``.
 
@@ -440,10 +452,8 @@ def moon_illuminated_fraction(jd: float) -> float:
     further away that correction stays under a percent — irrelevant against the accuracy of any
     sky-brightness model.
     """
-    sun_ra, sun_dec = sun_equatorial(jd)
     moon_ra, moon_dec = moon_equatorial(jd)
-    elongation = angular_separation_degrees(sun_ra, sun_dec, moon_ra, moon_dec)
-    return (1.0 - math.cos(math.radians(elongation))) / 2.0
+    return moon_illuminated_fraction_from(jd, moon_ra, moon_dec)
 
 
 def moon_altitude(jd: float, latitude: float, longitude: float) -> float:
@@ -475,25 +485,38 @@ def _bisect_twilight(
     return (jd_dark + jd_light) / 2.0
 
 
+def solar_noon_utc(day: date, longitude: float) -> datetime:
+    """Return the approximate instant of local *solar* noon on *day*, in UTC.
+
+    Local solar time runs ahead of UTC by ``longitude / 15`` hours, so solar noon falls that
+    much earlier in UTC. This deliberately ignores the equation of time (up to ~16 minutes),
+    which is irrelevant when the value is only used to centre a 24-hour search window.
+    """
+    utc_midnight = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+    return utc_midnight + timedelta(hours=12.0 - longitude / 15.0)
+
+
 def find_dark_window(
     night_of: date,
     latitude: float,
     longitude: float,
-    tz: timezone,
 ) -> Tuple[Optional[datetime], Optional[datetime], str]:
     """Return ``(start_utc, end_utc, darkness_label)`` for the night beginning on *night_of*.
 
-    The window is searched between local noon on *night_of* and local noon the following day, so
-    it always brackets exactly one night regardless of the observer's timezone.
+    The window is searched across the 24 hours following local **solar** noon, derived from
+    *longitude*. Anchoring on the observer's longitude rather than on a civil timezone means the
+    search always brackets exactly one night even when Home Assistant's configured timezone
+    disagrees with the configured coordinates — an instance left on UTC while pointed at
+    California would otherwise have the night clipped at the window edge and report a short night.
 
     Darkness is found by **sampling**, not by the closed-form sunset equation. The closed form has
     no solution when the Sun never reaches the twilight altitude, which is the normal state of
     affairs at high latitude in summer; sampling degrades gracefully instead of raising. The
     fallback ladder is astronomical night, then nautical twilight, then nothing at all.
     """
-    local_noon = datetime.combine(night_of, datetime.min.time(), tzinfo=tz) + timedelta(hours=12)
-    jd_start = julian_day(local_noon)
-    jd_end = julian_day(local_noon + timedelta(days=1))
+    anchor = solar_noon_utc(night_of, longitude)
+    jd_start = julian_day(anchor)
+    jd_end = julian_day(anchor + timedelta(days=1))
 
     step_days = _DARK_SCAN_STEP_MINUTES / (24.0 * 60.0)
     sample_count = int(round((jd_end - jd_start) / step_days)) + 1
