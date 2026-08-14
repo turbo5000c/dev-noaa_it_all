@@ -76,6 +76,9 @@ python3 -c "import json; print('Valid:', json.load(open('custom_components/noaa_
 ├── const.py             # Constants, API endpoints, defaults
 ├── coordinator.py       # DataUpdateCoordinator: fetches and caches NOAA data
 ├── parsers.py           # Parsing helpers for NOAA API and text-product responses
+├── astro.py             # Positional astronomy (stdlib only, no HA imports, no network)
+├── meteor.py            # Meteor shower rate/score model (stdlib only, no HA imports)
+├── meteor_catalog.py    # Bundled shower catalog, keyed by solar longitude
 ├── entity_naming.py     # Shared entity naming helpers
 ├── sensor.py            # Sensor platform
 ├── binary_sensor.py     # Binary sensor platform
@@ -83,7 +86,8 @@ python3 -c "import json; print('Valid:', json.load(open('custom_components/noaa_
 ├── weather.py           # Weather platform
 ├── strings.json         # UI strings for the config flow
 ├── sensors/             # Per-area sensor definitions (space_weather, surf, alerts,
-│                        #   forecasts, hurricanes, weather_observations, weather_extra)
+│                        #   forecasts, hurricanes, weather_observations, weather_extra,
+│                        #   meteor_showers)
 ├── translations/        # en.json
 └── brand/               # Brand images served by HA (icon/logo, incl. @2x and dark)
 ```

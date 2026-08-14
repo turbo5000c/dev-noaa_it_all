@@ -81,10 +81,10 @@ NOAA It All organizes entities into logical device groups for better organizatio
 ### Device Groups Overview
 
 #### 🌌 NOAA Space
-Global space weather monitoring - aurora visibility, geomagnetic storms, and solar radiation alerts
+Space weather monitoring — aurora visibility, geomagnetic storms, solar radiation alerts — plus the meteor shower forecast
 - **Device ID**: `noaa_space`
-- **Location**: Independent (global data)
-- **Update Frequency**: 5 minutes
+- **Location**: Space weather is global; meteor shower entities use your configured latitude/longitude
+- **Update Frequency**: 10 minutes for space weather, 30 minutes for meteor showers
 
 <p align="left">
 <img width="330" height="620" alt="image" src="https://github.com/user-attachments/assets/50d6d649-dec7-4a52-a6db-d53488b7bbc3" />
@@ -193,6 +193,22 @@ Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
 
 > **Note**: Solar radiation storm impacts vary by location and magnetic latitude. Higher latitudes (like Alaska and northern Canada) experience more severe effects, while equatorial regions are generally less affected. The integration provides location-specific risk assessments for your configured NWS office.
 
+### Meteor Showers (Config Flow Only)
+Meteor shower alerts and a viewing forecast for your exact location *(NOAA Space)*:
+
+- **Meteor Shower Activity**: The shower most worth watching right now, or `None` *(sensor.noaa_{office}_space_meteor_shower_activity)*
+  - Attributes include the current ZHR, peak time in your local timezone, radiant altitude, parent body, and a list of every shower currently active
+- **Next Meteor Shower**: The next shower to reach maximum *(sensor.noaa_{office}_space_next_meteor_shower)*
+  - The `upcoming` attribute holds the next five showers with peak dates — this is what dashboard "what's coming up" cards read from
+- **Meteor Viewing Score**: How good tonight's sky is, 0–100% *(sensor.noaa_{office}_space_meteor_viewing_score)*
+  - Attributes include `rating`, `best_window_start`/`best_window_end` (when to actually go outside), `expected_per_hour`, `moon_illumination`, `moon_altitude`, `darkness`, and `limiting_factor`
+- **Meteor Shower Active**: Turns on when a shower is genuinely worth going outside for *(binary_sensor.noaa_{office}_space_meteor_shower_active)*
+  - Requires both a real predicted rate (≥5/hour) and usable sky conditions (score ≥25), so it fires a handful of nights a year rather than sitting permanently on
+
+> **Note on the data source**: NOAA publishes no meteor shower data, and neither does anyone else as a live feed — none is needed. Earth crosses the same debris streams at the same point in its orbit every year, so this feature ships a catalog of ~29 showers keyed by **solar longitude** and computes each year's peak time locally. There is no API call, no API key, and no extra dependency, and it keeps working with no internet connection. Computed peak times are accurate to about ±11 minutes, which is far finer than the hours-wide spread of real shower maxima.
+
+> **Note on the score**: The viewing score measures *sky conditions*, not shower strength — it is the fraction of the ideal meteor rate you would actually achieve, so a minor shower riding high under a new moon scores well while the Perseids behind a full moon score badly. Shower strength is reported separately as `expected_per_hour`. The score accounts for radiant altitude, moonlight and astronomical darkness. It does **not** account for cloud cover; pair it with `sensor.noaa_{office}_weather_cloud_cover` if you want that.
+
 ### Optional Secondary Sensors (Config Flow Only)
 These sensors provide additional weather data where available from NOAA/NWS *(NOAA Weather)*:
 
@@ -299,6 +315,8 @@ All entities use `_attr_has_entity_name = True`, which means Home Assistant deri
 | Weather Alert Binary | `binary_sensor.noaa_{office}_{alert_type}_alert` | `binary_sensor.noaa_ilm_severe_weather_alert` |
 | Surf Conditions | `sensor.noaa_{office}_{surf_metric}` | `sensor.noaa_ilm_rip_current_risk` |
 | Space Weather | `sensor.noaa_{office}_{metric}` | `sensor.noaa_ilm_aurora_next_time` |
+| Meteor Showers | `sensor.noaa_{office}_space_{metric}` | `sensor.noaa_ilm_space_meteor_viewing_score` |
+| Meteor Shower Binary | `binary_sensor.noaa_{office}_space_meteor_shower_active` | `binary_sensor.noaa_ilm_space_meteor_shower_active` |
 | Hurricane (global) | `sensor.noaa_weather_hurricane_{metric}` | `sensor.noaa_weather_hurricane_activity` |
 | Hurricane Images | `image.noaa_weather_hurricane_{name}` | `image.noaa_weather_hurricane_outlook_image` |
 | Radar Image | `image.noaa_{office}_weather_radar_base_reflectivity` | `image.noaa_ilm_weather_radar_base_reflectivity` |
@@ -456,6 +474,62 @@ automation:
             Geomagnetic Storm Level: {{ states('sensor.noaa_space_geomagnetic_storm') }}
           data:
             notification_icon: mdi:solar-power
+```
+
+#### Meteor Shower Tonight
+```yaml
+automation:
+  - alias: "Meteor Shower Tonight"
+    description: "Notify in the early evening when a shower is worth staying up for"
+    trigger:
+      - platform: time
+        at: "19:00:00"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.noaa_ilm_space_meteor_shower_active
+        state: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: >
+            ☄️ {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'shower') }} tonight
+          message: >
+            Up to {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'expected_per_hour') }}
+            meteors/hour. Best viewing
+            {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'best_window_start') | as_timestamp | timestamp_custom('%-I:%M %p') }}
+            to
+            {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'best_window_end') | as_timestamp | timestamp_custom('%-I:%M %p') }}.
+            Conditions: {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'rating') }}.
+          data:
+            notification_icon: mdi:meteor
+```
+
+#### Wake Me for the Peak
+```yaml
+automation:
+  - alias: "Meteor Shower Peak Reminder"
+    description: "Alert the evening before a major shower peaks"
+    trigger:
+      - platform: time
+        at: "20:00:00"
+    condition:
+      - condition: numeric_state
+        entity_id: sensor.noaa_ilm_space_next_meteor_shower
+        attribute: days_until
+        below: 1.5
+      - condition: numeric_state
+        entity_id: sensor.noaa_ilm_space_next_meteor_shower
+        attribute: zhr_max
+        above: 20
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "☄️ {{ states('sensor.noaa_ilm_space_next_meteor_shower') }} peaks soon"
+          message: >
+            Peak: {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'peak_local') }}
+            — up to {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'zhr_max') }} meteors/hour
+            under ideal conditions. Radiant in
+            {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'constellation') }}.
 ```
 
 ### Multi-Condition Automation with Grouping Logic
@@ -714,6 +788,65 @@ cards:
       }} </span><br> {{
       state_attr('sensor.noaa_ilm_weather_extended_forecast','periods')[2].detailed_forecast
       }} </div></div>
+```
+
+#### Meteor Shower Card (NOAA Space Group)
+```yaml
+type: entities
+title: ☄️ Meteor Showers
+show_header_toggle: false
+entities:
+  - entity: binary_sensor.noaa_ilm_space_meteor_shower_active
+    name: Worth Going Outside
+  - entity: sensor.noaa_ilm_space_meteor_shower_activity
+    name: Active Now
+  - entity: sensor.noaa_ilm_space_meteor_viewing_score
+    name: Viewing Score
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: rating
+    name: Conditions
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: expected_per_hour
+    name: Expected Meteors/Hour
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: limiting_factor
+    name: Limited By
+  - type: divider
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: best_window_start
+    name: Best Viewing From
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: best_window_end
+    name: Best Viewing Until
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: moon_illumination
+    name: Moon Illumination
+    suffix: "%"
+  - type: divider
+  - entity: sensor.noaa_ilm_space_next_meteor_shower
+    name: Next Shower
+  - type: attribute
+    entity: sensor.noaa_ilm_space_next_meteor_shower
+    attribute: days_until
+    name: Days Away
+```
+
+To list the upcoming showers, read the `upcoming` attribute with a markdown card:
+
+```yaml
+type: markdown
+title: ☄️ Upcoming Meteor Showers
+content: |
+  {% for s in state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'upcoming') %}
+  **{{ s.name }}** — {{ s.peak_local | as_timestamp | timestamp_custom('%b %-d') }}
+  ({{ s.days_until | round(0) | int }} days), up to {{ s.zhr_max }}/hr in {{ s.constellation }}
+  {% endfor %}
 ```
 
 #### Space Weather Card (NOAA Space Group)
@@ -982,6 +1115,14 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
   - Aurora visibility forecasts and geomagnetic storm data
   - Solar radiation storm alerts and classification (S1-S5 scale)
   - Real-time space weather alert monitoring
+- **Meteor Showers**: bundled catalog, computed locally — **not** a NOAA feed
+  - NOAA/NWS publish no meteor shower data of any kind: the NWS alert taxonomy covers terrestrial
+    hazards, and the Space Weather Prediction Center covers geomagnetic activity, not meteors
+  - Shower parameters come from the IMO Meteor Shower Calendar and the IAU Meteor Data Center
+    working list, stored by **solar longitude** rather than by date
+  - Peak times, radiant altitudes, moon phase and astronomical darkness are all computed on your
+    machine using standard positional astronomy — no API call, no API key, no extra dependency,
+    and it works with no internet connection at all
 - **Hurricane Data**: National Hurricane Center (NHC) and National Weather Service (NWS)
 - **NWS Active Alerts**: National Weather Service weather.gov API
   - Location-specific severe weather warnings and watches
@@ -993,7 +1134,11 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
   - Automatic unit conversions to US customary units
 
 ## Update Frequency
-All sensors update every 5 minutes to provide current conditions while respecting API rate limits.
+Most sensors update every 10 minutes to provide current conditions while respecting API rate limits.
+
+Meteor shower entities update every 30 minutes. They fetch nothing, so there is no rate limit to
+respect — but the best-of-night result is stable for hours, so a slower cadence keeps the recorder
+database smaller for no loss of accuracy.
 
 **Note:** Legacy YAML configurations without lat/lon will continue to work but will use the fallback office-to-station mapping for weather data. Config Flow setups require the new fields.
 

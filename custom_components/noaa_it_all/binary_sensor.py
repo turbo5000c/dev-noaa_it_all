@@ -9,7 +9,10 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN
+from .const import (
+    CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
+    METEOR_ACTIVE_MIN_RATE, METEOR_ACTIVE_MIN_SCORE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +36,7 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][config_entry.entry_id]
     surf_coord = data["surf_coordinator"]
     alerts_coord = data["alerts_coordinator"]
+    meteor_coord = data["meteor_coordinator"]
 
     entities = [UnsafeToSwimBinarySensor(surf_coord, office_code)]
 
@@ -43,6 +47,9 @@ async def async_setup_entry(
             HeatAirQualityAlertBinarySensor(alerts_coord, office_code, latitude, longitude),
             ActiveAlertsGeneralBinarySensor(alerts_coord, office_code, latitude, longitude),
         ])
+
+    if meteor_coord:
+        entities.append(MeteorShowerActiveBinarySensor(meteor_coord, office_code))
 
     async_add_entities(entities)
 
@@ -481,5 +488,96 @@ class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return DeviceInfo(
             identifiers={(DOMAIN, f"noaa_{self._office_code}_weather")},
             name=f"NOAA {self._office_code} Weather",
+            manufacturer="NOAA"
+        )
+
+
+class MeteorShowerActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor that turns on when a meteor shower is genuinely worth going outside for.
+
+    This is the entity to trigger automations from. It is deliberately *not* a bare "is any
+    shower active" flag: with around thirty showers catalogued something is technically active on
+    most nights of the year, so such a flag would sit permanently on. Instead it requires a real
+    predicted rate and usable sky geometry, which means it turns on a handful of nights a year —
+    exactly when you would actually want to be woken up for it.
+
+    Unlike the other binary sensors in this module it sets ``_attr_has_entity_name``, matching the
+    sensor convention, so the entity ID carries the ``space`` device segment
+    (``binary_sensor.noaa_ilm_space_meteor_shower_active``) and reads as a sibling of the meteor
+    sensors rather than an orphan.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, office_code):
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._office_code = office_code
+        self._attr_unique_id = f"noaa_{office_code}_meteor_shower_active"
+
+    @property
+    def name(self):
+        """Return the local name of the binary sensor."""
+        return "Meteor Shower Active"
+
+    @property
+    def _best(self):
+        """Return tonight's best shower entry, or None when nothing is active."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("best")
+
+    @property
+    def is_on(self):
+        """Return true when a worthwhile shower is observable tonight."""
+        best = self._best
+        if not best:
+            return False
+        return (
+            best['expected_per_hour'] >= METEOR_ACTIVE_MIN_RATE
+            and best['viewing_score'] >= METEOR_ACTIVE_MIN_SCORE
+        )
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        if self.is_on:
+            return 'mdi:meteor'
+        return 'mdi:weather-night'
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        attrs = {
+            'office_code': self._office_code,
+            'minimum_rate': METEOR_ACTIVE_MIN_RATE,
+            'minimum_score': METEOR_ACTIVE_MIN_SCORE,
+        }
+        best = self._best
+        if not best:
+            return attrs
+
+        attrs.update({
+            'shower': best['name'],
+            'shower_code': best['code'],
+            'zhr_now': best['zhr_now'],
+            'expected_per_hour': best['expected_per_hour'],
+            'viewing_score': best['viewing_score'],
+            'rating': best['rating'],
+            'peak_local': best['peak_local'],
+            'days_until': best['days_until'],
+            'is_peak_night': best['is_peak_night'],
+            'best_window_start': best['best_window_start'],
+            'best_window_end': best['best_window_end'],
+            'limiting_factor': best['limiting_factor'],
+        })
+        return attrs
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group this entity."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"noaa_{self._office_code}_space")},
+            name=f"NOAA {self._office_code} Space",
             manufacturer="NOAA"
         )

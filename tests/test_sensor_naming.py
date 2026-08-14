@@ -590,9 +590,15 @@ class TestDeviceInfoGrouping(unittest.TestCase):
         from noaa_it_all.sensors.space_weather import (
             GeomagneticSensor, AuroraNextTimeSensor,
         )
+        from noaa_it_all.sensors.meteor_showers import (
+            MeteorShowerActivitySensor, NextMeteorShowerSensor, MeteorViewingScoreSensor,
+        )
         sensors = [
             GeomagneticSensor(COORD, OFFICE),
             AuroraNextTimeSensor(COORD, OFFICE),
+            MeteorShowerActivitySensor(COORD, OFFICE),
+            NextMeteorShowerSensor(COORD, OFFICE),
+            MeteorViewingScoreSensor(COORD, OFFICE),
         ]
         expected = self._expected_space()
         for sensor in sensors:
@@ -751,6 +757,50 @@ class TestSuggestedObjectIdFormat(unittest.TestCase):
         s = SolarRadiationStormAlertsSensor(COORD, OFFICE)
         self.assertTrue(s._attr_has_entity_name)
         self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_solar_radiation_storm_alerts")
+
+    # Meteor shower sensors
+    def test_meteor_shower_activity_suggested_object_id(self):
+        from noaa_it_all.sensors.meteor_showers import MeteorShowerActivitySensor
+        s = MeteorShowerActivitySensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_meteor_shower_activity")
+
+    def test_next_meteor_shower_suggested_object_id(self):
+        from noaa_it_all.sensors.meteor_showers import NextMeteorShowerSensor
+        s = NextMeteorShowerSensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_next_meteor_shower")
+
+    def test_meteor_viewing_score_suggested_object_id(self):
+        from noaa_it_all.sensors.meteor_showers import MeteorViewingScoreSensor
+        s = MeteorViewingScoreSensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_meteor_viewing_score")
+
+    def test_meteor_unique_ids_keep_uppercase_office_and_omit_group(self):
+        """unique_id keeps the office uppercase and drops the 'space' segment.
+
+        This asymmetry with the entity ID is long-standing in this integration; new entities
+        must match it or existing installs would see duplicate entities on upgrade.
+        """
+        from noaa_it_all.sensors.meteor_showers import (
+            MeteorShowerActivitySensor, NextMeteorShowerSensor, MeteorViewingScoreSensor,
+        )
+        cases = [
+            (MeteorShowerActivitySensor, f"noaa_{OFFICE}_meteor_shower_activity"),
+            (NextMeteorShowerSensor, f"noaa_{OFFICE}_next_meteor_shower"),
+            (MeteorViewingScoreSensor, f"noaa_{OFFICE}_meteor_viewing_score"),
+        ]
+        for cls, expected in cases:
+            self.assertEqual(cls(COORD, OFFICE).unique_id, expected)
+
+    def test_meteor_binary_sensor_object_id(self):
+        """The meteor binary sensor opts into has_entity_name so it lands on the Space device."""
+        from noaa_it_all.binary_sensor import MeteorShowerActiveBinarySensor
+        s = MeteorShowerActiveBinarySensor(COORD, OFFICE)
+        self.assertTrue(s._attr_has_entity_name)
+        self.assertEqual(_entity_id_slug(s), f"noaa_{OFFICE.lower()}_space_meteor_shower_active")
+        self.assertEqual(s._attr_unique_id, f"noaa_{OFFICE}_meteor_shower_active")
 
     # Weather extra sensors
     def test_cloud_cover_suggested_object_id(self):

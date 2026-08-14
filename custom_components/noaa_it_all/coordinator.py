@@ -11,9 +11,10 @@ See https://developers.home-assistant.io/docs/integration_fetching_data/
 import logging
 import re
 import aiohttp
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -26,7 +27,10 @@ from .const import (
     NWS_SRF_URL, NWS_AFD_URL, NWS_RADAR_BASE_URL,
     COOPS_WATER_TEMP_URL, NDBC_REALTIME_URL,
     OFFICE_STATION_IDS,
+    METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
 )
+from .meteor import build_meteor_forecast
+from .meteor_catalog import METEOR_SHOWERS
 from .parsers import parse_coops_water_temperature, parse_ndbc_wave_height
 
 _LOGGER = logging.getLogger(__name__)
@@ -683,4 +687,74 @@ class ForecastDiscussionCoordinator(DataUpdateCoordinator):
         except Exception as err:
             raise UpdateFailed(
                 f"Error fetching forecast discussion: {err}"
+            ) from err
+
+
+# -------------------------------------------------------------------
+# Meteor Showers (location-specific)
+# -------------------------------------------------------------------
+
+class MeteorShowerCoordinator(DataUpdateCoordinator):
+    """Compute the meteor shower viewing forecast for one observer.
+
+    Unlike every other coordinator here, this one performs **no network I/O at all**. Meteor
+    showers do not need a feed: Earth crosses the same debris streams at the same solar longitude
+    every year, so the bundled catalog in ``meteor_catalog.py`` plus the positional astronomy in
+    ``astro.py`` is enough to derive the whole forecast locally. NOAA and every other agency
+    publish shower calendars as documents, not APIs, precisely because there is nothing to
+    observe in real time.
+
+    The computation is a few thousand trigonometric evaluations — well under 10 ms — so it runs
+    inline rather than in an executor.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        office_code: str,
+        latitude: float,
+        longitude: float,
+    ) -> None:
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="NOAA Meteor Showers",
+            update_interval=timedelta(minutes=METEOR_SCAN_INTERVAL),
+        )
+        self.office_code = office_code
+        self.latitude = latitude
+        self.longitude = longitude
+
+    def _local_timezone(self):
+        """Return the observer's timezone, falling back to UTC.
+
+        Read from ``hass.config.time_zone`` rather than ``homeassistant.util.dt`` so this module
+        keeps working under the test-suite's Home Assistant mocks, which do not stub
+        ``homeassistant.util``.
+        """
+        name = getattr(self.hass.config, "time_zone", None)
+        if not isinstance(name, str):
+            return timezone.utc
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            _LOGGER.warning("Unknown Home Assistant time zone %r; using UTC", name)
+            return timezone.utc
+
+    async def _async_update_data(self) -> dict:
+        if self.latitude is None or self.longitude is None:
+            raise UpdateFailed("Meteor shower forecast requires a latitude and longitude")
+
+        try:
+            return build_meteor_forecast(
+                datetime.now(timezone.utc),
+                self.latitude,
+                self.longitude,
+                self._local_timezone(),
+                METEOR_SHOWERS,
+                upcoming_count=METEOR_UPCOMING_COUNT,
+            )
+        except Exception as err:
+            raise UpdateFailed(
+                f"Error computing meteor shower forecast: {err}"
             ) from err

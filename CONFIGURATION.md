@@ -83,8 +83,9 @@ homeassistant:
 
 NOAA It All automatically organizes entities into four device groups:
 
-### 1. NOAA Space (Global Space Weather)
-Entities that monitor space weather conditions worldwide.
+### 1. NOAA Space (Space Weather & Meteor Showers)
+Entities that monitor space weather conditions worldwide, plus the meteor shower forecast for
+your configured location.
 
 **Entities in this group:**
 - `sensor.noaa_space_kp_index`
@@ -93,8 +94,16 @@ Entities that monitor space weather conditions worldwide.
 - `sensor.noaa_{office}_aurora_duration`
 - `sensor.noaa_{office}_aurora_visibility_probability`
 - `sensor.noaa_{office}_solar_radiation_storm_alerts`
+- `sensor.noaa_{office}_space_meteor_shower_activity`
+- `sensor.noaa_{office}_space_next_meteor_shower`
+- `sensor.noaa_{office}_space_meteor_viewing_score`
+- `binary_sensor.noaa_{office}_space_meteor_shower_active`
 - `image.noaa_geomagnetic_field`
 - `image.noaa_aurora_forecast`
+
+> Meteor shower entities require latitude/longitude (Config Flow setup) because the radiant's
+> altitude — the single biggest factor in how many meteors you see — depends on where you are.
+> They are computed locally from a bundled catalog and make no network requests.
 
 ### 2. NOAA Weather (Global & Location Weather)
 Entities for hurricane tracking, forecasts, and weather observations.
@@ -232,6 +241,25 @@ cards:
     entity: image.noaa_aurora_forecast
     name: "Aurora Forecast"
     show_state: false
+```
+
+### Meteor Shower Card
+```yaml
+type: entities
+title: "Meteor Showers"
+entities:
+  - binary_sensor.noaa_ilm_space_meteor_shower_active
+  - sensor.noaa_ilm_space_meteor_shower_activity
+  - sensor.noaa_ilm_space_meteor_viewing_score
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: expected_per_hour
+    name: "Expected Meteors/Hour"
+  - type: attribute
+    entity: sensor.noaa_ilm_space_meteor_viewing_score
+    attribute: best_window_start
+    name: "Best Viewing From"
+  - sensor.noaa_ilm_space_next_meteor_shower
 ```
 
 ## Automation Examples
