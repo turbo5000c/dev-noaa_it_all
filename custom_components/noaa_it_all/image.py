@@ -14,6 +14,8 @@ from .const import (
     HURRICANE_IMAGES_ADDED_KEY,
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
     OFFICE_RADAR_SITES, REQUEST_TIMEOUT,
+    TSUNAMI_DEVICE_ID, TSUNAMI_DEVICE_NAME, TSUNAMI_IMAGES_ADDED_KEY,
+    TSUNAMI_SCAN_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +45,20 @@ def _hurricane_device_info() -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, HURRICANE_DEVICE_ID)},
         name=HURRICANE_DEVICE_NAME,
+        manufacturer="NOAA",
+    )
+
+
+def _tsunami_device_info() -> DeviceInfo:
+    """Return the shared device info for the NOAA Tsunami image entity.
+
+    Mirrors ``_hurricane_device_info``. Tsunami data comes from the two
+    national warning centers and covers ocean basins, so it is not tied to any
+    configured NWS office.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, TSUNAMI_DEVICE_ID)},
+        name=TSUNAMI_DEVICE_NAME,
         manufacturer="NOAA",
     )
 
@@ -120,6 +136,41 @@ async def async_setup_entry(
                 hass.async_create_task(_reload_for_hurricane_images())
 
         config_entry.async_on_unload(_release_hurricane_image_ownership)
+
+    # The tsunami map is global (NTWC/PTWC) and belongs to the single NOAA
+    # Tsunami device, so it is added once across all configured offices with
+    # the same ownership-transfer handling as the hurricane images.
+    tsunami_coord = hass.data[DOMAIN].get(config_entry.entry_id, {}).get(
+        "tsunami_coordinator"
+    )
+    if tsunami_coord and not domain_data.get(TSUNAMI_IMAGES_ADDED_KEY):
+        entities.append(TsunamiMapImageEntity(hass, tsunami_coord))
+        domain_data[TSUNAMI_IMAGES_ADDED_KEY] = config_entry.entry_id
+
+        def _release_tsunami_image_ownership() -> None:
+            """Release tsunami-image ownership and re-create on a remaining entry."""
+            if domain_data.get(TSUNAMI_IMAGES_ADDED_KEY) != config_entry.entry_id:
+                return
+            domain_data.pop(TSUNAMI_IMAGES_ADDED_KEY, None)
+            remaining = [
+                e for e in hass.config_entries.async_entries(DOMAIN)
+                if e.entry_id != config_entry.entry_id
+            ]
+            if remaining:
+                target_entry_id = remaining[0].entry_id
+
+                async def _reload_for_tsunami_images() -> None:
+                    try:
+                        await hass.config_entries.async_reload(target_entry_id)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception(
+                            "Failed to reload entry %s to re-create the global "
+                            "tsunami map", target_entry_id,
+                        )
+
+                hass.async_create_task(_reload_for_tsunami_images())
+
+        config_entry.async_on_unload(_release_tsunami_image_ownership)
 
     # Location-specific radar image entities
     radar_site = OFFICE_RADAR_SITES.get(office_code)
@@ -704,4 +755,139 @@ class GOESGeoColorImageEntity(ImageEntity):
             _LOGGER.error("Error fetching GOES GeoColor image: %s", e)
         except Exception as e:
             _LOGGER.error("Unexpected error fetching GOES GeoColor image: %s", e)
+        return b""
+
+
+class TsunamiMapImageEntity(ImageEntity):
+    """Location map for the most recent tsunami in the warning centers' archive.
+
+    The centers keep every past tsunami under ``previous.events/`` with a
+    location map at ``Images/Location.jpg``, so the newest entry in that
+    archive is always a real, renderable picture of a real tsunami. That makes
+    this the one map source here that is confirmed rather than inferred.
+
+    Earlier revisions tried the RIFT energy-propagation forecast during a live
+    event and the DART buoy network map otherwise. Both were guesses at URL
+    shapes, both 404'd on a live install, and both were removed — a dead tile
+    is worse than a slightly less topical one, and unverifiable fallbacks only
+    made the failure harder to diagnose.
+
+    Uses ``_attr_has_entity_name = True`` so Home Assistant combines the device
+    name ("NOAA Tsunami") with the local name to produce
+    ``image.noaa_tsunami_map``.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, hass, coordinator=None):
+        """Initialize the image entity."""
+        super().__init__(hass)
+        self.hass = hass
+        self._coordinator = coordinator
+        self._source_url = None
+        self._image_url = None
+
+    @property
+    def name(self):
+        """Return the local entity name."""
+        return 'Map'
+
+    @property
+    def unique_id(self):
+        """Return a unique ID for this entity."""
+        return 'noaa_tsunami_map'
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return _tsunami_device_info()
+
+    def _latest_event(self):
+        """Return the newest archived tsunami event, or ``None``."""
+        if self._coordinator is None or not self._coordinator.data:
+            return None
+        events = self._coordinator.data.get('events') or []
+        return events[0] if events else None
+
+    @property
+    def entity_picture(self):
+        """Return the URL of the current map, or ``None`` when unknown."""
+        return self._image_url
+
+    @property
+    def extra_state_attributes(self):
+        """Report which event the map is showing."""
+        event = self._latest_event() or {}
+        return {
+            'event': event.get('name'),
+            'event_date': event.get('date'),
+            'event_url': event.get('url'),
+            'source_url': self._source_url,
+        }
+
+    def get_cache_busted_url(self):
+        """Add a timestamp to the URL to prevent caching.
+
+        Archived event images never change once published, so the bucket only
+        needs to be coarse enough to pick up a newly added event.
+        """
+        if not self._source_url:
+            return None
+        now = datetime.utcnow()
+        bucket = (now.minute // TSUNAMI_SCAN_INTERVAL) * TSUNAMI_SCAN_INTERVAL
+        timestamp = now.strftime('%Y%m%d%H') + f"{bucket:02d}"
+        return f"{self._source_url}?t={timestamp}"
+
+    async def async_update(self):
+        """Point at the newest archived event's location map."""
+        try:
+            event = self._latest_event()
+            source = event.get('image_url') if event else None
+            if source != self._source_url:
+                self._source_url = source
+                _LOGGER.debug(
+                    "Tsunami map now showing %s",
+                    event.get('name') if event else 'nothing',
+                )
+            self._image_url = self.get_cache_busted_url()
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error("Error during tsunami map update: %s", e)
+
+    async def async_image(self) -> bytes:
+        """Return the bytes of the latest event's location map."""
+        event = self._latest_event()
+        source = event.get('image_url') if event else None
+        if not source:
+            _LOGGER.debug("No archived tsunami event available for the map yet")
+            return b""
+
+        self._source_url = source
+        session = async_get_clientsession(self.hass)
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        try:
+            async with session.get(source, timeout=timeout) as response:
+                if response.status != 200:
+                    _LOGGER.warning(
+                        "Tsunami map unavailable for %s: HTTP %d (%s)",
+                        event.get('name'), response.status, source,
+                    )
+                    return b""
+                content_type = response.headers.get('content-type', '').lower()
+                if 'image' not in content_type:
+                    _LOGGER.warning(
+                        "Tsunami map for %s returned %s, not an image",
+                        event.get('name'), content_type,
+                    )
+                    return b""
+                content = await response.read()
+                _LOGGER.debug(
+                    "Fetched tsunami map for %s (%d bytes)",
+                    event.get('name'), len(content),
+                )
+                return content
+        except aiohttp.ClientError as e:
+            _LOGGER.warning("Error fetching tsunami map: %s", e)
+        except Exception as e:
+            _LOGGER.error("Unexpected error fetching tsunami map: %s", e)
         return b""

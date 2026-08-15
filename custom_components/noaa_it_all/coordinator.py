@@ -28,10 +28,17 @@ from .const import (
     COOPS_WATER_TEMP_URL, NDBC_REALTIME_URL,
     OFFICE_STATION_IDS,
     METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
+    NWS_TSUNAMI_ALERTS_URL, TSUNAMI_ATOM_URLS, TSUNAMI_CAP_URLS,
+    TSUNAMI_SCAN_INTERVAL, TSUNAMI_THREAT_LEVELS, TSUNAMI_CENTER_POLL_EVERY,
+    TSUNAMI_RECENT_EVENTS_URL, TSUNAMI_EVENT_BASE_URL, TSUNAMI_EVENT_IMAGE_URL,
+    TSUNAMI_EVENT_HISTORY_COUNT,
 )
 from .meteor import build_meteor_forecast
 from .meteor_catalog import METEOR_SHOWERS
-from .parsers import parse_coops_water_temperature, parse_ndbc_wave_height
+from .parsers import (
+    parse_coops_water_temperature, parse_ndbc_wave_height,
+    parse_tsunami_atom_feed, parse_tsunami_cap, parse_recent_tsunami_events,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,6 +154,162 @@ class HurricaneCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("All hurricane API requests failed")
 
         return data
+
+
+# -------------------------------------------------------------------
+# Tsunami (global)
+# -------------------------------------------------------------------
+
+class TsunamiCoordinator(DataUpdateCoordinator):
+    """Fetch tsunami alerts from NWS plus the NTWC and PTWC product feeds.
+
+    Two kinds of source, deliberately: ``api.weather.gov`` is authoritative for
+    whether an alert is in effect, while the two warning centers publish the
+    detail a user acts on — the source earthquake in their Atom feeds, and the
+    per-location estimated wave arrival times in their CAP documents.
+
+    The NWS query runs every cycle. The center feeds are polled only when an
+    alert is actually active or every ``TSUNAMI_CENTER_POLL_EVERY`` cycles,
+    because they are unchanged for months at a time and there is no reason to
+    ask tsunami.gov for the same bytes every two minutes.
+
+    ``last_success`` is the timestamp of the most recent update in which the
+    NWS alert query succeeded. The data-stale binary sensor reads it, because a
+    threat level of "None" served from a feed that stopped answering an hour
+    ago is actively dangerous.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="NOAA Tsunami",
+            update_interval=timedelta(minutes=TSUNAMI_SCAN_INTERVAL),
+        )
+        self.last_success: Optional[datetime] = None
+        self._cycle = 0
+        self._products: Optional[list] = None
+        self._cap: Optional[dict] = None
+        self._events: Optional[list] = None
+
+    async def _async_update_data(self) -> dict:
+        session = async_get_clientsession(self.hass)
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        headers = {"User-Agent": USER_AGENT}
+        data: dict = {}
+
+        try:
+            async with session.get(
+                NWS_TSUNAMI_ALERTS_URL, headers=headers, timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                payload = await resp.json()
+            data["features"] = payload.get("features", [])
+        except Exception as err:
+            _LOGGER.warning("Error fetching NWS tsunami alerts: %s", err)
+            data["features"] = None
+
+        alert_active = bool(data["features"])
+        due = self._cycle % TSUNAMI_CENTER_POLL_EVERY == 0
+        self._cycle += 1
+
+        if alert_active or due or self._products is None:
+            await self._async_update_center_feeds(session, timeout, headers)
+        if due or self._events is None:
+            await self._async_update_recent_events(session, timeout, headers)
+
+        data["products"] = self._products
+        data["cap"] = self._cap
+        data["events"] = self._events
+
+        if all(v is None for v in (data["features"], data["products"])):
+            raise UpdateFailed("All tsunami API requests failed")
+
+        if data["features"] is not None:
+            self.last_success = datetime.now(timezone.utc)
+        data["last_success"] = self.last_success
+
+        return data
+
+    async def _async_update_center_feeds(self, session, timeout, headers) -> None:
+        """Refresh the NTWC/PTWC Atom and CAP products.
+
+        Failures here are logged and leave the previous values in place: when
+        tsunami.gov is slow or down — most likely during a real event, when it
+        is also the most-hammered site at NOAA — the NWS alert state still
+        drives the threat level and the alert binary sensor.
+        """
+        entries: list = []
+        centers_ok = False
+        for center, url in TSUNAMI_ATOM_URLS.items():
+            try:
+                async with session.get(
+                    url, headers=headers, timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    text = await resp.text()
+                entries.extend(
+                    parse_tsunami_atom_feed(text, center, TSUNAMI_THREAT_LEVELS)
+                )
+                centers_ok = True
+            except Exception as err:
+                _LOGGER.warning("Error fetching %s tsunami feed: %s", center, err)
+
+        if centers_ok:
+            entries.sort(key=lambda item: item.get("updated") or "", reverse=True)
+            self._products = entries
+
+        # The CAP document carries the arrival times. Take the first center
+        # that returns one naming an actual event; a quiet center publishes a
+        # cancellation or an all-clear with no areas.
+        for center, url in TSUNAMI_CAP_URLS.items():
+            try:
+                async with session.get(
+                    url, headers=headers, timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    text = await resp.text()
+                parsed = parse_tsunami_cap(text)
+                if parsed.get("areas"):
+                    parsed["center"] = center
+                    self._cap = parsed
+                    return
+            except Exception as err:
+                _LOGGER.warning("Error fetching %s CAP document: %s", center, err)
+
+        if centers_ok:
+            self._cap = None
+
+    async def _async_update_recent_events(self, session, timeout, headers) -> None:
+        """Refresh the archive of recent tsunamis.
+
+        The listing changes a handful of times a year, so it rides the same
+        slow cadence as the center feeds. A failure leaves the previous list in
+        place — a stale event list is harmless, unlike stale alert state.
+        """
+        try:
+            async with session.get(
+                TSUNAMI_RECENT_EVENTS_URL, headers=headers, timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                html = await resp.text()
+        except Exception as err:
+            _LOGGER.warning("Error fetching recent tsunami events: %s", err)
+            return
+
+        events = parse_recent_tsunami_events(
+            html,
+            TSUNAMI_EVENT_IMAGE_URL,
+            TSUNAMI_EVENT_BASE_URL,
+            TSUNAMI_EVENT_HISTORY_COUNT,
+        )
+        if events:
+            self._events = events
+        else:
+            _LOGGER.warning(
+                "Recent tsunami listing returned no recognisable events; "
+                "the page layout may have changed"
+            )
 
 
 # -------------------------------------------------------------------

@@ -87,7 +87,7 @@ python3 -c "import json; print('Valid:', json.load(open('custom_components/noaa_
 ├── strings.json         # UI strings for the config flow
 ├── sensors/             # Per-area sensor definitions (space_weather, surf, alerts,
 │                        #   forecasts, hurricanes, weather_observations, weather_extra,
-│                        #   meteor_showers)
+│                        #   meteor_showers, tsunami)
 ├── translations/        # en.json
 └── brand/               # Brand images served by HA (icon/logo, incl. @2x and dark)
 ```

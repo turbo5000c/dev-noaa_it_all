@@ -1,0 +1,19 @@
+{
+  "features": [
+    {
+      "properties": {
+        "event": "Tsunami Information Statement",
+        "status": "Test",
+        "messageType": "Alert",
+        "severity": "Minor",
+        "urgency": "Past",
+        "certainty": "Unlikely",
+        "areaDesc": "Coastal Del Norte",
+        "sent": "2026-08-05T18:00:00-00:00",
+        "senderName": "NWS National Tsunami Warning Center",
+        "headline": "Monthly tsunami communications test",
+        "description": "This is a routine monthly communications test. No action required."
+      }
+    }
+  ]
+}

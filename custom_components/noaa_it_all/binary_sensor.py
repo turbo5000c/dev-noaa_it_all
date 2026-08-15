@@ -1,6 +1,7 @@
 """Binary sensor platform for NOAA Integration."""
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,8 +13,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
     METEOR_ACTIVE_MIN_RATE, METEOR_ACTIVE_MIN_SCORE,
+    TSUNAMI_BINARY_SENSORS_ADDED_KEY, TSUNAMI_STALE_AFTER, TSUNAMI_THREAT_LEVELS,
 )
+from .parsers import parse_tsunami_alert_features
 from .sensors.meteor_showers import space_device_info
+from .sensors.tsunami import tsunami_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ async def async_setup_entry(
     surf_coord = data["surf_coordinator"]
     alerts_coord = data["alerts_coordinator"]
     meteor_coord = data["meteor_coordinator"]
+    tsunami_coord = data["tsunami_coordinator"]
 
     entities = [UnsafeToSwimBinarySensor(surf_coord, office_code)]
 
@@ -51,6 +56,42 @@ async def async_setup_entry(
 
     if meteor_coord:
         entities.append(MeteorShowerActiveBinarySensor(meteor_coord, office_code))
+
+    # Tsunami binary sensors are global and grouped under the single NOAA
+    # Tsunami device. Only add them once across all configured NWS offices,
+    # tracking the owning entry so ownership can transfer if it is unloaded.
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if tsunami_coord and not domain_data.get(TSUNAMI_BINARY_SENSORS_ADDED_KEY):
+        entities.extend([
+            TsunamiAlertBinarySensor(tsunami_coord),
+            TsunamiDataStaleBinarySensor(tsunami_coord),
+        ])
+        domain_data[TSUNAMI_BINARY_SENSORS_ADDED_KEY] = config_entry.entry_id
+
+        def _release_tsunami_binary_sensor_ownership() -> None:
+            """Release ownership and re-create on a remaining entry."""
+            if domain_data.get(TSUNAMI_BINARY_SENSORS_ADDED_KEY) != config_entry.entry_id:
+                return
+            domain_data.pop(TSUNAMI_BINARY_SENSORS_ADDED_KEY, None)
+            remaining = [
+                e for e in hass.config_entries.async_entries(DOMAIN)
+                if e.entry_id != config_entry.entry_id
+            ]
+            if remaining:
+                target_entry_id = remaining[0].entry_id
+
+                async def _reload_for_tsunami_binary_sensors() -> None:
+                    try:
+                        await hass.config_entries.async_reload(target_entry_id)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.exception(
+                            "Failed to reload entry %s to re-create global "
+                            "tsunami binary sensors", target_entry_id,
+                        )
+
+                hass.async_create_task(_reload_for_tsunami_binary_sensors())
+
+        config_entry.async_on_unload(_release_tsunami_binary_sensor_ownership)
 
     async_add_entities(entities)
 
@@ -593,3 +634,130 @@ class MeteorShowerActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information to group this entity."""
         return space_device_info(self._office_code)
+
+
+class TsunamiAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Turns on when a tsunami Warning or Advisory is in effect in US waters.
+
+    Watches and Information Statements deliberately do not trip this sensor. A
+    Watch means a distant earthquake happened and a tsunami is merely possible,
+    and an Information Statement usually means there is no threat at all —
+    firing an evacuation automation on either would train users to ignore it.
+    """
+
+    _attr_has_entity_name = True
+
+    #: Levels that represent a real, present danger to people near the water.
+    _ACTIONABLE_LEVELS = ('Warning', 'Advisory')
+
+    def __init__(self, coordinator):
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = 'noaa_tsunami_alert_active'
+        self._attr_name = 'Alert Active'
+
+    def _summary(self):
+        """Return the parsed tsunami alert summary."""
+        features = self.coordinator.data.get('features') if self.coordinator.data else None
+        _, summary = parse_tsunami_alert_features(features, TSUNAMI_THREAT_LEVELS)
+        return summary
+
+    @property
+    def is_on(self):
+        """Return true when a Warning or Advisory is active."""
+        return self._summary()['threat_level'] in self._ACTIONABLE_LEVELS
+
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return 'safety'
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return 'mdi:tsunami' if self.is_on else 'mdi:water-off-outline'
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        summary = self._summary()
+        features = self.coordinator.data.get('features') if self.coordinator.data else None
+        alerts, _ = parse_tsunami_alert_features(features, TSUNAMI_THREAT_LEVELS)
+        return {
+            'threat_level': summary['threat_level'],
+            'alert_count': summary['alert_count'],
+            'areas': summary['areas'],
+            'highest_severity': summary['highest_severity'],
+            'alerts': alerts[:5],
+            'last_test_message': summary['last_test_message'],
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group this entity."""
+        return tsunami_device_info()
+
+
+class TsunamiDataStaleBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Turns on when the tsunami feed has stopped answering.
+
+    This is the safety net for the whole domain. Every other tsunami entity
+    reports "no threat" when the feed returns nothing, and that reading is
+    indistinguishable from a feed that died hours ago unless something says so
+    out loud. Wire this into a notification: a silent failure on life-safety
+    data is the failure mode that actually hurts people.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator):
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = 'noaa_tsunami_data_stale'
+        self._attr_name = 'Data Stale'
+
+    def _last_success(self):
+        """Return the coordinator's last successful fetch time, or ``None``."""
+        return getattr(self.coordinator, 'last_success', None)
+
+    def _age_minutes(self):
+        """Return minutes since the last successful fetch, or ``None``."""
+        last = self._last_success()
+        if last is None:
+            return None
+        return (datetime.now(timezone.utc) - last).total_seconds() / 60
+
+    @property
+    def is_on(self):
+        """Return true when the data is stale or has never arrived."""
+        last = self._last_success()
+        if last is None:
+            # Never fetched successfully. That is the most stale state there is.
+            return True
+        return datetime.now(timezone.utc) - last > timedelta(minutes=TSUNAMI_STALE_AFTER)
+
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return 'problem'
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return 'mdi:cloud-alert' if self.is_on else 'mdi:cloud-check-outline'
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        age = self._age_minutes()
+        last = self._last_success()
+        return {
+            'last_success': last.isoformat() if last else None,
+            'age_minutes': round(age, 1) if age is not None else None,
+            'stale_after_minutes': TSUNAMI_STALE_AFTER,
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group this entity."""
+        return tsunami_device_info()

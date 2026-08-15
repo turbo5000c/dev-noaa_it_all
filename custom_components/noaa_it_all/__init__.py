@@ -10,6 +10,9 @@ from .const import (
     DOMAIN, CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE,
     HURRICANE_COORDINATOR_KEY,
     HURRICANE_IMAGES_ADDED_KEY, HURRICANE_SENSORS_ADDED_KEY,
+    TSUNAMI_COORDINATOR_KEY,
+    TSUNAMI_SENSORS_ADDED_KEY, TSUNAMI_BINARY_SENSORS_ADDED_KEY,
+    TSUNAMI_IMAGES_ADDED_KEY,
     OFFICE_RADAR_SITES, OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
 )
 from .coordinator import (
@@ -23,6 +26,7 @@ from .coordinator import (
     RadarTimestampCoordinator,
     ForecastDiscussionCoordinator,
     MeteorShowerCoordinator,
+    TsunamiCoordinator,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +72,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     if hurricane_coord_is_new:
         hurricane_coord = HurricaneCoordinator(hass)
         domain_data[HURRICANE_COORDINATOR_KEY] = hurricane_coord
+
+    # Tsunami data is likewise global (NTWC/PTWC), so share one coordinator
+    # across all config entries for the same reason.
+    tsunami_coord = domain_data.get(TSUNAMI_COORDINATOR_KEY)
+    tsunami_coord_is_new = tsunami_coord is None
+    if tsunami_coord_is_new:
+        tsunami_coord = TsunamiCoordinator(hass)
+        domain_data[TSUNAMI_COORDINATOR_KEY] = tsunami_coord
 
     # Office-specific coordinators
     tide_station = OFFICE_TIDE_STATIONS.get(office_code)
@@ -116,6 +128,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # are configured.
     if hurricane_coord_is_new:
         refresh_tasks.append(hurricane_coord.async_refresh())
+    if tsunami_coord_is_new:
+        refresh_tasks.append(tsunami_coord.async_refresh())
     if radar_coord:
         refresh_tasks.append(radar_coord.async_refresh())
     if alerts_coord:
@@ -144,6 +158,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         "forecast_coordinator": forecast_coord,
         "cloud_cover_coordinator": cloud_cover_coord,
         "meteor_coordinator": meteor_coord,
+        "tsunami_coordinator": tsunami_coord,
     }
 
     # Load all platforms for the configured location
@@ -169,6 +184,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             hass.data[DOMAIN].pop(HURRICANE_SENSORS_ADDED_KEY, None)
             hass.data[DOMAIN].pop(HURRICANE_IMAGES_ADDED_KEY, None)
             hass.data[DOMAIN].pop(HURRICANE_COORDINATOR_KEY, None)
+            hass.data[DOMAIN].pop(TSUNAMI_SENSORS_ADDED_KEY, None)
+            hass.data[DOMAIN].pop(TSUNAMI_BINARY_SENSORS_ADDED_KEY, None)
+            hass.data[DOMAIN].pop(TSUNAMI_IMAGES_ADDED_KEY, None)
+            hass.data[DOMAIN].pop(TSUNAMI_COORDINATOR_KEY, None)
 
     return unload_ok
 

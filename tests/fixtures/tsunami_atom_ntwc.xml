@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>NTWC Tsunami Products</title>
+  <updated>2026-08-14T11:02:00Z</updated>
+  <entry>
+    <id>urn:tsunami:PAAQ:WEAK51:2026081411</id>
+    <title>Tsunami Warning M 7.8 - 95 km SSE of Sand Point, Alaska</title>
+    <updated>2026-08-14T11:02:00Z</updated>
+    <link href="https://www.tsunami.gov/events/PAAQ/2026/08/14/WEAK51"/>
+    <summary>Preliminary magnitude 7.8 earthquake at depth 32 km near 54.7N 161.3W.</summary>
+  </entry>
+  <entry>
+    <id>urn:tsunami:PAAQ:WEAK50:2026081409</id>
+    <title>Tsunami Information Statement - Final</title>
+    <updated>2026-08-14T09:00:00Z</updated>
+    <link href="https://www.tsunami.gov/events/PAAQ/2026/08/14/WEAK50"/>
+    <summary>No tsunami threat from this earthquake.</summary>
+  </entry>
+</feed>

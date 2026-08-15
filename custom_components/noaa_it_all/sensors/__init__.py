@@ -51,3 +51,14 @@ from .meteor_showers import (  # noqa: F401
     NextMeteorShowerSensor,
     MeteorViewingScoreSensor,
 )
+from .tsunami import (  # noqa: F401
+    tsunami_device_info,
+    TsunamiThreatLevelSensor,
+    TsunamiActiveAlertsSensor,
+    TsunamiSourceEarthquakeSensor,
+    TsunamiLastMessageSensor,
+    TsunamiLatestEventSensor,
+    TsunamiLocalThreatSensor,
+    TsunamiWaveArrivalSensor,
+    TsunamiEvacuationStatusSensor,
+)

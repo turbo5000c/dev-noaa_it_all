@@ -1,0 +1,57 @@
+{
+  "features": [
+    {
+      "properties": {
+        "event": "Tsunami Warning",
+        "status": "Actual",
+        "messageType": "Alert",
+        "severity": "Extreme",
+        "urgency": "Immediate",
+        "certainty": "Likely",
+        "areaDesc": "Coastal Del Norte; Northern Humboldt Coast",
+        "effective": "2026-08-14T11:02:00-00:00",
+        "onset": "2026-08-14T11:02:00-00:00",
+        "expires": "2026-08-14T17:00:00-00:00",
+        "sent": "2026-08-14T11:02:00-00:00",
+        "senderName": "NWS National Tsunami Warning Center",
+        "headline": "Tsunami Warning issued August 14 at 11:02AM PDT",
+        "description": "A tsunami warning is in effect. Widespread flooding is expected.",
+        "instruction": "Move to high ground or inland now. Do not return until officials say it is safe."
+      }
+    },
+    {
+      "properties": {
+        "event": "Tsunami Advisory",
+        "status": "Actual",
+        "messageType": "Alert",
+        "severity": "Severe",
+        "urgency": "Expected",
+        "certainty": "Likely",
+        "areaDesc": "San Mateo County Coast",
+        "effective": "2026-08-14T11:05:00-00:00",
+        "onset": "2026-08-14T13:00:00-00:00",
+        "expires": "2026-08-14T18:00:00-00:00",
+        "sent": "2026-08-14T11:05:00-00:00",
+        "senderName": "NWS National Tsunami Warning Center",
+        "headline": "Tsunami Advisory issued August 14 at 11:05AM PDT",
+        "description": "Strong currents dangerous to those in or near the water are expected.",
+        "instruction": "Stay out of the water and away from beaches and waterways."
+      }
+    },
+    {
+      "properties": {
+        "event": "Severe Thunderstorm Warning",
+        "status": "Actual",
+        "messageType": "Alert",
+        "severity": "Severe",
+        "urgency": "Immediate",
+        "certainty": "Observed",
+        "areaDesc": "Sacramento County",
+        "sent": "2026-08-14T11:10:00-00:00",
+        "senderName": "NWS Sacramento CA",
+        "headline": "Severe Thunderstorm Warning",
+        "description": "Not a tsunami. Must never appear in tsunami entities."
+      }
+    }
+  ]
+}

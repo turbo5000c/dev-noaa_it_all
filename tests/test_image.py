@@ -276,6 +276,57 @@ class TestGOESImageEntities(unittest.TestCase):
         self.assertIn((DOMAIN, HURRICANE_DEVICE_ID), entity.device_info["identifiers"])
 
 
+class TestTsunamiMapImageEntityIdentity(unittest.TestCase):
+    """Identity checks only.
+
+    ``noaa_it_all.parsers`` is mocked out in this module, so the source-
+    selection logic is exercised in test_tsunami_sensors.py instead, where the
+    real parsers are importable.
+    """
+
+    def test_unique_id(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertEqual(entity.unique_id, "noaa_tsunami_map")
+
+    def test_name(self):
+        # Local name only; HA prepends "NOAA Tsunami".
+        from noaa_it_all.image import TsunamiMapImageEntity
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertEqual(entity.name, "Map")
+
+    def test_has_entity_name(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        self.assertTrue(TsunamiMapImageEntity._attr_has_entity_name)
+
+    def test_device_info_uses_tsunami_device(self):
+        from noaa_it_all.image import TsunamiMapImageEntity
+        from noaa_it_all.const import DOMAIN, TSUNAMI_DEVICE_ID
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertIn((DOMAIN, TSUNAMI_DEVICE_ID), entity.device_info["identifiers"])
+
+    def test_no_picture_before_any_coordinator_data(self):
+        """Without an archived event there is no image, and that is honest.
+
+        Earlier revisions fell back to guessed DART and energy-map URLs here;
+        every one 404'd on a live install, so they were removed rather than
+        left in as fallbacks that only obscured the failure.
+        """
+        from noaa_it_all.image import TsunamiMapImageEntity
+        entity = TsunamiMapImageEntity(HASS)
+        self.assertIsNone(entity._source_url)
+        self.assertIsNone(entity.entity_picture)
+        self.assertIsNone(entity.get_cache_busted_url())
+
+    def test_event_image_url_matches_the_documented_pattern(self):
+        from noaa_it_all.const import TSUNAMI_EVENT_IMAGE_URL
+        self.assertEqual(
+            TSUNAMI_EVENT_IMAGE_URL.format(slug="08-29-2018_LoyaltyIslands"),
+            "https://www.tsunami.gov/previous.events/"
+            "08-29-2018_LoyaltyIslands/Images/Location.jpg",
+        )
+
+
 class TestTwoOfficeSetup(unittest.TestCase):
     """Verify entity structure when two NWS offices (ILM and SGX) are configured.
 

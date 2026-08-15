@@ -81,7 +81,7 @@ homeassistant:
 
 ## Device Grouping
 
-NOAA It All automatically organizes entities into four device groups:
+NOAA It All automatically organizes entities into five device groups:
 
 ### 1. NOAA Space (Space Weather & Meteor Showers)
 Entities that monitor space weather conditions worldwide, plus the meteor shower forecast for
@@ -144,6 +144,34 @@ Device per office for location-specific weather alerts.
 - `binary_sensor.noaa_{office}_weather_flood_winter_alert`
 - `binary_sensor.noaa_{office}_weather_heat_air_quality_alert`
 - `binary_sensor.noaa_{office}_weather_active_alerts`
+
+### 5. NOAA Tsunami (Tsunami Alerts)
+One global device, created once and shared across every configured office. The first six entities
+exist on every install; the last three are only created when your office sits on a tsunami-exposed
+coast.
+
+**Entities in this group:**
+- `sensor.noaa_tsunami_threat_level`
+- `sensor.noaa_tsunami_active_alerts`
+- `sensor.noaa_tsunami_source_earthquake`
+- `sensor.noaa_tsunami_last_message`
+- `binary_sensor.noaa_tsunami_alert_active`
+- `binary_sensor.noaa_tsunami_data_stale`
+- `sensor.noaa_tsunami_latest_event`
+- `image.noaa_tsunami_map`
+- `sensor.noaa_tsunami_{office}_local_threat` *(coastal offices only)*
+- `sensor.noaa_tsunami_{office}_wave_arrival` *(coastal offices only)*
+- `sensor.noaa_tsunami_{office}_evacuation_status` *(coastal offices only)*
+
+> **⚠️ Not a primary warning source.** These entities are for automation and awareness only.
+> Never rely on them for evacuation decisions — use NOAA Weather Radio, Wireless Emergency
+> Alerts, and local sirens. `binary_sensor.noaa_tsunami_data_stale` turns on when the feed stops
+> answering; wire it into a notification so an outage is never silent.
+
+> The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) have no tsunami
+> exposure and get only the six global entities. `sensor.noaa_tsunami_threat_level` reads
+> `unknown` rather than `None` before the first successful fetch, so an automation can tell "no
+> threat" apart from "no data".
 
 ### Creating Custom Groups
 

@@ -4,8 +4,10 @@ This module contains pure functions with no Home Assistant dependency,
 making them independently unit-testable.
 """
 
+import math
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +614,610 @@ def parse_nws_alert_features(features: List[Dict[str, Any]]) -> Tuple[
         summary['event_types'][event] = summary['event_types'].get(event, 0) + 1
 
     return active_alerts, summary
+
+
+# ---------------------------------------------------------------------------
+# Tsunami parsing helpers
+# ---------------------------------------------------------------------------
+#
+# Two feeds are parsed here. The NWS alerts API supplies the authoritative
+# alert *state* as GeoJSON; the NTWC/PTWC Atom and CAP products supply the
+# detail a user actually acts on — estimated wave arrival time, the source
+# earthquake, and the evacuation instruction.
+#
+# Everything below is pure: no network, no Home Assistant, and no imports of
+# the lookup tables in const.py. Tables arrive as arguments.
+
+#: Largest XML body we will hand to ElementTree, in bytes.
+#:
+#: ``xml.etree.ElementTree`` is not hardened against entity-expansion attacks
+#: and ``defusedxml`` is not a dependency of this integration. These feeds are
+#: a few kilobytes even during a basin-wide event, so anything approaching this
+#: size is not a feed we should be parsing.
+TSUNAMI_XML_MAX_BYTES = 512 * 1024
+
+_ATOM_NS = "{http://www.w3.org/2005/Atom}"
+_CAP_NS = "{urn:oasis:names:tc:emergency:cap:1.2}"
+
+#: Magnitude, tried in order. The centers do not write it one way: a headline
+#: may say "M 7.2" while the body says "preliminary magnitude 7.2". The spelled
+#: out form is tried first, because a pattern anchored on a bare "M" would
+#: otherwise match the leading letter of "magnitude" and then fail on the
+#: letters that follow it — which is exactly what happened on a live feed.
+_MAGNITUDE_PATTERNS = (
+    re.compile(r"magnitude\s*(?:of\s*)?[:=]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
+    re.compile(r"\bM(?:\.?w)?\s*[:=]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
+)
+#: Sanity bounds. Anything outside this is a false positive, not a quake.
+_MAGNITUDE_RANGE = (0.0, 10.0)
+
+#: Depth, e.g. "depth 35 km", "depth of 35 km", "35 km deep".
+_DEPTH_PATTERNS = (
+    re.compile(r"\bdepth\D{0,12}?(\d+(?:\.\d+)?)\s*(km|mi)\b", re.IGNORECASE),
+    re.compile(r"(\d+(?:\.\d+)?)\s*(km|mi)\s+deep\b", re.IGNORECASE),
+)
+#: A decimal coordinate pair with hemisphere letters, e.g. "54.2N 161.5W".
+_COORD_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*([NS])[\s,]+(\d+(?:\.\d+)?)\s*([EW])", re.IGNORECASE
+)
+
+
+def _tsunami_level_from_event(event: str, levels: Sequence[str]) -> Optional[str]:
+    """Return the alert level named inside an NWS event string, if any.
+
+    ``event`` is a value like ``"Tsunami Advisory"``. Only tsunami events are
+    considered, so a "Severe Thunderstorm Warning" never resolves to a level.
+    """
+    if not event:
+        return None
+    event_lower = event.lower()
+    if 'tsunami' not in event_lower:
+        return None
+    for level in levels:
+        if level.lower() in event_lower:
+            return level
+    return None
+
+
+def classify_tsunami_threat_level(
+    events: Optional[Iterable[str]], levels: Sequence[str]
+) -> Optional[str]:
+    """Resolve a collection of NWS event names to the single highest level.
+
+    ``levels`` is ordered highest-first (see ``TSUNAMI_THREAT_LEVELS``).
+
+    Returns ``None`` when ``events`` itself is ``None`` — meaning no data has
+    been fetched yet — so callers can surface Home Assistant's ``unknown``
+    state. Returns the string ``"None"`` only for a fetch that genuinely
+    succeeded and found nothing active. The distinction matters: a sensor that
+    reports "no threat" because the feed is down is worse than no sensor.
+    """
+    if events is None:
+        return None
+    found = [
+        level for level in (
+            _tsunami_level_from_event(event, levels) for event in events
+        ) if level
+    ]
+    if not found:
+        return "None"
+    return min(found, key=levels.index)
+
+
+def is_tsunami_test_message(props: Dict[str, Any]) -> bool:
+    """Return True for a test or exercise message rather than a live alert.
+
+    The NWS runs tsunami communications tests monthly. They are the only
+    traffic most installations will ever see on this domain, so they are worth
+    surfacing as an attribute — but they must never drive a threat level.
+    """
+    status = (props.get('status') or '').strip().lower()
+    return status in ('test', 'exercise', 'draft', 'system')
+
+
+def parse_tsunami_alert_features(
+    features: Optional[List[Dict[str, Any]]], levels: Sequence[str]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Filter NWS alert features to tsunami events; return (alerts, summary).
+
+    Mirrors ``parse_nws_alert_features``: only ``status == 'actual'`` counts as
+    a live alert. Test messages are excluded from the alert list but the most
+    recent one is reported in the summary so users can confirm the feed works
+    between real events.
+
+    ``features`` of ``None`` (no successful fetch) produces a summary whose
+    ``threat_level`` is ``None`` rather than ``"None"``.
+    """
+    summary: Dict[str, Any] = {
+        'threat_level': None,
+        'alert_count': 0,
+        'by_level': {level: 0 for level in levels},
+        'areas': [],
+        'issuing_centers': [],
+        'highest_severity': None,
+        'latest_issued': None,
+        'last_test_message': None,
+    }
+    if features is None:
+        return [], summary
+
+    active_alerts: List[Dict[str, Any]] = []
+    events: List[str] = []
+    severities: List[str] = []
+
+    for feature in features:
+        props = feature.get('properties', {})
+        event = props.get('event', '')
+        if 'tsunami' not in event.lower():
+            continue
+
+        if is_tsunami_test_message(props):
+            sent = props.get('sent') or props.get('effective')
+            existing = summary['last_test_message']
+            if existing is None or (sent and sent > existing.get('sent', '')):
+                summary['last_test_message'] = {
+                    'event': event,
+                    'sent': sent,
+                    'sender': props.get('senderName', 'Unknown'),
+                    'headline': props.get('headline', 'No headline'),
+                }
+            continue
+
+        if (props.get('status') or '').lower() != 'actual':
+            continue
+
+        instruction_raw = props.get('instruction')
+        alert_info = {
+            'event': event,
+            'level': _tsunami_level_from_event(event, levels),
+            'headline': props.get('headline', 'No headline'),
+            'severity': props.get('severity', 'Unknown'),
+            'urgency': props.get('urgency', 'Unknown'),
+            'certainty': props.get('certainty', 'Unknown'),
+            'area': props.get('areaDesc', 'Unknown area'),
+            'effective': props.get('effective', 'Unknown'),
+            'onset': props.get('onset', 'Unknown'),
+            'expires': props.get('expires', 'Unknown'),
+            'sent': props.get('sent', 'Unknown'),
+            'message_type': props.get('messageType', 'Unknown'),
+            'sender': props.get('senderName', 'Unknown'),
+            'instruction': instruction_raw[:400] if instruction_raw else None,
+            'description': (props.get('description') or '')[:400],
+        }
+        active_alerts.append(alert_info)
+        events.append(event)
+        severities.append(alert_info['severity'])
+
+        level = alert_info['level']
+        if level in summary['by_level']:
+            summary['by_level'][level] += 1
+        area = alert_info['area']
+        if area and area not in summary['areas']:
+            summary['areas'].append(area)
+        sender = alert_info['sender']
+        if sender and sender not in summary['issuing_centers']:
+            summary['issuing_centers'].append(sender)
+        sent = props.get('sent')
+        if sent and (summary['latest_issued'] is None or sent > summary['latest_issued']):
+            summary['latest_issued'] = sent
+
+    summary['threat_level'] = classify_tsunami_threat_level(events, levels)
+    summary['alert_count'] = len(active_alerts)
+
+    severity_order = ('Extreme', 'Severe', 'Moderate', 'Minor', 'Unknown')
+    ranked = [s for s in severities if s in severity_order]
+    if ranked:
+        summary['highest_severity'] = min(ranked, key=severity_order.index)
+
+    return active_alerts, summary
+
+
+def _safe_parse_xml(xml_text: Optional[str]) -> Optional[ET.Element]:
+    """Parse XML defensively, returning ``None`` on anything suspicious.
+
+    A malformed or oversized feed must degrade this domain to NWS-only rather
+    than take down the whole coordinator update.
+    """
+    if not xml_text:
+        return None
+    if len(xml_text.encode('utf-8', errors='ignore')) > TSUNAMI_XML_MAX_BYTES:
+        return None
+    if '<!ENTITY' in xml_text or '<!DOCTYPE' in xml_text:
+        return None
+    try:
+        return ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+
+
+def _text_of(element: Optional[ET.Element]) -> str:
+    """Return an element's stripped text, or an empty string."""
+    if element is None or element.text is None:
+        return ''
+    return element.text.strip()
+
+
+def _classify_message_type(title: str) -> str:
+    """Label a product as an update, a cancellation, a final message, or new."""
+    lowered = title.lower()
+    if 'cancel' in lowered:
+        return 'Cancellation'
+    if 'final' in lowered:
+        return 'Final'
+    if 'supplement' in lowered or 'update' in lowered:
+        return 'Update'
+    return 'New'
+
+
+def parse_tsunami_atom_feed(
+    xml_text: Optional[str], center: str, levels: Sequence[str]
+) -> List[Dict[str, Any]]:
+    """Parse an NTWC/PTWC Atom feed into a list of product entries, newest first.
+
+    Each entry carries the product title, when it was issued, a link to the
+    full text, the derived alert level and message type, and whatever source
+    earthquake parameters could be recovered from the title and summary.
+
+    Returns ``[]`` for a missing, oversized or malformed feed.
+    """
+    root = _safe_parse_xml(xml_text)
+    if root is None:
+        return []
+
+    entries: List[Dict[str, Any]] = []
+    for entry in root.findall(f'{_ATOM_NS}entry') or root.findall('entry'):
+        title = _text_of(entry.find(f'{_ATOM_NS}title')) or _text_of(entry.find('title'))
+        summary = _text_of(entry.find(f'{_ATOM_NS}summary')) or _text_of(entry.find('summary'))
+        updated = (
+            _text_of(entry.find(f'{_ATOM_NS}updated'))
+            or _text_of(entry.find(f'{_ATOM_NS}published'))
+            or _text_of(entry.find('updated'))
+        )
+        link_el = entry.find(f'{_ATOM_NS}link')
+        if link_el is None:
+            link_el = entry.find('link')
+        link = link_el.get('href', '') if link_el is not None else ''
+
+        entries.append({
+            'center': center,
+            'title': title,
+            'summary': summary[:400],
+            'updated': updated,
+            'link': link,
+            'level': _tsunami_level_from_event(title, levels),
+            'message_type': _classify_message_type(title),
+        })
+
+    entries.sort(key=lambda item: item.get('updated') or '', reverse=True)
+    return entries
+
+
+def summarize_tsunami_source(entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Recover source-earthquake parameters from a product entry.
+
+    NTWC and PTWC write the quake into the product title and summary rather
+    than into structured Atom fields, so this reads them back out by pattern:
+    ``"M 7.2"``, ``"depth 35 km"``, ``"54.2N 161.5W"``. Every key is ``None``
+    when the corresponding pattern is absent.
+    """
+    result: Dict[str, Any] = {
+        'magnitude': None,
+        'depth_km': None,
+        'epicenter_latitude': None,
+        'epicenter_longitude': None,
+        'region': None,
+        'origin_time': None,
+    }
+    if not entry:
+        return result
+
+    title = entry.get('title') or ''
+    summary = entry.get('summary') or ''
+    haystack = f"{title} {summary}"
+
+    for pattern in _MAGNITUDE_PATTERNS:
+        match = pattern.search(haystack)
+        if not match:
+            continue
+        value = float(match.group(1))
+        if _MAGNITUDE_RANGE[0] <= value <= _MAGNITUDE_RANGE[1]:
+            result['magnitude'] = value
+            break
+
+    for pattern in _DEPTH_PATTERNS:
+        match = pattern.search(haystack)
+        if not match:
+            continue
+        depth = float(match.group(1))
+        if match.group(2).lower() == 'mi':
+            depth = round(depth * 1.60934, 1)
+        result['depth_km'] = depth
+        break
+
+    coord_match = _COORD_RE.search(haystack)
+    if coord_match:
+        lat = float(coord_match.group(1))
+        lon = float(coord_match.group(3))
+        if coord_match.group(2).upper() == 'S':
+            lat = -lat
+        if coord_match.group(4).upper() == 'W':
+            lon = -lon
+        result['epicenter_latitude'] = lat
+        result['epicenter_longitude'] = lon
+
+    # Product titles commonly read "... - 100 km SSE of Sand Point, Alaska".
+    if ' - ' in title:
+        result['region'] = title.split(' - ', 1)[1].strip() or None
+    result['origin_time'] = entry.get('updated')
+
+    return result
+
+
+#: Event directory names in the warning centers' archive, e.g.
+#: "previous.events/08-29-2018_LoyaltyIslands". The listing page links to
+#: these; each directory holds Images/Location.jpg.
+_EVENT_SLUG_RE = re.compile(
+    r"previous\.events/((\d{2})-(\d{2})-(\d{4})_([A-Za-z0-9._-]+?))/",
+    re.IGNORECASE,
+)
+
+
+def _humanize_event_name(raw: str) -> str:
+    """Turn an archive directory name into something readable.
+
+    ``LoyaltyIslands`` becomes ``Loyalty Islands``; separators become spaces.
+    """
+    spaced = re.sub(r"[._-]+", " ", raw)
+    spaced = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", spaced)
+    spaced = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", spaced)
+    return re.sub(r"\s+", " ", spaced).strip()
+
+
+def parse_recent_tsunami_events(
+    html: Optional[str], image_template: str, page_template: str, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """Parse the recent-tsunamis listing into event entries, newest first.
+
+    The listing is an HTML page rather than a feed, so this reads the event
+    directory names straight out of the links — the same regex-over-HTML
+    approach ``ForecastDiscussionCoordinator`` already uses for AFD text.
+    Anything that does not look like a dated event directory is ignored, so a
+    layout change degrades to an empty list rather than to nonsense.
+
+    ``image_template`` and ``page_template`` are passed in rather than imported
+    to keep this module free of ``const``.
+    """
+    if not html:
+        return []
+
+    seen = set()
+    events: List[Dict[str, Any]] = []
+    for match in _EVENT_SLUG_RE.finditer(html):
+        slug, month, day, year, raw_name = match.groups()
+        if slug in seen:
+            continue
+        seen.add(slug)
+
+        try:
+            date = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        except ValueError:
+            continue
+        if not (1 <= int(month) <= 12 and 1 <= int(day) <= 31):
+            continue
+
+        events.append({
+            'slug': slug,
+            'name': _humanize_event_name(raw_name),
+            'date': date,
+            'url': page_template.format(slug=slug),
+            'image_url': image_template.format(slug=slug),
+        })
+
+    events.sort(key=lambda item: item['date'], reverse=True)
+    return events[:limit]
+
+
+def find_source_earthquake(
+    entries: Optional[List[Dict[str, Any]]], max_scan: int = 12
+) -> Dict[str, Any]:
+    """Return the newest product that actually names an earthquake.
+
+    The most recent product is often a routine statement carrying no quake
+    parameters at all, so taking ``entries[0]`` and giving up leaves the sensor
+    blank while the answer sits one entry further down. This scans back until
+    it finds a magnitude, and falls back to the newest entry so callers still
+    get its region, title and link even when no magnitude is recoverable.
+
+    On a quiet day this is the most interesting thing the domain has to say:
+    the last earthquake the warning centers looked at and decided was harmless.
+    """
+    if not entries:
+        return summarize_tsunami_source(None)
+
+    for entry in entries[:max_scan]:
+        source = summarize_tsunami_source(entry)
+        if source['magnitude'] is not None:
+            return source
+
+    return summarize_tsunami_source(entries[0])
+
+
+def _cap_parameters(parent: ET.Element) -> Dict[str, str]:
+    """Collect CAP ``<parameter>`` and ``<geocode>`` name/value pairs."""
+    values: Dict[str, str] = {}
+    for tag in ('parameter', 'geocode'):
+        for param in list(parent.findall(f'{_CAP_NS}{tag}')) + list(parent.findall(tag)):
+            name = (
+                _text_of(param.find(f'{_CAP_NS}valueName'))
+                or _text_of(param.find('valueName'))
+            )
+            value = _text_of(param.find(f'{_CAP_NS}value')) or _text_of(param.find('value'))
+            if name:
+                values[name] = value
+    return values
+
+
+def _first_matching_value(values: Dict[str, str], needle: str) -> Optional[str]:
+    """Return the first value whose parameter name contains ``needle``."""
+    for name, value in values.items():
+        if needle.lower() in name.lower() and value:
+            return value
+    return None
+
+
+def _circle_centre(area: ET.Element) -> Optional[Tuple[float, float]]:
+    """Return the lat/lon of a CAP ``<circle>``, if the area carries one."""
+    circle = area.find(f'{_CAP_NS}circle')
+    if circle is None:
+        circle = area.find('circle')
+    raw = _text_of(circle)
+    if not raw:
+        return None
+    try:
+        point = raw.split()[0]
+        lat_str, lon_str = point.split(',')
+        return float(lat_str), float(lon_str)
+    except (ValueError, IndexError):
+        return None
+
+
+def parse_tsunami_cap(xml_text: Optional[str]) -> Dict[str, Any]:
+    """Parse a CAP 1.2 tsunami message into a flat dict.
+
+    Wave arrival times are published as CAP parameters, which the warning
+    centers attach either to the ``<info>`` block or to each ``<area>``. Both
+    placements are read; area-level values win for a given area.
+
+    Returns a dict whose ``areas`` list is empty when the document is missing,
+    oversized or malformed.
+    """
+    result: Dict[str, Any] = {
+        'event': None,
+        'severity': None,
+        'urgency': None,
+        'certainty': None,
+        'headline': None,
+        'instruction': None,
+        'effective': None,
+        'expires': None,
+        'sent': None,
+        'status': None,
+        'message_type': None,
+        'areas': [],
+    }
+    root = _safe_parse_xml(xml_text)
+    if root is None:
+        return result
+
+    result['sent'] = _text_of(root.find(f'{_CAP_NS}sent')) or _text_of(root.find('sent')) or None
+    result['status'] = (
+        _text_of(root.find(f'{_CAP_NS}status')) or _text_of(root.find('status')) or None
+    )
+    result['message_type'] = (
+        _text_of(root.find(f'{_CAP_NS}msgType')) or _text_of(root.find('msgType')) or None
+    )
+
+    info = root.find(f'{_CAP_NS}info')
+    if info is None:
+        info = root.find('info')
+    if info is None:
+        return result
+
+    def info_text(tag: str) -> Optional[str]:
+        return _text_of(info.find(f'{_CAP_NS}{tag}')) or _text_of(info.find(tag)) or None
+
+    result['event'] = info_text('event')
+    result['severity'] = info_text('severity')
+    result['urgency'] = info_text('urgency')
+    result['certainty'] = info_text('certainty')
+    result['headline'] = info_text('headline')
+    result['instruction'] = info_text('instruction')
+    result['effective'] = info_text('effective')
+    result['expires'] = info_text('expires')
+
+    info_params = _cap_parameters(info)
+    default_arrival = _first_matching_value(info_params, 'arrival')
+
+    areas = list(info.findall(f'{_CAP_NS}area')) + list(info.findall('area'))
+    for area in areas:
+        area_params = _cap_parameters(area)
+        arrival = _first_matching_value(area_params, 'arrival') or default_arrival
+        centre = _circle_centre(area)
+        result['areas'].append({
+            'area_desc': (
+                _text_of(area.find(f'{_CAP_NS}areaDesc'))
+                or _text_of(area.find('areaDesc'))
+            ),
+            'arrival_time': arrival,
+            'latitude': centre[0] if centre else None,
+            'longitude': centre[1] if centre else None,
+        })
+
+    return result
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in kilometres."""
+    radius = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    )
+    return 2 * radius * math.asin(math.sqrt(a))
+
+
+def estimate_wave_arrival(
+    cap_areas: Optional[List[Dict[str, Any]]],
+    latitude: Optional[float],
+    longitude: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    """Pick the wave-arrival forecast point closest to the given coordinates.
+
+    CAP areas that carry a ``<circle>`` are ranked by great-circle distance.
+    When no area has coordinates — or no coordinates were configured — the
+    first area that has an arrival time is used instead, so a coastal user
+    still gets a usable time rather than nothing.
+
+    Returns ``None`` when no area carries an arrival time at all.
+    """
+    if not cap_areas:
+        return None
+
+    with_time = [area for area in cap_areas if area.get('arrival_time')]
+    if not with_time:
+        return None
+
+    if latitude is not None and longitude is not None:
+        located = [
+            area for area in with_time
+            if area.get('latitude') is not None and area.get('longitude') is not None
+        ]
+        if located:
+            nearest = min(
+                located,
+                key=lambda area: haversine_km(
+                    latitude, longitude, area['latitude'], area['longitude']
+                ),
+            )
+            return {
+                'forecast_point': nearest.get('area_desc'),
+                'arrival_time': nearest.get('arrival_time'),
+                'distance_km': round(
+                    haversine_km(
+                        latitude, longitude, nearest['latitude'], nearest['longitude']
+                    ), 1
+                ),
+            }
+
+    fallback = with_time[0]
+    return {
+        'forecast_point': fallback.get('area_desc'),
+        'arrival_time': fallback.get('arrival_time'),
+        'distance_km': None,
+    }
 
 
 # ---------------------------------------------------------------------------
