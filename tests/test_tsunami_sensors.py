@@ -95,7 +95,12 @@ def _make_coordinator(data=None):
 
 def _tsunami_payload(alert_fixture="tsunami_alerts.json"):
     """Build a TsunamiCoordinator-shaped payload from the fixtures."""
-    from noaa_it_all.parsers import parse_tsunami_atom_feed, parse_tsunami_cap
+    from noaa_it_all.parsers import (
+        parse_tsunami_atom_feed, parse_tsunami_cap, parse_recent_tsunami_events,
+    )
+    from noaa_it_all.const import (
+        TSUNAMI_EVENT_IMAGE_URL, TSUNAMI_EVENT_BASE_URL,
+    )
     levels = ("Warning", "Advisory", "Watch", "Information")
     cap = parse_tsunami_cap(_load_text("tsunami_cap.xml"))
     cap["center"] = "NTWC"
@@ -105,6 +110,11 @@ def _tsunami_payload(alert_fixture="tsunami_alerts.json"):
             _load_text("tsunami_atom_ntwc.xml"), "NTWC", levels
         ),
         "cap": cap,
+        "events": parse_recent_tsunami_events(
+            _load_text("tsunami_recent_events.html"),
+            TSUNAMI_EVENT_IMAGE_URL,
+            TSUNAMI_EVENT_BASE_URL,
+        ),
         "last_success": datetime.now(timezone.utc),
     }
 
@@ -486,8 +496,44 @@ class TestTsunamiDataStaleBinarySensor(unittest.TestCase):
         self.assertEqual(self._sensor(None).device_info["name"], "NOAA Tsunami")
 
 
+class TestTsunamiLatestEventSensor(unittest.TestCase):
+    """The archive sensor has something to say on every single day."""
+
+    def _sensor(self, data):
+        from noaa_it_all.sensors.tsunami import TsunamiLatestEventSensor
+        return TsunamiLatestEventSensor(_make_coordinator(data))
+
+    def test_state_is_newest_event_name(self):
+        self.assertEqual(self._sensor(_tsunami_payload()).state, "Loyalty Islands")
+
+    def test_state_before_first_refresh(self):
+        self.assertIsNone(self._sensor(None).state)
+
+    def test_state_when_listing_empty(self):
+        self.assertIsNone(self._sensor({"events": []}).state)
+
+    def test_name_and_unique_id(self):
+        sensor = self._sensor(None)
+        self.assertEqual(sensor.name, "Latest Tsunami")
+        self.assertEqual(sensor.unique_id, "noaa_tsunami_latest_event")
+
+    def test_attributes_carry_the_image_url(self):
+        attrs = self._sensor(_tsunami_payload()).extra_state_attributes
+        self.assertEqual(attrs["date"], "2018-08-29")
+        self.assertTrue(attrs["image_url"].endswith("/Images/Location.jpg"))
+        self.assertEqual(attrs["events_available"], 3)
+
+    def test_attributes_when_no_data(self):
+        attrs = self._sensor(None).extra_state_attributes
+        self.assertIsNone(attrs["image_url"])
+        self.assertEqual(attrs["events_available"], 0)
+
+    def test_device_info(self):
+        self.assertEqual(self._sensor(None).device_info["name"], "NOAA Tsunami")
+
+
 class TestTsunamiMapImageEntity(unittest.TestCase):
-    """The map switches source depending on whether anything is happening."""
+    """The map renders the newest archived event's location image."""
 
     def _entity(self, data):
         from noaa_it_all.image import TsunamiMapImageEntity
@@ -504,107 +550,36 @@ class TestTsunamiMapImageEntity(unittest.TestCase):
     def test_device_info(self):
         self.assertEqual(self._entity(None).device_info["name"], "NOAA Tsunami")
 
-    def test_quiet_shows_dart_network(self):
-        """No alert means no energy map exists, so only DART candidates remain."""
-        entity = self._entity(_tsunami_payload("tsunami_quiet.json"))
-        candidates = entity._candidate_sources()
-        self.assertTrue(candidates)
-        self.assertTrue(all(c[0] == "DART Network" for c in candidates))
-
-    def test_no_data_shows_dart_network(self):
-        entity = self._entity(None)
-        self.assertEqual(entity._candidate_sources()[0][0], "DART Network")
-        self.assertIsNone(entity._active_center())
-
-    def test_active_alert_prefers_energy_map(self):
+    def test_latest_event_is_the_newest(self):
         entity = self._entity(_tsunami_payload())
-        candidates = entity._candidate_sources()
-        self.assertEqual(candidates[0][0], "NTWC Energy Forecast")
-        self.assertIn("energy", candidates[0][1])
-        self.assertGreater(len(candidates), 1, "energy map must have a fallback")
+        self.assertEqual(entity._latest_event()["name"], "Loyalty Islands")
 
-    def test_all_dart_candidates_are_tried(self):
-        """Several DART URLs ship unverified; every one must be attempted."""
-        from noaa_it_all.const import TSUNAMI_DART_MAP_URLS
-        entity = self._entity(None)
-        urls = [url for label, url in entity._candidate_sources()
-                if label == "DART Network"]
-        self.assertEqual(urls, list(TSUNAMI_DART_MAP_URLS))
+    def test_no_data_has_no_event(self):
+        self.assertIsNone(self._entity(None)._latest_event())
 
-    def test_candidate_urls_are_unique(self):
+    def test_empty_listing_has_no_event(self):
+        self.assertIsNone(self._entity({"events": []})._latest_event())
+
+    def test_cache_busted_url_targets_the_event_image(self):
         entity = self._entity(_tsunami_payload())
-        urls = [url for _, url in entity._candidate_sources()]
-        self.assertEqual(len(urls), len(set(urls)))
+        entity._source_url = entity._latest_event()["image_url"]
+        url = entity.get_cache_busted_url()
+        self.assertIn("08-29-2018_LoyaltyIslands/Images/Location.jpg", url)
+        self.assertIn("?t=", url)
 
-    def test_dart_always_remains_the_last_candidate(self):
-        """However the energy map resolves, there is always a fallback."""
-        for payload in (None, _tsunami_payload(), _tsunami_payload("tsunami_quiet.json")):
-            entity = self._entity(payload)
-            self.assertEqual(entity._candidate_sources()[-1][0], "DART Network")
+    def test_cache_busted_url_is_none_without_a_source(self):
+        self.assertIsNone(self._entity(None).get_cache_busted_url())
 
-    def test_active_center_from_products(self):
-        entity = self._entity(_tsunami_payload())
-        self.assertEqual(entity._active_center(), "NTWC")
-
-    def test_active_center_falls_back_to_sender_name(self):
-        """An alert can land before the center's Atom feed has been fetched."""
-        data = {
-            "features": _load_fixture("tsunami_alerts.json")["features"],
-            "products": [],
-            "cap": None,
-        }
-        self.assertEqual(self._entity(data)._active_center(), "NTWC")
-
-    def test_active_center_recognises_ptwc_sender(self):
-        """Pacific alerts come from PTWC, spelled out the same way."""
-        features = [{
-            "properties": {
-                "event": "Tsunami Warning",
-                "status": "Actual",
-                "areaDesc": "Oahu",
-                "senderName": "NWS Pacific Tsunami Warning Center",
-            }
-        }]
-        data = {"features": features, "products": [], "cap": None}
-        entity = self._entity(data)
-        self.assertEqual(entity._active_center(), "PTWC")
-        self.assertEqual(
-            entity._candidate_sources()[0][0], "PTWC Energy Forecast"
-        )
-
-    def test_every_sender_hint_maps_to_a_known_center(self):
-        from noaa_it_all.const import (
-            TSUNAMI_CENTER_SENDER_HINTS, TSUNAMI_ATOM_URLS,
-        )
-        self.assertEqual(
-            set(TSUNAMI_CENTER_SENDER_HINTS), set(TSUNAMI_ATOM_URLS)
-        )
-
-    def test_test_message_does_not_select_an_energy_map(self):
-        """A monthly comms test is not an event, so there is no energy map."""
-        data = {
-            "features": _load_fixture("tsunami_test_message.json")["features"],
-            "products": [],
-            "cap": None,
-        }
-        entity = self._entity(data)
-        self.assertIsNone(entity._active_center())
-        self.assertEqual(entity._candidate_sources()[0][0], "DART Network")
-
-    def test_attributes_report_which_map_is_showing(self):
+    def test_attributes_name_the_event(self):
         entity = self._entity(_tsunami_payload())
         attrs = entity.extra_state_attributes
-        self.assertIn("map_type", attrs)
-        self.assertIn("source_url", attrs)
-        self.assertEqual(attrs["active_center"], "NTWC")
+        self.assertEqual(attrs["event"], "Loyalty Islands")
+        self.assertEqual(attrs["event_date"], "2018-08-29")
 
-    def test_entity_picture_is_cache_busted(self):
-        entity = self._entity(None)
-        self.assertIn("?t=", entity.entity_picture)
-
-    def test_every_center_has_an_energy_map_url(self):
-        from noaa_it_all.const import TSUNAMI_ATOM_URLS, TSUNAMI_ENERGY_MAP_URLS
-        self.assertEqual(set(TSUNAMI_ATOM_URLS), set(TSUNAMI_ENERGY_MAP_URLS))
+    def test_attributes_when_no_event(self):
+        attrs = self._entity(None).extra_state_attributes
+        self.assertIsNone(attrs["event"])
+        self.assertIsNone(attrs["source_url"])
 
 
 class TestTsunamiCoastalOfficeGating(unittest.TestCase):

@@ -236,10 +236,12 @@ Tsunami monitoring from the National Tsunami Warning Center (NTWC, Palmer AK) an
   - Watches and Information Statements deliberately leave it off — a Watch means a tsunami is merely possible, and firing an evacuation automation on one trains people to ignore it
 - **Data Stale**: Turns on when the feed has stopped answering *(binary_sensor.noaa_tsunami_data_stale)*
   - Attributes include `last_success`, `age_minutes`, and `stale_after_minutes`
-- **Map**: The tsunami map, switching source depending on what is happening *(image.noaa_tsunami_map)*
-  - During an event: the **energy propagation forecast** from the warning center that issued it — the RIFT model's directional beam of wave energy spreading across the ocean
-  - The rest of the time: the **DART buoy network map**, showing the deep-ocean pressure recorders that detect a tsunami in the first place
-  - The `map_type` and `source_url` attributes say which one you are looking at, and `active_center` names the center with a live alert
+- **Latest Tsunami**: The most recent tsunami in the warning centers' archive, wherever in the world it happened *(sensor.noaa_tsunami_latest_event)*
+  - Attributes include `date`, `url`, `image_url`, and the five most `recent_events`
+  - Unlike the alert sensors this has something to say every day, and it changes only when the centers add a new event — which makes it a good automation trigger for "a real tsunami happened somewhere"
+- **Map**: Location map for that most recent tsunami *(image.noaa_tsunami_map)*
+  - Sourced from the centers' event archive, e.g. `previous.events/08-29-2018_LoyaltyIslands/Images/Location.jpg`
+  - The `event`, `event_date` and `event_url` attributes name what you are looking at
 
 **Coastal offices only** — created when your configured office is on a tsunami-exposed coast:
 
@@ -295,7 +297,7 @@ Visual representations of current conditions:
 - **GOES Geocolor** — GOES-19 GeoColor satellite imagery *(image.noaa_weather_hurricane_goes_geocolor)*
 
 **NOAA Tsunami** (global, created once):
-- **Map** — Energy propagation forecast during an event, DART buoy network map otherwise *(image.noaa_tsunami_map)*
+- **Map** — Location map of the most recent tsunami in the warning centers' archive *(image.noaa_tsunami_map)*
 
 **NOAA {OFFICE} Weather** (one per configured office):
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
@@ -895,15 +897,26 @@ card:
       name: "Last Bulletin"
 ```
 
-The map is a standard `picture-entity`, and because it falls back to the DART network it is worth showing all the time rather than hiding it behind a condition:
+The map always has a real tsunami to show, so it is worth displaying all the time rather than hiding it behind a condition. Pair it with the event name:
 
 ```yaml
 type: picture-entity
 entity: image.noaa_tsunami_map
 camera_view: auto
 show_state: false
-show_name: true
-name: "Tsunami Map"
+show_name: false
+```
+
+```yaml
+type: entities
+title: "🌊 Most Recent Tsunami"
+entities:
+  - entity: sensor.noaa_tsunami_latest_event
+    name: "Event"
+  - type: attribute
+    entity: sensor.noaa_tsunami_latest_event
+    attribute: date
+    name: "Date"
 ```
 
 Pair it with an always-visible health card, so a feed outage is never invisible:
@@ -1348,8 +1361,8 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
     forecast point nearest your configured coordinates
   - Parsed with the Python standard library only — no new dependency, and the XML is size-capped
     and DOCTYPE-refused before parsing
-  - Map imagery comes from the warning centers' energy propagation forecasts during an event and
-    from the NDBC DART buoy network map otherwise
+  - Map imagery comes from the centers' event archive at `tsunami.gov/recent_tsunamis/`, where
+    every past tsunami has a location map at `previous.events/{event}/Images/Location.jpg`
 - **Rip Current/Surf Data**: Location-specific NWS Surf Zone Forecasts (SRF products)
 - **Weather Observations**: National Weather Service observation stations (weather.gov API)
   - Real-time temperature, humidity, wind, pressure, and sky conditions

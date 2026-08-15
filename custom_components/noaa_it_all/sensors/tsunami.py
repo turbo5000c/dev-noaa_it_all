@@ -281,6 +281,62 @@ class TsunamiLastMessageSensor(_TsunamiBaseSensor):
         }
 
 
+class TsunamiLatestEventSensor(_TsunamiBaseSensor):
+    """The most recent tsunami in the warning centers' archive.
+
+    Unlike the alert sensors, this has something to say on every single day:
+    the last tsunami that actually happened anywhere in the world, whenever
+    that was. It updates when the centers add a new event, which is what makes
+    it useful as an automation trigger — a new entry here means a real tsunami
+    occurred somewhere, even if it never threatened this location.
+    """
+
+    @property
+    def name(self):
+        """Return the local name of the sensor."""
+        return "Latest Tsunami"
+
+    @property
+    def unique_id(self):
+        """Return a unique ID for this entity."""
+        return "noaa_tsunami_latest_event"
+
+    @property
+    def _events(self):
+        """Return the archived event list, newest first."""
+        return self._data.get("events") or []
+
+    @property
+    def _latest_event(self):
+        """Return the newest archived event, or ``None``."""
+        events = self._events
+        return events[0] if events else None
+
+    @property
+    def state(self):
+        """Return the newest event's name, or ``None`` before any fetch."""
+        event = self._latest_event
+        return event["name"] if event else None
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return "mdi:image-marker"
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        event = self._latest_event or {}
+        return {
+            "date": event.get("date"),
+            "slug": event.get("slug"),
+            "url": event.get("url"),
+            "image_url": event.get("image_url"),
+            "recent_events": self._events[:5],
+            "events_available": len(self._events),
+        }
+
+
 class _TsunamiOfficeSensor(_TsunamiBaseSensor):
     """Base for the location-specific tsunami sensors.
 

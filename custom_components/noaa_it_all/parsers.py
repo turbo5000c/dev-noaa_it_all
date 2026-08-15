@@ -953,6 +953,70 @@ def summarize_tsunami_source(entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return result
 
 
+#: Event directory names in the warning centers' archive, e.g.
+#: "previous.events/08-29-2018_LoyaltyIslands". The listing page links to
+#: these; each directory holds Images/Location.jpg.
+_EVENT_SLUG_RE = re.compile(
+    r"previous\.events/((\d{2})-(\d{2})-(\d{4})_([A-Za-z0-9._-]+?))/",
+    re.IGNORECASE,
+)
+
+
+def _humanize_event_name(raw: str) -> str:
+    """Turn an archive directory name into something readable.
+
+    ``LoyaltyIslands`` becomes ``Loyalty Islands``; separators become spaces.
+    """
+    spaced = re.sub(r"[._-]+", " ", raw)
+    spaced = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", spaced)
+    spaced = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", spaced)
+    return re.sub(r"\s+", " ", spaced).strip()
+
+
+def parse_recent_tsunami_events(
+    html: Optional[str], image_template: str, page_template: str, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """Parse the recent-tsunamis listing into event entries, newest first.
+
+    The listing is an HTML page rather than a feed, so this reads the event
+    directory names straight out of the links — the same regex-over-HTML
+    approach ``ForecastDiscussionCoordinator`` already uses for AFD text.
+    Anything that does not look like a dated event directory is ignored, so a
+    layout change degrades to an empty list rather than to nonsense.
+
+    ``image_template`` and ``page_template`` are passed in rather than imported
+    to keep this module free of ``const``.
+    """
+    if not html:
+        return []
+
+    seen = set()
+    events: List[Dict[str, Any]] = []
+    for match in _EVENT_SLUG_RE.finditer(html):
+        slug, month, day, year, raw_name = match.groups()
+        if slug in seen:
+            continue
+        seen.add(slug)
+
+        try:
+            date = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        except ValueError:
+            continue
+        if not (1 <= int(month) <= 12 and 1 <= int(day) <= 31):
+            continue
+
+        events.append({
+            'slug': slug,
+            'name': _humanize_event_name(raw_name),
+            'date': date,
+            'url': page_template.format(slug=slug),
+            'image_url': image_template.format(slug=slug),
+        })
+
+    events.sort(key=lambda item: item['date'], reverse=True)
+    return events[:limit]
+
+
 def find_source_earthquake(
     entries: Optional[List[Dict[str, Any]]], max_scan: int = 12
 ) -> Dict[str, Any]:

@@ -305,12 +305,26 @@ class TestTsunamiMapImageEntityIdentity(unittest.TestCase):
         entity = TsunamiMapImageEntity(HASS)
         self.assertIn((DOMAIN, TSUNAMI_DEVICE_ID), entity.device_info["identifiers"])
 
-    def test_defaults_to_dart_before_any_coordinator_data(self):
+    def test_no_picture_before_any_coordinator_data(self):
+        """Without an archived event there is no image, and that is honest.
+
+        Earlier revisions fell back to guessed DART and energy-map URLs here;
+        every one 404'd on a live install, so they were removed rather than
+        left in as fallbacks that only obscured the failure.
+        """
         from noaa_it_all.image import TsunamiMapImageEntity
-        from noaa_it_all.const import TSUNAMI_DART_MAP_URLS
         entity = TsunamiMapImageEntity(HASS)
-        self.assertEqual(entity._source_url, TSUNAMI_DART_MAP_URLS[0])
-        self.assertIn(TSUNAMI_DART_MAP_URLS[0], entity.entity_picture)
+        self.assertIsNone(entity._source_url)
+        self.assertIsNone(entity.entity_picture)
+        self.assertIsNone(entity.get_cache_busted_url())
+
+    def test_event_image_url_matches_the_documented_pattern(self):
+        from noaa_it_all.const import TSUNAMI_EVENT_IMAGE_URL
+        self.assertEqual(
+            TSUNAMI_EVENT_IMAGE_URL.format(slug="08-29-2018_LoyaltyIslands"),
+            "https://www.tsunami.gov/previous.events/"
+            "08-29-2018_LoyaltyIslands/Images/Location.jpg",
+        )
 
 
 class TestTwoOfficeSetup(unittest.TestCase):

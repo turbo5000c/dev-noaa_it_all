@@ -26,6 +26,7 @@ from parsers import (  # noqa: E402
     haversine_km,
     is_tsunami_test_message,
     parse_tsunami_alert_features,
+    parse_recent_tsunami_events,
     parse_tsunami_atom_feed,
     parse_tsunami_cap,
     summarize_tsunami_source,
@@ -330,6 +331,68 @@ class TestMagnitudeWordings(unittest.TestCase):
             {"title": "M 6.0", "summary": "The quake was 35 km deep."}
         )
         self.assertEqual(source["depth_km"], 35.0)
+
+
+class TestParseRecentTsunamiEvents(unittest.TestCase):
+    """The warning centers' archive listing.
+
+    This is the one image source in the domain confirmed to exist rather than
+    inferred, so the URL it builds is asserted literally.
+    """
+
+    IMAGE = "https://www.tsunami.gov/previous.events/{slug}/Images/Location.jpg"
+    PAGE = "https://www.tsunami.gov/previous.events/{slug}"
+
+    #: Sentinel so an explicit ``None`` can be passed through to the parser
+    #: rather than being read as "use the fixture".
+    _FIXTURE = object()
+
+    def _parse(self, html=_FIXTURE, limit=10):
+        if html is self._FIXTURE:
+            html = _load_text("tsunami_recent_events.html")
+        return parse_recent_tsunami_events(html, self.IMAGE, self.PAGE, limit)
+
+    def test_event_count_ignores_non_event_links(self):
+        self.assertEqual(len(self._parse()), 3)
+
+    def test_newest_first(self):
+        self.assertEqual(self._parse()[0]["date"], "2018-08-29")
+
+    def test_builds_the_documented_image_url(self):
+        self.assertEqual(
+            self._parse()[0]["image_url"],
+            "https://www.tsunami.gov/previous.events/"
+            "08-29-2018_LoyaltyIslands/Images/Location.jpg",
+        )
+
+    def test_camel_case_name_is_humanised(self):
+        self.assertEqual(self._parse()[0]["name"], "Loyalty Islands")
+
+    def test_absolute_and_relative_links_both_parse(self):
+        names = [e["name"] for e in self._parse()]
+        self.assertIn("Alaska Gulf", names)  # absolute href
+        self.assertIn("Mexico", names)       # relative href
+
+    def test_duplicate_slugs_collapse(self):
+        slugs = [e["slug"] for e in self._parse()]
+        self.assertEqual(len(slugs), len(set(slugs)))
+
+    def test_limit_is_respected(self):
+        self.assertEqual(len(self._parse(limit=2)), 2)
+
+    def test_empty_and_none_html(self):
+        self.assertEqual(self._parse(""), [])
+        self.assertEqual(self._parse(None), [])
+
+    def test_unrecognised_layout_yields_nothing(self):
+        self.assertEqual(self._parse("<html><body>nothing</body></html>"), [])
+
+    def test_impossible_dates_rejected(self):
+        html = '<a href="/previous.events/99-99-2018_Bogus/">x</a>'
+        self.assertEqual(self._parse(html), [])
+
+    def test_page_url_is_built(self):
+        self.assertTrue(self._parse()[0]["url"].endswith("08-29-2018_LoyaltyIslands"))
 
 
 class TestFindSourceEarthquake(unittest.TestCase):

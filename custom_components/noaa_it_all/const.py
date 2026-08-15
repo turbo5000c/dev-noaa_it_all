@@ -92,50 +92,27 @@ TSUNAMI_CAP_URLS = {
     "PTWC": "https://www.tsunami.gov/events/xml/PHEBCAP.xml",
 }
 
-# Tsunami map imagery.
+# Tsunami event imagery.
 #
-# Two sources, because neither alone is any good. The energy propagation
-# forecast is *the* tsunami map — the RIFT model's directional beam of wave
-# energy fanning across the ocean — but the warning centers only produce one
-# during an actual event, which on a normal install means never. The DART
-# buoy network map is always available but shows detection coverage rather
-# than threat. TsunamiMapImageEntity serves the energy map when there is one
-# and the DART map the rest of the time, so the tile is never dead.
+# The warning centers keep an archive of past tsunamis, each with a location
+# map at a predictable path. The listing page names the events; every event
+# directory carries Images/Location.jpg. For example:
 #
-# NOTE: these URLs could not be verified against live NOAA when written — the
-# development sandbox blocks every NOAA host. The entity treats a failed fetch
-# as "fall through to the next source" rather than an error, so a wrong URL
-# degrades to a blank or a fallback image instead of breaking. If you are
-# correcting one, it is a one-line change here and nothing else moves.
-TSUNAMI_ENERGY_MAP_URLS = {
-    "NTWC": "https://www.tsunami.gov/images/energy/PAAQ_energy.png",
-    "PTWC": "https://www.tsunami.gov/images/energy/PHEB_energy.png",
-}
-
-# Quiet-day map candidates, tried in order until one returns an actual image.
+#   https://www.tsunami.gov/previous.events/08-29-2018_LoyaltyIslands/Images/Location.jpg
 #
-# A list rather than a single URL precisely because none of these could be
-# verified from the development sandbox. Trying several turns one uncertain
-# guess into a much better chance that the tile renders something, and the
-# entity logs which one won so the list can be trimmed to the real answer
-# later. The last entry is the global sea-surface temperature analysis from
-# the same NESDIS CDN the GOES imagery already uses in image.py — not tsunami
-# specific, but a known-good ocean map is a better fallback than a dead panel.
-TSUNAMI_DART_MAP_URLS = (
-    "https://www.ndbc.noaa.gov/images/dart/dart_map.png",
-    "https://www.ndbc.noaa.gov/images/dart/dart_locations.png",
-    "https://www.tsunami.gov/images/dart_map.png",
-    "https://www.ndbc.noaa.gov/images/stations/dart_stations.png",
+# This is the one image source here that is confirmed to exist rather than
+# inferred, so the map entity is built on it alone. Earlier revisions of this
+# file guessed at DART network and RIFT energy-forecast URLs; every one of
+# them 404'd on a live install and they were removed rather than kept as dead
+# fallbacks.
+TSUNAMI_RECENT_EVENTS_URL = "https://www.tsunami.gov/recent_tsunamis/"
+TSUNAMI_EVENT_BASE_URL = "https://www.tsunami.gov/previous.events/{slug}"
+TSUNAMI_EVENT_IMAGE_URL = (
+    "https://www.tsunami.gov/previous.events/{slug}/Images/Location.jpg"
 )
 
-# How each center identifies itself in the NWS alert ``senderName`` field.
-# Needed to attribute a live alert to a center before that center's Atom feed
-# has been fetched — the alert spells the name out ("NWS National Tsunami
-# Warning Center") rather than using the four-letter abbreviation.
-TSUNAMI_CENTER_SENDER_HINTS = {
-    "NTWC": ("NTWC", "NATIONAL TSUNAMI WARNING CENTER"),
-    "PTWC": ("PTWC", "PACIFIC TSUNAMI WARNING CENTER"),
-}
+# How many archived events to keep in the coordinator payload.
+TSUNAMI_EVENT_HISTORY_COUNT = 10
 
 # How many quiet update cycles to skip between warning-center polls.
 #

@@ -30,12 +30,14 @@ from .const import (
     METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
     NWS_TSUNAMI_ALERTS_URL, TSUNAMI_ATOM_URLS, TSUNAMI_CAP_URLS,
     TSUNAMI_SCAN_INTERVAL, TSUNAMI_THREAT_LEVELS, TSUNAMI_CENTER_POLL_EVERY,
+    TSUNAMI_RECENT_EVENTS_URL, TSUNAMI_EVENT_BASE_URL, TSUNAMI_EVENT_IMAGE_URL,
+    TSUNAMI_EVENT_HISTORY_COUNT,
 )
 from .meteor import build_meteor_forecast
 from .meteor_catalog import METEOR_SHOWERS
 from .parsers import (
     parse_coops_water_temperature, parse_ndbc_wave_height,
-    parse_tsunami_atom_feed, parse_tsunami_cap,
+    parse_tsunami_atom_feed, parse_tsunami_cap, parse_recent_tsunami_events,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,6 +190,7 @@ class TsunamiCoordinator(DataUpdateCoordinator):
         self._cycle = 0
         self._products: Optional[list] = None
         self._cap: Optional[dict] = None
+        self._events: Optional[list] = None
 
     async def _async_update_data(self) -> dict:
         session = async_get_clientsession(self.hass)
@@ -212,9 +215,12 @@ class TsunamiCoordinator(DataUpdateCoordinator):
 
         if alert_active or due or self._products is None:
             await self._async_update_center_feeds(session, timeout, headers)
+        if due or self._events is None:
+            await self._async_update_recent_events(session, timeout, headers)
 
         data["products"] = self._products
         data["cap"] = self._cap
+        data["events"] = self._events
 
         if all(v is None for v in (data["features"], data["products"])):
             raise UpdateFailed("All tsunami API requests failed")
@@ -273,6 +279,37 @@ class TsunamiCoordinator(DataUpdateCoordinator):
 
         if centers_ok:
             self._cap = None
+
+    async def _async_update_recent_events(self, session, timeout, headers) -> None:
+        """Refresh the archive of recent tsunamis.
+
+        The listing changes a handful of times a year, so it rides the same
+        slow cadence as the center feeds. A failure leaves the previous list in
+        place — a stale event list is harmless, unlike stale alert state.
+        """
+        try:
+            async with session.get(
+                TSUNAMI_RECENT_EVENTS_URL, headers=headers, timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                html = await resp.text()
+        except Exception as err:
+            _LOGGER.warning("Error fetching recent tsunami events: %s", err)
+            return
+
+        events = parse_recent_tsunami_events(
+            html,
+            TSUNAMI_EVENT_IMAGE_URL,
+            TSUNAMI_EVENT_BASE_URL,
+            TSUNAMI_EVENT_HISTORY_COUNT,
+        )
+        if events:
+            self._events = events
+        else:
+            _LOGGER.warning(
+                "Recent tsunami listing returned no recognisable events; "
+                "the page layout may have changed"
+            )
 
 
 # -------------------------------------------------------------------

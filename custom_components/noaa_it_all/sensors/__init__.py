@@ -57,6 +57,7 @@ from .tsunami import (  # noqa: F401
     TsunamiActiveAlertsSensor,
     TsunamiSourceEarthquakeSensor,
     TsunamiLastMessageSensor,
+    TsunamiLatestEventSensor,
     TsunamiLocalThreatSensor,
     TsunamiWaveArrivalSensor,
     TsunamiEvacuationStatusSensor,

@@ -57,6 +57,7 @@ from .sensors import (  # noqa: F401
     TsunamiActiveAlertsSensor,
     TsunamiSourceEarthquakeSensor,
     TsunamiLastMessageSensor,
+    TsunamiLatestEventSensor,
     TsunamiLocalThreatSensor,
     TsunamiWaveArrivalSensor,
     TsunamiEvacuationStatusSensor,
@@ -208,6 +209,7 @@ async def async_setup_entry(
             TsunamiActiveAlertsSensor(tsunami_coord),
             TsunamiSourceEarthquakeSensor(tsunami_coord),
             TsunamiLastMessageSensor(tsunami_coord),
+            TsunamiLatestEventSensor(tsunami_coord),
         ])
         domain_data[TSUNAMI_SENSORS_ADDED_KEY] = config_entry.entry_id
 

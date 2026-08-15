@@ -21,10 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `binary_sensor.noaa_tsunami_alert_active` — on for an active Warning or Advisory. Watches and
     Information Statements deliberately leave it off
   - `binary_sensor.noaa_tsunami_data_stale` — on when the feed has stopped answering
-  - `image.noaa_tsunami_map` — the wave energy propagation forecast from the issuing warning
-    center during an event, falling back to the NDBC DART buoy network map the rest of the time,
-    so the tile is never dead. `map_type`, `source_url` and `active_center` attributes report
-    which source is on screen
+  - `sensor.noaa_tsunami_latest_event` — the most recent tsunami in the warning centers' archive,
+    wherever in the world it happened. Unlike the alert sensors this has something to report every
+    day, and it changes only when the centers add an event, which makes it a usable trigger for
+    "a real tsunami occurred somewhere"
+  - `image.noaa_tsunami_map` — that event's official location map, from the centers' archive at
+    `previous.events/{event}/Images/Location.jpg`
 - Location-specific tsunami entities on the same device, created only for the 26 coastal offices
   listed in `OFFICE_TSUNAMI_CENTERS`:
   - `sensor.noaa_tsunami_{office}_local_threat` — alert level for your own coordinates
@@ -53,9 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - XML is size-capped at 512 KB and refused outright if it carries a `DOCTYPE`, since
   `xml.etree.ElementTree` is not hardened against entity-expansion attacks and `defusedxml` is not
   a dependency here.
-- The map entity tries each image source in turn and treats a non-200 response or a non-image
-  content type as "fall through to the next" rather than an error, so an energy map that does not
-  exist for a given event quietly yields the DART map instead of a broken tile.
+- The map is built on the event archive because it is the only tsunami image source confirmed to
+  exist. Earlier revisions guessed at RIFT energy-forecast and NDBC DART network URLs; all six
+  guesses 404'd on a live install and were removed rather than kept as fallbacks, since an
+  unverifiable fallback only makes the real failure harder to see.
 - The ten Great Lakes offices (APX, CLE, DLH, DTX, GRB, GRR, IWX, LOT, MKX, MQT) get the six
   global entities and none of the location-specific ones.
 
