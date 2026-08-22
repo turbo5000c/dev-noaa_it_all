@@ -514,5 +514,6 @@ class TestAsyncUpdateBeforeAdd(unittest.TestCase):
             "async_write_ha_state", inspect.getsource(image_module)
         )
 
+
 if __name__ == "__main__":
     unittest.main()
