@@ -5,7 +5,33 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] - Current
+## [0.5.2] - Current
+
+### Fixed
+- **Image entities no longer log an error on every startup.** `image.py` sets up its entities with
+  `async_add_entities(entities, True)`, so Home Assistant awaits `async_update()` *before* adding
+  each entity — and `entity_id` is not assigned until after the add. The explicit
+  `self.async_write_ha_state()` inside every image `async_update()` therefore raised
+  `NoEntitySpecifiedError` on that first call, which the surrounding `except Exception` turned into
+  `Error during <image> update: No entity id specified for entity ...` — one line per image entity,
+  every startup. All seven writes are removed: these are polled entities, so Home Assistant writes
+  the state itself once `async_update()` returns, making the explicit call redundant when the entity
+  is added and fatal when it is not. `update_before_add=True` is kept, so the image URL is still
+  populated eagerly rather than waiting for the first poll.
+
+### Notes
+- An image entity **disabled in the entity registry** is never added, so the pre-add update was the
+  only update it ever ran — the error repeated on every update instead of self-correcting after
+  startup. That is how this surfaced.
+- The remaining `async_write_ha_state()` in `weather.py` is intentional and unaffected: it is the
+  forecast-coordinator listener, registered in `async_added_to_hass()`, so it can only fire after
+  `entity_id` is assigned. It is a push-style notification with no polled update behind it, so
+  removing it would stop forecast refreshes from reaching the UI.
+- `tests/test_image.py` now runs `async_update()` on all seven image entities with a
+  `async_write_ha_state` that raises, asserting nothing is logged as an error and that the image URL
+  still refreshes, plus a source-level guard so a new image entity cannot reintroduce the pattern.
+
+## [0.5.1]
 
 ### Fixed
 - **The Configure screen no longer fails with a 500.** `NOAAOptionsFlow.__init__` assigned
