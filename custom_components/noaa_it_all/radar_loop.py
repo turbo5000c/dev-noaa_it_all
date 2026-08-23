@@ -57,7 +57,10 @@ def parse_http_date(value):
         return None
     try:
         parsed = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
+    except (AttributeError, TypeError, ValueError):
+        # AttributeError covers a non-string slipping through: the header is
+        # whatever the response handed us, and none of this is worth an
+        # exception that would take the radar loop down.
         return None
     if parsed is None:
         return None
