@@ -1,9 +1,11 @@
 """Tests for image.py entity properties using mocked HA modules."""
 
 import asyncio
+import logging
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,13 +20,89 @@ if _CC not in sys.path:
 _ha_image = MagicMock()
 _ha_entity = MagicMock()
 _ha_coordinator = MagicMock()
+_ha_event = MagicMock()
+_ha_util = MagicMock()
+_ha_util_dt = MagicMock()
+_aiohttp = MagicMock()
 
-# Make ImageEntity a proper base class that accepts hass in __init__
-_ha_image.ImageEntity = type("ImageEntity", (), {
-    "__init__": lambda self, hass: setattr(self, "hass", hass),
-})
+
+class _FakeImageEntity:
+    """Stand-in for homeassistant.components.image.ImageEntity.
+
+    Only the parts image.py builds on are modelled, but ``entity_picture``
+    mirrors upstream exactly -- returning None until ``image_last_updated``
+    is set -- because that semantic is what the fallback in
+    ``NoaaImageEntity.entity_picture`` exists to work around.
+    """
+
+    _attr_content_type = "image/jpeg"
+    _attr_image_last_updated = None
+    _attr_should_poll = False
+    entity_id = None
+
+    def __init__(self, hass):
+        self.hass = hass
+        self._on_remove = []
+
+    @property
+    def image_last_updated(self):
+        return self._attr_image_last_updated
+
+    @property
+    def content_type(self):
+        return self._attr_content_type
+
+    @property
+    def entity_picture(self):
+        if self.image_last_updated is None:
+            return None
+        return f"/api/image_proxy/{self.entity_id}?token=stub"
+
+    async def async_added_to_hass(self):
+        """No-op; the real one wires up access tokens."""
+
+    def async_on_remove(self, func):
+        self._on_remove.append(func)
+
+    def async_write_ha_state(self):
+        """No-op; tests replace this when they want to observe writes."""
+
+
+_ha_image.ImageEntity = _FakeImageEntity
 
 _ha_entity.DeviceInfo = dict
+_ha_util_dt.utcnow = lambda: datetime.now(timezone.utc)
+_ha_util.dt = _ha_util_dt
+
+
+# ``aiohttp`` is mocked wholesale, so its exception classes are MagicMocks and
+# cannot be used in an ``except`` clause. Substitute real ones.
+class _ClientError(Exception):
+    """Stand-in for aiohttp.ClientError."""
+
+
+class _ClientOSError(_ClientError, OSError):
+    """Stand-in for aiohttp.ClientOSError."""
+
+
+class _ClientConnectorError(_ClientOSError):
+    """Stand-in for aiohttp.ClientConnectorError."""
+
+
+class _ServerDisconnectedError(_ClientError):
+    """Stand-in for aiohttp.ServerDisconnectedError."""
+
+
+class _ServerTimeoutError(_ClientError, asyncio.TimeoutError):
+    """Stand-in for aiohttp.ServerTimeoutError."""
+
+
+_aiohttp.ClientError = _ClientError
+_aiohttp.ClientOSError = _ClientOSError
+_aiohttp.ClientConnectorError = _ClientConnectorError
+_aiohttp.ServerDisconnectedError = _ServerDisconnectedError
+_aiohttp.ServerTimeoutError = _ServerTimeoutError
+_aiohttp.ClientTimeout = lambda **kwargs: kwargs
 _ha_coordinator.CoordinatorEntity = type("CoordinatorEntity", (), {
     "__init__": lambda self, coordinator: setattr(self, "coordinator", coordinator),
 })
@@ -44,8 +122,11 @@ _MOCK_MODULES = {
     "homeassistant.helpers.aiohttp_client": MagicMock(),
     "homeassistant.helpers.entity": _ha_entity,
     "homeassistant.helpers.entity_platform": MagicMock(),
+    "homeassistant.helpers.event": _ha_event,
     "homeassistant.helpers.update_coordinator": _ha_coordinator,
-    "aiohttp": MagicMock(),
+    "homeassistant.util": _ha_util,
+    "homeassistant.util.dt": _ha_util_dt,
+    "aiohttp": _aiohttp,
     # Block noaa_it_all internal modules that have Python 3.10+ type syntax
     # (|  union annotations in parsers.py) or heavy HA runtime dependencies,
     # so importing noaa_it_all.image doesn't pull in the full coordinator stack.
@@ -107,14 +188,18 @@ class TestGeoelectricFieldImageEntity(unittest.TestCase):
         entity = self._make()
         self.assertEqual(entity.unique_id, f"noaa_{OFFICE}_geoelectric_image")
 
-    def test_entity_picture_is_url(self):
+    def test_upstream_url(self):
         entity = self._make()
-        self.assertTrue(entity.entity_picture.startswith("https://"))
-        self.assertIn("geoelectric", entity.entity_picture)
+        self.assertTrue(entity._image_url.startswith("https://"))
+        self.assertIn("geoelectric", entity._image_url)
 
     def test_cache_bust_contains_timestamp(self):
         entity = self._make()
-        self.assertIn("?t=", entity.entity_picture)
+        self.assertIn("?t=", entity._image_url)
+
+    def test_content_type_is_png(self):
+        entity = self._make()
+        self.assertEqual(entity.content_type, "image/png")
 
     def test_device_info(self):
         entity = self._make()
@@ -138,14 +223,18 @@ class TestAuroraForecastImageEntity(unittest.TestCase):
         entity = self._make()
         self.assertEqual(entity.unique_id, f"noaa_{OFFICE}_aurora_image")
 
-    def test_entity_picture_is_url(self):
+    def test_upstream_url(self):
         entity = self._make()
-        self.assertTrue(entity.entity_picture.startswith("https://"))
-        self.assertIn("ovation", entity.entity_picture)
+        self.assertTrue(entity._image_url.startswith("https://"))
+        self.assertIn("ovation", entity._image_url)
 
     def test_cache_bust_contains_timestamp(self):
         entity = self._make()
-        self.assertIn("?t=", entity.entity_picture)
+        self.assertIn("?t=", entity._image_url)
+
+    def test_content_type_is_jpeg(self):
+        entity = self._make()
+        self.assertEqual(entity.content_type, "image/jpeg")
 
     def test_device_info(self):
         entity = self._make()
@@ -211,9 +300,13 @@ class TestRadarBaseReflectivityImageEntity(unittest.TestCase):
         from noaa_it_all.image import RadarBaseReflectivityImageEntity
         self.assertTrue(RadarBaseReflectivityImageEntity._attr_has_entity_name)
 
-    def test_entity_picture_contains_radar_site(self):
+    def test_upstream_url_contains_radar_site(self):
         entity = self._make(radar_site="KNKX")
-        self.assertIn("KNKX", entity.entity_picture)
+        self.assertIn("KNKX", entity._image_url)
+
+    def test_content_type_is_gif(self):
+        entity = self._make(radar_site="KNKX")
+        self.assertEqual(entity.content_type, "image/gif")
 
     def test_device_info_uses_office_weather_device(self):
         from noaa_it_all.const import DOMAIN
@@ -432,22 +525,329 @@ class TestTwoOfficeSetup(unittest.TestCase):
         self.assertNotIn("NOAA Weather", entity.name)
 
 
-class TestAsyncUpdateBeforeAdd(unittest.TestCase):
+PNG = b"\x89PNG\r\n\x1a\nfirst-frame"
+
+
+class _FakeResponse:
+    """Minimal stand-in for an aiohttp response."""
+
+    def __init__(self, status=200, content_type="image/png", body=PNG, headers=None):
+        self.status = status
+        self.headers = {"content-type": content_type}
+        if headers:
+            self.headers.update(headers)
+        self._body = body
+
+    async def read(self):
+        return self._body
+
+
+class _FakeGet:
+    """Async context manager returned by _FakeSession.get()."""
+
+    def __init__(self, result):
+        self._result = result
+
+    async def __aenter__(self):
+        if isinstance(self._result, BaseException):
+            raise self._result
+        return self._result
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeSession:
+    """Session that yields the given responses (or raises the given errors)."""
+
+    def __init__(self, *results):
+        self._results = list(results)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        result = self._results.pop(0) if len(self._results) > 1 else self._results[0]
+        return _FakeGet(result)
+
+
+def _refresh(entity, *results):
+    """Run one background refresh against a session yielding ``results``."""
+    session = _FakeSession(*results)
+    with patch("noaa_it_all.image.async_get_clientsession", return_value=session):
+        _run(entity._async_scheduled_refresh())
+    return session
+
+
+def _make_entity():
+    from noaa_it_all.image import GeoelectricFieldImageEntity
+    entity = GeoelectricFieldImageEntity(HASS, OFFICE)
+    entity.entity_id = "image.noaa_sgx_space_geoelectric_field_image"
+    entity.async_write_ha_state = MagicMock()
+    return entity
+
+
+class TestImageCacheSurvivesFailures(unittest.TestCase):
+    """The point of the whole exercise.
+
+    A transient upstream failure -- the DNS timeouts and "network
+    unreachable" errors seen in the wild against
+    ``services.swpc.noaa.gov`` -- used to make ``async_image()`` return
+    ``b""``.  Home Assistant treats empty bytes as an error and turns them
+    into an HTTP 500, so one blip replaced a perfectly good picture with a
+    broken tile.  The last good frame is now kept and re-served instead.
+    """
+
+    def _seeded(self):
+        """Return an entity with one frame already cached."""
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse())
+        self.assertEqual(_run(entity.async_image()), PNG)
+        return entity
+
+    def test_successful_fetch_caches_bytes_and_stamps_the_time(self):
+        entity = self._seeded()
+        self.assertIsNotNone(entity.image_last_updated)
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_response_content_type_is_adopted(self):
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse(content_type="image/gif; charset=binary"))
+        self.assertEqual(entity.content_type, "image/gif")
+
+    def test_async_image_does_no_io(self):
+        entity = self._seeded()
+        with patch("noaa_it_all.image.async_get_clientsession") as session:
+            self.assertEqual(_run(entity.async_image()), PNG)
+        session.assert_not_called()
+
+    def _assert_cache_survives(self, failure):
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        entity.async_write_ha_state.reset_mock()
+
+        _refresh(entity, failure)
+
+        self.assertEqual(_run(entity.async_image()), PNG)
+        self.assertEqual(entity.image_last_updated, stamp)
+        entity.async_write_ha_state.assert_not_called()
+
+    def test_connection_error_keeps_the_previous_image(self):
+        self._assert_cache_survives(
+            _ClientConnectorError("Cannot connect to host services.swpc.noaa.gov:443")
+        )
+
+    def test_timeout_keeps_the_previous_image(self):
+        # A ClientTimeout expiry raises asyncio.TimeoutError, which is not an
+        # aiohttp.ClientError -- it used to be logged as "Unexpected error".
+        self._assert_cache_survives(asyncio.TimeoutError())
+
+    def test_server_disconnect_keeps_the_previous_image(self):
+        self._assert_cache_survives(_ServerDisconnectedError())
+
+    def test_http_error_keeps_the_previous_image(self):
+        self._assert_cache_survives(_FakeResponse(status=503))
+
+    def test_non_image_content_type_keeps_the_previous_image(self):
+        self._assert_cache_survives(
+            _FakeResponse(content_type="text/html", body=b"<html>oops</html>")
+        )
+
+    def test_empty_body_keeps_the_previous_image(self):
+        self._assert_cache_survives(_FakeResponse(body=b""))
+
+    def test_oversized_body_keeps_the_previous_image(self):
+        from noaa_it_all.const import IMAGE_MAX_BYTES
+        self._assert_cache_survives(_FakeResponse(body=b"x" * (IMAGE_MAX_BYTES + 1)))
+
+    def test_first_ever_failure_returns_none_not_empty_bytes(self):
+        # Empty bytes are falsy to Home Assistant's _async_get_image(), which
+        # turns them into an HTTP 500; None is the documented "no image".
+        entity = _make_entity()
+        _refresh(entity, _ClientConnectorError("boom"))
+        self.assertIsNone(_run(entity.async_image()))
+
+    def test_unchanged_bytes_do_not_advance_the_timestamp(self):
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        entity.async_write_ha_state.reset_mock()
+
+        _refresh(entity, _FakeResponse())
+
+        self.assertEqual(entity.image_last_updated, stamp)
+        entity.async_write_ha_state.assert_not_called()
+
+    def test_changed_bytes_advance_the_timestamp_and_write_state(self):
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        entity.async_write_ha_state.reset_mock()
+
+        _refresh(entity, _FakeResponse(body=PNG + b"-second"))
+
+        self.assertEqual(_run(entity.async_image()), PNG + b"-second")
+        self.assertNotEqual(entity.image_last_updated, stamp)
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_not_modified_keeps_the_cache_without_rewriting_state(self):
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        entity.async_write_ha_state.reset_mock()
+
+        _refresh(entity, _FakeResponse(status=304, body=b""))
+
+        self.assertEqual(_run(entity.async_image()), PNG)
+        self.assertEqual(entity.image_last_updated, stamp)
+        entity.async_write_ha_state.assert_not_called()
+
+
+class TestImageRequestHeaders(unittest.TestCase):
+    """Requests identify the integration and revalidate what is cached."""
+
+    def test_user_agent_is_sent(self):
+        from noaa_it_all.const import USER_AGENT
+        entity = _make_entity()
+        session = _refresh(entity, _FakeResponse())
+        self.assertEqual(session.calls[0][1]["headers"]["User-Agent"], USER_AGENT)
+
+    def test_no_conditional_headers_before_anything_is_cached(self):
+        entity = _make_entity()
+        session = _refresh(entity, _FakeResponse(headers={"etag": '"abc"'}))
+        self.assertNotIn("If-None-Match", session.calls[0][1]["headers"])
+
+    def test_etag_is_replayed_on_the_next_refresh(self):
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse(headers={"etag": '"abc"'}))
+        session = _refresh(entity, _FakeResponse(status=304, body=b""))
+        self.assertEqual(session.calls[0][1]["headers"]["If-None-Match"], '"abc"')
+
+    def test_last_modified_is_replayed_when_there_is_no_etag(self):
+        stamp = "Sat, 23 Aug 2026 11:00:00 GMT"
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse(headers={"last-modified": stamp}))
+        session = _refresh(entity, _FakeResponse(status=304, body=b""))
+        self.assertEqual(
+            session.calls[0][1]["headers"]["If-Modified-Since"], stamp
+        )
+
+
+class TestImageFailureLogging(unittest.TestCase):
+    """A blip must not be an ERROR; a sustained outage must not be silent."""
+
+    def _fail(self, entity, times):
+        levels = []
+        with patch("noaa_it_all.image._LOGGER") as logger:
+            logger.log.side_effect = lambda level, *a, **k: levels.append(level)
+            for _ in range(times):
+                _refresh(entity, _ClientConnectorError("network unreachable"))
+        return levels
+
+    def _seeded(self):
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse())
+        return entity
+
+    def test_a_blip_with_a_cached_image_is_only_debug(self):
+        levels = self._fail(self._seeded(), 2)
+        self.assertEqual(levels, [logging.DEBUG, logging.DEBUG])
+
+    def test_a_short_outage_warns_once(self):
+        from noaa_it_all.const import IMAGE_FAILURE_WARN_AFTER
+        levels = self._fail(self._seeded(), IMAGE_FAILURE_WARN_AFTER)
+        self.assertEqual(levels[-1], logging.WARNING)
+        self.assertNotIn(logging.ERROR, levels)
+
+    def test_a_sustained_outage_escalates_to_error(self):
+        from noaa_it_all.const import IMAGE_FAILURE_ERROR_AFTER
+        levels = self._fail(self._seeded(), IMAGE_FAILURE_ERROR_AFTER)
+        self.assertEqual(levels[-1], logging.ERROR)
+        self.assertEqual(levels.count(logging.ERROR), 1)
+
+    def test_a_blank_card_warns_immediately(self):
+        # With nothing cached the user really is looking at an empty card, so
+        # staying at debug would hide a genuine problem.
+        levels = self._fail(_make_entity(), 1)
+        self.assertEqual(levels, [logging.WARNING])
+
+    def test_a_wrong_url_always_warns(self):
+        entity = self._seeded()
+        with patch("noaa_it_all.image._LOGGER") as logger:
+            levels = []
+            logger.log.side_effect = lambda level, *a, **k: levels.append(level)
+            _refresh(entity, _FakeResponse(status=404))
+        self.assertEqual(levels, [logging.WARNING])
+
+    def test_recovery_logs_info_and_resets_the_counter(self):
+        from noaa_it_all.const import IMAGE_FAILURE_WARN_AFTER
+        entity = self._seeded()
+        self._fail(entity, IMAGE_FAILURE_WARN_AFTER)
+
+        with patch("noaa_it_all.image._LOGGER") as logger:
+            _refresh(entity, _FakeResponse(body=PNG + b"-new"))
+            logger.info.assert_called_once()
+
+        self.assertEqual(entity._failure_count, 0)
+
+
+class TestEntityPicture(unittest.TestCase):
+    """Pictures are served through Home Assistant, with an upstream fallback."""
+
+    def test_falls_back_to_the_upstream_url_before_the_first_fetch(self):
+        # image_last_updated is None until a fetch succeeds, and the base
+        # class returns None for the picture then.  Pointing at NOAA in that
+        # window means a restart during a Home Assistant-side DNS outage
+        # still renders, because the browser's own network may be fine.
+        entity = _make_entity()
+        self.assertEqual(entity.entity_picture, entity._image_url)
+        self.assertIn("?t=", entity.entity_picture)
+
+    def test_uses_the_ha_proxy_once_an_image_has_been_fetched(self):
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse())
+        self.assertTrue(entity.entity_picture.startswith("/api/image_proxy/"))
+        self.assertNotIn("services.swpc.noaa.gov", entity.entity_picture)
+
+
+class TestRefreshScheduling(unittest.TestCase):
+    """The fetch happens on a timer, never on the setup or request path."""
+
+    def _added(self):
+        entity = _make_entity()
+        with patch("noaa_it_all.image.async_track_time_interval") as interval, \
+                patch("noaa_it_all.image.async_call_later") as later:
+            _run(entity.async_added_to_hass())
+        return entity, interval, later
+
+    def test_a_recurring_refresh_is_registered(self):
+        from noaa_it_all.image import SCAN_INTERVAL
+        entity, interval, _ = self._added()
+        interval.assert_called_once()
+        self.assertEqual(interval.call_args[0][2], SCAN_INTERVAL)
+        self.assertEqual(
+            interval.call_args[0][1], entity._async_scheduled_refresh
+        )
+
+    def test_the_first_fetch_is_scheduled_rather_than_awaited(self):
+        # Awaiting it here would put a NOAA round trip on the config entry
+        # setup path -- during exactly the outages this guards against.
+        _, _, later = self._added()
+        later.assert_called_once()
+        self.assertEqual(later.call_args[0][1], 0)
+
+    def test_both_timers_are_cancelled_when_the_entity_is_removed(self):
+        entity, interval, later = self._added()
+        self.assertEqual(
+            entity._on_remove, [interval.return_value, later.return_value]
+        )
+
+
+class TestNoStateWriteBeforeAdd(unittest.TestCase):
     """Regression tests for the startup ``NoEntitySpecifiedError`` errors.
 
-    ``async_setup_entry`` calls ``async_add_entities(entities, True)``, so
-    Home Assistant awaits ``async_update()`` *before* the entity is added and
-    therefore before ``entity_id`` is assigned.  Any ``async_write_ha_state()``
-    call inside ``async_update()`` raises ``NoEntitySpecifiedError`` at that
-    point, which the broad ``except Exception`` turns into an error log line
-    on every startup (and on every update, for entities disabled in the
-    registry, which are never added at all).
-
-    The explicit write is redundant anyway: Home Assistant writes the state
-    itself exactly once, in ``add_to_platform_finish()`` after the entity is
-    added. (Image entities are never polled -- upstream ``ImageEntity`` sets
-    ``_attr_should_poll = False`` -- so the pre-add call is the only time
-    ``async_update()`` runs at all.)
+    Home Assistant does not assign ``entity_id`` until the entity is added,
+    and ``async_write_ha_state()`` raises ``NoEntitySpecifiedError`` before
+    that point -- which used to produce one error line per image entity on
+    every startup (commit c7ed6e6).  The background refresher now legitimately
+    writes state, so instead of banning the call outright these tests pin down
+    *where* it may happen and prove the guard holds.
     """
 
     def _all_entities(self):
@@ -470,52 +870,111 @@ class TestAsyncUpdateBeforeAdd(unittest.TestCase):
             GOESGeoColorImageEntity(HASS),
         ]
 
-    def test_update_before_add_logs_no_error(self):
-        """async_update() must not error when entity_id is not yet assigned."""
+    def test_constructing_an_entity_never_writes_state(self):
+        def _raise(*args, **kwargs):
+            raise AssertionError("state written before the entity was added")
+
+        with patch.object(_FakeImageEntity, "async_write_ha_state", _raise):
+            self._all_entities()
+
+    def test_a_refresh_that_lands_before_the_add_is_a_no_op(self):
+        """Entities are created before Home Assistant assigns an entity_id."""
         class _NoEntitySpecifiedError(Exception):
             pass
 
         for entity in self._all_entities():
             with self.subTest(entity=entity.__class__.__name__):
-                def _raise(*args, **kwargs):
-                    raise _NoEntitySpecifiedError(
-                        "No entity id specified for entity"
-                    )
+                self.assertIsNone(entity.entity_id)
+                entity.async_write_ha_state = MagicMock(
+                    side_effect=_NoEntitySpecifiedError("No entity id specified")
+                )
+                _refresh(entity, _FakeResponse())
+                entity.async_write_ha_state.assert_not_called()
+                self.assertEqual(_run(entity.async_image()), PNG)
 
-                # Simulate HA's pre-add state: writing state blows up.
-                entity.async_write_ha_state = _raise
+    def test_state_is_only_written_from_the_guarded_helper(self):
+        """Replaces the old module-wide ban on the ``async_write_ha_state`` string.
 
-                with patch("noaa_it_all.image._LOGGER") as logger:
-                    _run(entity.async_update())
-                    logger.error.assert_not_called()
+        The ban's real intent was "no state write on a path Home Assistant can
+        reach before ``entity_id`` is assigned".  Asserting on the call site
+        keeps that intent while allowing the background refresher to publish.
+        """
+        import ast
+        import inspect
 
-    def test_update_still_refreshes_the_image_url(self):
-        """Dropping the explicit state write must not stop the URL refreshing."""
+        from noaa_it_all import image as image_module
+
+        allowed = {"_write_state_if_added"}
+        tree = ast.parse(inspect.getsource(image_module))
+        offenders = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name in allowed:
+                continue
+            for call in ast.walk(node):
+                if (isinstance(call, ast.Attribute)
+                        and call.attr == "async_write_ha_state"):
+                    offenders.add(node.name)
+        self.assertEqual(set(), offenders)
+
+    def test_the_upstream_url_is_refreshed_on_every_fetch(self):
         for entity in self._all_entities():
             with self.subTest(entity=entity.__class__.__name__):
                 entity._image_url = "https://example.invalid/stale.png"
-                _run(entity.async_update())
+                _refresh(entity, _FakeResponse())
                 self.assertNotEqual(
                     entity._image_url, "https://example.invalid/stale.png"
                 )
                 self.assertIn("?t=", entity._image_url)
 
-    def test_async_update_does_not_write_state(self):
-        """No async_update() may call async_write_ha_state()."""
-        import inspect
 
-        from noaa_it_all import image as image_module
+class TestContentTypes(unittest.TestCase):
+    """Home Assistant defaults every image to JPEG; five of seven are not."""
 
-        for entity in self._all_entities():
-            with self.subTest(entity=entity.__class__.__name__):
-                source = inspect.getsource(type(entity).async_update)
-                self.assertNotIn("async_write_ha_state", source)
-
-        # And guard the module as a whole, so a new image entity cannot
-        # reintroduce the pattern.
-        self.assertNotIn(
-            "async_write_ha_state", inspect.getsource(image_module)
+    def test_declared_content_types_match_the_upstream_formats(self):
+        from noaa_it_all.image import (
+            AuroraForecastImageEntity,
+            GOESAirMassImageEntity,
+            GOESGeoColorImageEntity,
+            GeoelectricFieldImageEntity,
+            HurricaneOutlookImageEntity,
+            RadarBaseReflectivityImageEntity,
+            RadarLoopImageEntity,
         )
+        expected = [
+            (GeoelectricFieldImageEntity(HASS, OFFICE), "image/png"),
+            (AuroraForecastImageEntity(HASS, OFFICE), "image/jpeg"),
+            (HurricaneOutlookImageEntity(HASS), "image/png"),
+            (RadarBaseReflectivityImageEntity(HASS, OFFICE, "KNKX"), "image/gif"),
+            (RadarLoopImageEntity(HASS, OFFICE, "KNKX"), "image/gif"),
+            (GOESAirMassImageEntity(HASS), "image/jpeg"),
+            (GOESGeoColorImageEntity(HASS), "image/jpeg"),
+        ]
+        for entity, content_type in expected:
+            with self.subTest(entity=entity.__class__.__name__):
+                self.assertEqual(entity.content_type, content_type)
+
+    def test_log_labels_are_distinct(self):
+        from noaa_it_all.image import (
+            AuroraForecastImageEntity,
+            GOESAirMassImageEntity,
+            GOESGeoColorImageEntity,
+            GeoelectricFieldImageEntity,
+            HurricaneOutlookImageEntity,
+            RadarBaseReflectivityImageEntity,
+            RadarLoopImageEntity,
+        )
+        labels = [
+            GeoelectricFieldImageEntity(HASS, OFFICE)._log_label,
+            AuroraForecastImageEntity(HASS, OFFICE)._log_label,
+            HurricaneOutlookImageEntity(HASS)._log_label,
+            RadarBaseReflectivityImageEntity(HASS, OFFICE, "KNKX")._log_label,
+            RadarLoopImageEntity(HASS, OFFICE, "KNKX")._log_label,
+            GOESAirMassImageEntity(HASS)._log_label,
+            GOESGeoColorImageEntity(HASS)._log_label,
+        ]
+        self.assertEqual(len(labels), len(set(labels)))
 
 
 if __name__ == "__main__":

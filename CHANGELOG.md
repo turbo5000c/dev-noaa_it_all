@@ -5,7 +5,102 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.2] - Current
+## [0.5.3] - Current
+
+### Fixed
+- **A network blip no longer blanks the NOAA image cards.** Every image entity's `async_image()`
+  returned `b""` on any failure, and Home Assistant treats empty bytes as an error and turns them
+  into an HTTP 500 — so a momentary `Cannot connect to host services.swpc.noaa.gov:443 ... [Timeout
+  while contacting DNS servers]` was enough to replace a perfectly good picture with a broken tile.
+  Nothing was cached, so there was nothing to fall back on. The image bytes are now kept in memory
+  and re-served: a failed refresh changes neither the cached frame nor `image_last_updated`, so the
+  previous picture stays on the dashboard until a later refresh replaces it.
+- **Images are fetched on a timer instead of while serving the HTTP request.** All seven entities
+  now fetch in the background every 10 minutes, so a slow NOAA can no longer blow Home Assistant's
+  10-second image-proxy budget, and several dashboard clients asking at once no longer each start
+  their own request. The first fetch is scheduled rather than awaited during setup, so an
+  unreachable NOAA cannot hold up the config entry.
+- **`entity_picture` now points at Home Assistant's image proxy** (`/api/image_proxy/...`) once a
+  frame has been fetched, instead of always sending the browser straight to `services.swpc.noaa.gov`.
+  This is what makes the cache reachable — previously the browser fetched NOAA itself and the
+  entity's own bytes were never used, so the card broke whenever *the browser* could not reach NOAA.
+  Until the first successful fetch the entity still falls back to the upstream URL, so a restart
+  while Home Assistant's own resolver is broken still renders if the browser's network is fine.
+- **A total-request timeout is no longer reported as an unexpected error.** `aiohttp`'s
+  `ClientTimeout` expiry raises `asyncio.TimeoutError`, which is not an `aiohttp.ClientError`, so it
+  fell through to the catch-all arm and logged `Unexpected error fetching ... image`. Timeouts, DNS
+  failures, connection resets and server disconnects are now classified together as transient.
+- **Transient failures no longer log an error per blip.** A `cloud_polling` integration losing its
+  upstream for a minute is normal. Consecutive failures now stay at debug while a cached frame is
+  still being served, warn once the outage has lasted about half an hour, and only escalate to error
+  after roughly an hour — and then only periodically. Recovery logs a single info line. A failure
+  that is *not* transient (a 404, a content type that is not an image) still warns immediately, as
+  does any failure while there is no cached image to show.
+- **The declared content type now matches the actual image format.** Home Assistant defaults every
+  image entity to `image/jpeg`; five of the seven are not JPEGs. The geoelectric field and hurricane
+  outlook images are PNG, both radar images are GIF, and the content type reported by NOAA is
+  adopted when it differs.
+- **A single failed Points API lookup no longer disables forecasts until a restart.** This is the
+  cause of the recurring `Error fetching NOAA Forecasts data: All forecast API requests failed`.
+  `ForecastCoordinator._resolve_forecast_urls()` set `self._urls_fetched = True` in its `except`
+  branch as well as on success, so one transient failure left both forecast URLs `None` with no way
+  to retry — and because each fetch is guarded by `if self._forecast_url:`, no request was even
+  attempted afterwards. Every subsequent refresh went straight to `UpdateFailed`, forever. The flag
+  is now only latched on success, so the next 10-minute cycle re-resolves. The same latch was in
+  `ObservationsCoordinator._resolve_station()` and `CloudCoverCoordinator._resolve_gridpoint_url()`,
+  where it silently retired the observation-station and gridpoint lookups; both are fixed too.
+- **Space weather and hurricane requests now send a `User-Agent`.** They were the only 5 of 19
+  outbound requests without one, and `_HURRICANE_ALERTS_URL` points at `api.weather.gov`, which
+  requires it.
+- **`All X API requests failed` now says which endpoints failed and why.** The message discarded
+  every underlying exception, so the log line naming the problem was useless on its own and the real
+  cause sat in separate `WARNING` lines above it — when a request had been attempted at all. Failures
+  are now collected and appended, e.g. `All forecast API requests failed: Points API lookup
+  (ClientConnectorError: Cannot connect to host api.weather.gov:443 ...)`.
+- **`coordinator.py` now has behavioural tests** (`tests/test_coordinator.py`). It had none, across
+  773 lines and 10 coordinators, which is how the latch bug survived. Every new test was confirmed
+  to fail against the pre-fix code.
+
+### Changed
+- **The seven image entity classes now share a `NoaaImageEntity` base.** Each was a near-identical
+  copy of the same ~70 lines, which is why the `b""` bug existed in seven places at once. Subclasses
+  keep only what differs: name, unique ID, device info, upstream URL, content type and a log label.
+- **Image entities now report a state.** Previously all seven sat at `unknown` forever, because
+  `image_last_updated` was never set. The state is now an ISO-8601 timestamp that advances whenever
+  the image bytes change, which also makes "this image has gone stale" templatable.
+- **The `User-Agent` now identifies this integration honestly.** It was
+  `HomeAssistant/NOAA-Integration` on all 17 outbound request sites: generic, unversioned, carrying no
+  contact information, and implying Home Assistant core rather than a third-party custom integration.
+  `api.weather.gov` requires a User-Agent and asks that it be unique to the application, with a website
+  or email so they can make contact instead of simply blocking traffic they cannot place — which matters
+  more now that the integration polls on a timer. It is now
+  `noaa_it_all/<version> (+https://github.com/dawg-io/noaa_it_all)`, built from `manifest.json` at import
+  so a release bump is the only edit needed — `const.VERSION` and `const.DOCUMENTATION_URL` now read from
+  there, and `tests/test_manifest.py` fails if either is ever pasted back in as a literal. A contact email
+  may be added to the string later.
+- **Refreshes revalidate with `ETag` / `Last-Modified`.** Because the integration now polls whether
+  or not anyone is looking at the dashboard, conditional requests keep the steady-state cost close
+  to zero for sources that publish infrequently. Requests also send the integration's `User-Agent`,
+  matching the coordinators.
+
+- **The documented dashboard templates no longer blow up during startup.** Home Assistant renders
+  dashboard templates as soon as the frontend subscribes to them, which on a cold boot can be before
+  this integration has registered its entities — `async_setup_entry` awaits an initial refresh of ten
+  coordinators, all making live NWS calls, before forwarding any platform. In that window
+  `state_attr(...)` and `states.sensor....` both return `None`, so the README's own examples raised
+  `TypeError: 'NoneType' object is not iterable` and `UndefinedError: None has no element 0`, one
+  traceback per card, intermittently. The three Extended Forecast cards, the upcoming-meteor-shower
+  loop, the mobile header and the two alert automations now guard with `or []` and a truth test, and
+  the Dashboard Card Examples section explains the race so new cards get written the same way. The
+  sensors themselves were never at fault: `periods` and `upcoming` are always published as lists.
+- **Removed a duplicated "Dashboard Card Examples" heading** in `README.md`.
+
+### Known limitations
+- Two configured NWS offices means two entities fetching the byte-identical geoelectric and aurora
+  images, since those URLs are office-independent. Harmless but wasteful; a shared per-URL fetcher
+  is the follow-up.
+
+## [0.5.2]
 
 ### Fixed
 - **Image entities no longer log an error on every startup.** `image.py` sets up its entities with

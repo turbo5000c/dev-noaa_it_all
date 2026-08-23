@@ -1,6 +1,36 @@
 """Constants for NOAA Integration."""
 
+import json
+from pathlib import Path
+
 DOMAIN = "noaa_it_all"
+
+
+def _manifest() -> dict:
+    """Return the parsed ``manifest.json`` sitting next to this file.
+
+    Read here so the version and documentation URL have exactly one home and
+    a release bump does not have to be remembered in two places. Home
+    Assistant imports custom integration modules in an executor thread, and
+    this is a single small local file, so the read does not block the event
+    loop.
+    """
+    try:
+        with open(Path(__file__).parent / "manifest.json", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        # A broken manifest means Home Assistant will not load the
+        # integration at all; fall back to sentinels rather than raising an
+        # obscure error while merely importing constants.
+        return {}
+
+
+_MANIFEST = _manifest()
+
+VERSION = _MANIFEST.get("version") or "0.0.0"
+DOCUMENTATION_URL = (
+    _MANIFEST.get("documentation") or "https://github.com/dawg-io/noaa_it_all"
+)
 
 # Global (non office-specific) device identifiers.
 # Hurricane data comes from the National Hurricane Center and is global,
@@ -31,7 +61,28 @@ CONF_LONGITUDE = "longitude"
 # Default values
 DEFAULT_SCAN_INTERVAL = 10  # minutes
 REQUEST_TIMEOUT = 30  # seconds
-USER_AGENT = "HomeAssistant/NOAA-Integration"
+# Identifies this integration to NOAA. api.weather.gov requires a User-Agent
+# and asks that it be unique to the application, with a website or email so
+# they can make contact instead of simply blocking traffic they cannot place.
+# The version is part of the string so an old release can be told apart from a
+# fixed one -- built from manifest.json so bumping the release is enough.
+# To add a contact address later, put it in the parenthesised part alongside
+# the URL: f"... (+{DOCUMENTATION_URL}, you@example.com)".
+USER_AGENT = f"{DOMAIN}/{VERSION} (+{DOCUMENTATION_URL})"
+
+# Image entities keep the last successfully fetched frame and re-fetch on a
+# background timer, so a transient upstream failure leaves the previous
+# picture on screen.  These thresholds keep the log quiet while that is
+# happening: a blip stays at debug level, a short outage warns once, and only
+# a sustained outage is reported as an error (and then only periodically).
+IMAGE_FAILURE_WARN_AFTER = 3   # consecutive failed refreshes (~30 min)
+IMAGE_FAILURE_ERROR_AFTER = 6  # consecutive failed refreshes (~1 hour)
+
+# Images are fetched in the background rather than while serving an HTTP
+# request, so this is independent of REQUEST_TIMEOUT (which belongs to the
+# coordinators) and of Home Assistant's own 10s image-proxy budget.
+IMAGE_FETCH_TIMEOUT = 20  # seconds
+IMAGE_MAX_BYTES = 20 * 1024 * 1024  # refuse absurd payloads rather than cache them
 
 # API endpoints
 NWS_SRF_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=SRF&format=TXT"
