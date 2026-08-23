@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -979,3 +979,293 @@ class TestContentTypes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+GIF = b"GIF89a-fake-frame"
+
+
+class _RecordingStore:
+    """Stands in for RadarFrameStore, recording what the entity asks of it."""
+
+    def __init__(self, frames=(), accept=True):
+        self.frames = list(frames)
+        self.accept = accept
+        self.added = []
+        self.pruned = []
+
+    async def async_add_frame(self, timestamp, data):
+        self.added.append((timestamp, data))
+        if not self.accept:
+            return False
+        path = f"/frames/{timestamp:%Y%m%dT%H%M%SZ}.gif"
+        if any(existing == path for _, existing in self.frames):
+            return False
+        self.frames.append((timestamp, path))
+        return True
+
+    async def async_frames(self):
+        return list(self.frames)
+
+    async def async_prune(self, window, now):
+        self.pruned.append((window, now))
+        return 0
+
+
+def _local_loop_entity(frames=(), accept=True, loop_hours=24):
+    """A radar loop entity in local mode with its store swapped for a fake."""
+    from noaa_it_all.image import RadarLoopImageEntity
+
+    hass = MagicMock()
+    hass.config.path = MagicMock(return_value="/config/noaa_it_all/radar_frames")
+
+    async def _executor(func, *args):
+        """Run the encoder inline; the real one hands it to a worker thread."""
+        return func(*args)
+
+    hass.async_add_executor_job = _executor
+    entity = RadarLoopImageEntity(hass, OFFICE, "KNKX", loop_hours=loop_hours)
+    entity._store = _RecordingStore(frames, accept=accept)
+    entity.entity_id = "image.noaa_sgx_weather_radar_loop"
+    entity.async_write_ha_state = MagicMock()
+    return entity
+
+
+def _stored(count, start_minutes_ago=240):
+    """A buffer of ``count`` frames, oldest first."""
+    from noaa_it_all import image as image_module
+
+    now = image_module.dt_util.utcnow()
+    return [
+        (
+            now - timedelta(minutes=start_minutes_ago - index * 10),
+            f"/frames/stored-{index}.gif",
+        )
+        for index in range(count)
+    ]
+
+
+class TestRadarLoopUpstreamMode(unittest.TestCase):
+    """With the option off, nothing about the entity may have changed."""
+
+    def test_it_fetches_noaas_own_loop(self):
+        from noaa_it_all.image import RadarLoopImageEntity
+        entity = RadarLoopImageEntity(HASS, OFFICE, "KNKX")
+        self.assertIn("_loop.gif", entity._base_url())
+
+    def test_it_writes_nothing_to_disk(self):
+        from noaa_it_all.image import RadarLoopImageEntity
+        hass = MagicMock()
+        entity = RadarLoopImageEntity(HASS, OFFICE, "KNKX")
+        self.assertIsNone(entity._store)
+        hass.config.path.assert_not_called()
+
+    def test_it_reports_upstream_mode(self):
+        from noaa_it_all.image import RadarLoopImageEntity
+        entity = RadarLoopImageEntity(HASS, OFFICE, "KNKX")
+        self.assertEqual("upstream", entity.extra_state_attributes["loop_mode"])
+
+    def test_it_still_caches_through_a_failure(self):
+        from noaa_it_all.image import RadarLoopImageEntity
+        entity = RadarLoopImageEntity(HASS, OFFICE, "KNKX")
+        entity.entity_id = "image.noaa_sgx_weather_radar_loop"
+        entity.async_write_ha_state = MagicMock()
+        _refresh(entity, _FakeResponse(content_type="image/gif", body=GIF))
+        self.assertEqual(GIF, _run(entity.async_image()))
+        _refresh(entity, _FakeResponse(status=503))
+        self.assertEqual(GIF, _run(entity.async_image()))
+
+
+class TestRadarLoopLocalMode(unittest.TestCase):
+    """Collecting frames and assembling them into a longer animation."""
+
+    def test_it_fetches_single_scans_rather_than_the_loop(self):
+        entity = _local_loop_entity()
+        self.assertIn("_0.gif", entity._base_url())
+
+    def test_a_fetched_scan_is_stored_under_its_published_time(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        timestamp, data = entity._store.added[0]
+        self.assertEqual(GIF, data)
+        self.assertEqual(
+            datetime(2026, 8, 23, 11, 54, tzinfo=timezone.utc), timestamp
+        )
+
+    def test_the_assembled_loop_is_what_gets_served(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"ASSEMBLED"):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertEqual(b"ASSEMBLED", _run(entity.async_image()))
+        self.assertEqual("local", entity.extra_state_attributes["loop_mode"])
+
+    def test_a_scan_already_held_is_not_reassembled(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        headers = {"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"}
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"ASSEMBLED") as build:
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF, headers=headers))
+            self.assertEqual(1, build.call_count)
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF, headers=headers))
+            self.assertEqual(1, build.call_count)
+
+    def test_storing_a_frame_prunes_the_window(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertEqual(timedelta(hours=24), entity._store.pruned[0][0])
+
+    def test_a_missing_last_modified_still_yields_a_frame(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+            _refresh(entity, _FakeResponse(content_type="image/gif", body=GIF))
+        self.assertEqual(1, len(entity._store.added))
+
+    def test_a_thin_buffer_falls_back_to_noaas_loop(self):
+        entity = _local_loop_entity(frames=_stored(2))
+        session = _refresh(entity, _FakeResponse(
+            content_type="image/gif", body=GIF,
+            headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+        ))
+        self.assertTrue(any("_loop.gif" in url for url, _ in session.calls))
+        self.assertEqual("upstream", entity.extra_state_attributes["loop_mode"])
+
+    def test_a_failed_assembly_falls_back_to_noaas_loop(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=None):
+            session = _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertTrue(any("_loop.gif" in url for url, _ in session.calls))
+
+    def test_a_disk_that_refuses_the_frame_still_shows_a_loop(self):
+        entity = _local_loop_entity(frames=_stored(10), accept=False)
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertEqual(b"LOOP", _run(entity.async_image()))
+
+    def test_the_reported_window_matches_the_frames_used(self):
+        frames = _stored(10)
+        entity = _local_loop_entity(frames=frames)
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+            with patch(
+                "noaa_it_all.image.select_frames",
+                return_value=[path for _, path in frames[2:6]],
+            ):
+                _refresh(entity, _FakeResponse(
+                    content_type="image/gif", body=GIF,
+                    headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+                ))
+        attributes = entity.extra_state_attributes
+        self.assertEqual(4, attributes["frame_count"])
+        self.assertEqual(frames[2][0].isoformat(), attributes["window_start"])
+        self.assertEqual(frames[5][0].isoformat(), attributes["window_end"])
+
+
+class TestRadarLoopLocalModeSurvivesFailures(unittest.TestCase):
+    """The invariant the whole image module exists to hold, in local mode.
+
+    A refresh that fails must leave the displayed animation exactly as it
+    was -- the local loop adds a fetch, a disk and an encoder to the list of
+    things that can fail, and none of them may blank the card.
+    """
+
+    def _seeded(self):
+        entity = _local_loop_entity(frames=_stored(10))
+        with patch("noaa_it_all.image.assemble_gif", return_value=b"GOOD-LOOP"):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertEqual(b"GOOD-LOOP", _run(entity.async_image()))
+        entity.async_write_ha_state.reset_mock()
+        return entity
+
+    def _assert_survives(self, result, build=b"GOOD-LOOP"):
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        with patch("noaa_it_all.image.assemble_gif", return_value=build):
+            _refresh(entity, result)
+        self.assertEqual(b"GOOD-LOOP", _run(entity.async_image()))
+        self.assertEqual(stamp, entity.image_last_updated)
+        entity.async_write_ha_state.assert_not_called()
+
+    def test_a_server_error_leaves_the_loop_alone(self):
+        self._assert_survives(_FakeResponse(status=503))
+
+    def test_a_network_error_leaves_the_loop_alone(self):
+        self._assert_survives(asyncio.TimeoutError())
+
+    def test_an_empty_body_leaves_the_loop_alone(self):
+        self._assert_survives(_FakeResponse(content_type="image/gif", body=b""))
+
+    def test_a_non_image_response_leaves_the_loop_alone(self):
+        self._assert_survives(
+            _FakeResponse(content_type="text/html", body=b"<html>no</html>")
+        )
+
+    def test_an_encoder_that_gives_up_leaves_the_loop_alone(self):
+        """Assembly returning None must not blank the card either.
+
+        The fallback fetch of NOAA's own loop fails here too, so there is
+        nothing at all to fall back to -- the previous animation has to stand.
+        """
+        entity = self._seeded()
+        stamp = entity.image_last_updated
+        with patch("noaa_it_all.image.assemble_gif", return_value=None):
+            _refresh(
+                entity,
+                _FakeResponse(
+                    content_type="image/gif", body=b"NEW-FRAME",
+                    headers={"last-modified": "Sun, 23 Aug 2026 12:04:00 GMT"},
+                ),
+                _FakeResponse(status=503),
+            )
+        self.assertEqual(b"GOOD-LOOP", _run(entity.async_image()))
+        self.assertEqual(stamp, entity.image_last_updated)
+
+
+class TestRadarLoopHoursOption(unittest.TestCase):
+    """Reading the option off the config entry."""
+
+    @staticmethod
+    def _entry(value):
+        entry = MagicMock()
+        entry.data = {"office_code": OFFICE}
+        entry.options = {} if value is None else {"radar_loop_hours": value}
+        return entry
+
+    def test_a_saved_value_is_used(self):
+        from noaa_it_all.image import radar_loop_hours
+        self.assertEqual(6, radar_loop_hours(self._entry(6)))
+
+    def test_the_default_is_a_full_day(self):
+        from noaa_it_all.image import radar_loop_hours
+        self.assertEqual(24, radar_loop_hours(self._entry(None)))
+
+    def test_zero_is_honoured_as_the_opt_out(self):
+        from noaa_it_all.image import radar_loop_hours
+        self.assertEqual(0, radar_loop_hours(self._entry(0)))
+
+    def test_out_of_range_values_are_clamped(self):
+        from noaa_it_all.image import radar_loop_hours
+        self.assertEqual(24, radar_loop_hours(self._entry(999)))
+        self.assertEqual(0, radar_loop_hours(self._entry(-5)))
+
+    def test_an_unusable_value_falls_back_to_the_default(self):
+        from noaa_it_all.image import radar_loop_hours
+        self.assertEqual(24, radar_loop_hours(self._entry("lots")))

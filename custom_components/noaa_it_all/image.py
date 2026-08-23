@@ -25,15 +25,21 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_OFFICE_CODE, DEFAULT_SCAN_INTERVAL, DOMAIN,
+    CONF_OFFICE_CODE, CONF_RADAR_LOOP_HOURS,
+    DEFAULT_RADAR_LOOP_HOURS, DEFAULT_SCAN_INTERVAL, DOMAIN,
     HURRICANE_DEVICE_ID, HURRICANE_DEVICE_NAME,
     HURRICANE_IMAGES_ADDED_KEY,
     IMAGE_FAILURE_ERROR_AFTER, IMAGE_FAILURE_WARN_AFTER,
     IMAGE_FETCH_TIMEOUT, IMAGE_MAX_BYTES,
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
-    OFFICE_RADAR_SITES, USER_AGENT,
+    OFFICE_RADAR_SITES, RADAR_FRAME_DIR,
+    RADAR_LOOP_MAX_FRAMES, RADAR_LOOP_MAX_HOURS, RADAR_LOOP_MIN_FRAMES,
+    USER_AGENT,
 )
 from .entry_config import resolve_entry_config
+from .radar_loop import (
+    RadarFrameStore, assemble_gif, parse_http_date, select_frames,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +93,26 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         "via the Home Assistant UI config flow."
     )
     return
+
+
+def radar_loop_hours(config_entry) -> int:
+    """Return the configured radar loop length in hours, clamped to range.
+
+    Anything unusable -- absent, non-numeric, negative, absurd -- resolves to a
+    number the rest of the code can rely on rather than raising during setup.
+    """
+    raw = resolve_entry_config(config_entry).get(
+        CONF_RADAR_LOOP_HOURS, DEFAULT_RADAR_LOOP_HOURS
+    )
+    try:
+        hours = int(raw)
+    except (TypeError, ValueError):
+        _LOGGER.warning(
+            "Ignoring an unusable radar loop duration (%r); falling back to %d hours",
+            raw, DEFAULT_RADAR_LOOP_HOURS,
+        )
+        return DEFAULT_RADAR_LOOP_HOURS
+    return max(0, min(hours, RADAR_LOOP_MAX_HOURS))
 
 
 async def async_setup_entry(
@@ -159,7 +185,10 @@ async def async_setup_entry(
     if radar_site:
         # Add radar image entities for this location
         base_reflectivity_image = RadarBaseReflectivityImageEntity(hass, office_code, radar_site)
-        radar_loop_image = RadarLoopImageEntity(hass, office_code, radar_site)
+        loop_hours = radar_loop_hours(config_entry)
+        radar_loop_image = RadarLoopImageEntity(
+            hass, office_code, radar_site, loop_hours=loop_hours
+        )
         entities.extend([base_reflectivity_image, radar_loop_image])
         _LOGGER.info("Added radar image entities for office %s using radar site %s", office_code, radar_site)
     else:
@@ -213,6 +242,11 @@ class NoaaImageEntity(ImageEntity):
         # -- so conditional revalidation and the 304 short-circuit have to key
         # off the fetched frame rather than the displayed picture.
         self._last_fetched_bytes: bytes | None = None
+        # Which URL those bytes, and the validators below, came from.  The
+        # radar loop fetches two different resources through this one entity,
+        # and an ETag from one must never be offered as a validator for the
+        # other.
+        self._last_fetched_url: str | None = None
         self._attr_image_last_updated = None
         self._last_etag: str | None = None
         self._last_modified: str | None = None
@@ -335,15 +369,20 @@ class NoaaImageEntity(ImageEntity):
             )
         self._failure_count = 0
 
-    def _conditional_headers(self) -> dict[str, str]:
+    def _conditional_headers(self, resource: str) -> dict[str, str]:
         """Return revalidation headers for the copy already in hand.
 
         The refresh runs on a timer whether or not anyone is looking at the
         dashboard, so revalidating keeps the steady-state cost close to zero
         for sources that publish infrequently.
+
+        Validators are only offered back to the resource they came from.  An
+        entity that fetches more than one URL would otherwise be asking "has
+        it changed since?" about a different file entirely, and a server that
+        answered 304 to that would hand back the wrong image.
         """
         headers = {"User-Agent": USER_AGENT}
-        if self._last_fetched_bytes is None:
+        if self._last_fetched_bytes is None or self._last_fetched_url != resource:
             return headers
         if self._last_etag:
             headers["If-None-Match"] = self._last_etag
@@ -362,6 +401,9 @@ class NoaaImageEntity(ImageEntity):
         fall back to NOAA's ready-made animation without reimplementing any of
         the error handling below.
         """
+        # The cache-busting query string changes every ten minutes, so identity
+        # is tracked by the underlying resource rather than the fetched URL.
+        resource = url or self._base_url()
         self._image_url = url or self.get_cache_busted_url()
         try:
             session = async_get_clientsession(self.hass)
@@ -369,7 +411,7 @@ class NoaaImageEntity(ImageEntity):
             async with session.get(
                 self._image_url,
                 timeout=timeout,
-                headers=self._conditional_headers(),
+                headers=self._conditional_headers(resource),
             ) as response:
                 if response.status == 304 and self._last_fetched_bytes is not None:
                     _LOGGER.debug(
@@ -420,6 +462,7 @@ class NoaaImageEntity(ImageEntity):
         self._last_etag = etag
         self._last_modified = last_modified
         self._last_fetched_bytes = content
+        self._last_fetched_url = resource
         return content
 
     def _log_failure(self, reason: str, *, transient: bool) -> None:
@@ -612,7 +655,19 @@ class RadarBaseReflectivityImageEntity(NoaaImageEntity):
 
 
 class RadarLoopImageEntity(NoaaImageEntity):
-    """Representation of the Radar Loop Image (animated) for a specific location.
+    """An animated NEXRAD loop, either NOAA's own or one assembled here.
+
+    NOAA publishes a ready-made animation, but it is fixed at ten frames
+    covering roughly fifty minutes and the server keeps only those ten frames,
+    so a longer loop cannot be downloaded.  When ``loop_hours`` is set this
+    entity instead collects one frame per refresh into
+    :class:`~.radar_loop.RadarFrameStore` and assembles the animation itself,
+    which means the loop starts short after a fresh install and fills out over
+    the hours that follow.  Frames outlive restarts, so that happens once
+    rather than on every reboot.
+
+    ``loop_hours = 0`` restores the previous behaviour exactly: NOAA's loop,
+    proxied unchanged, with nothing written to disk.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
     automatically combines the office weather device name (e.g.
@@ -623,16 +678,177 @@ class RadarLoopImageEntity(NoaaImageEntity):
     _attr_has_entity_name = True
     _attr_content_type = "image/gif"
 
-    def __init__(self, hass, office_code, radar_site):
+    def __init__(self, hass, office_code, radar_site, loop_hours=0):
         """Initialize the radar loop image entity."""
         self._office_code = office_code
         self._radar_site = radar_site
         self._log_label = f"radar loop for {office_code}"
+        self._loop_hours = loop_hours
+        self._store = None
+        # Whether the picture currently on screen is NOAA's animation rather
+        # than one built here.  True until the buffer has enough frames to
+        # improve on it, and again whenever assembly fails.
+        self._serving_upstream = True
+        self._frame_count = 0
+        self._window_start = None
+        self._window_end = None
+        if loop_hours > 0:
+            self._store = RadarFrameStore(
+                hass,
+                hass.config.path(DOMAIN, RADAR_FRAME_DIR),
+                radar_site,
+            )
         super().__init__(hass)
 
+    @property
+    def _building_locally(self) -> bool:
+        """True when this entity assembles the loop rather than proxying it."""
+        return self._store is not None
+
+    @property
+    def _window(self) -> timedelta:
+        """Return how far back the loop reaches."""
+        return timedelta(hours=self._loop_hours)
+
     def _base_url(self) -> str:
-        """Return the NEXRAD radar loop URL for this radar site."""
+        """Return the URL each refresh fetches.
+
+        Building locally means collecting single scans, so the refresh targets
+        the latest frame rather than NOAA's finished animation.
+        """
+        if self._building_locally:
+            return NWS_RADAR_BASE_URL.format(radar=self._radar_site)
         return NWS_RADAR_LOOP_URL.format(radar=self._radar_site)
+
+    @property
+    def extra_state_attributes(self):
+        """Expose what the loop actually covers, for templates and debugging.
+
+        A loop that is quietly shorter than asked for -- because the buffer is
+        still filling, or because Pillow is missing -- is otherwise invisible.
+        """
+        return {
+            # Describes the animation actually being served, not the setting:
+            # a local loop that has fallen back to NOAA's says so.
+            "loop_mode": "upstream" if self._serving_upstream else "local",
+            "loop_hours": self._loop_hours,
+            "frame_count": self._frame_count,
+            "window_start": (
+                self._window_start.isoformat() if self._window_start else None
+            ),
+            "window_end": (
+                self._window_end.isoformat() if self._window_end else None
+            ),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Start the refresh timer, and prune anything now out of window.
+
+        Pruning here rather than on the first refresh means shortening the
+        duration takes effect as soon as the entry reloads, instead of leaving
+        stale frames on disk for another refresh interval.
+        """
+        await super().async_added_to_hass()
+        if self._building_locally:
+            self.async_on_remove(
+                async_call_later(self.hass, 0, self._async_prune)
+            )
+
+    async def _async_prune(self, now=None) -> None:
+        """Drop frames outside the configured window."""
+        await self._store.async_prune(self._window, dt_util.utcnow())
+
+    async def _async_update_cache(self) -> bool:
+        """Collect the latest scan and rebuild the loop from what we hold.
+
+        Returns True only when the displayed animation actually changed.  Every
+        failure path returns False without touching the cached bytes, so the
+        previous loop stays on the dashboard.
+        """
+        if not self._building_locally:
+            return await super()._async_update_cache()
+
+        frame = await self._async_fetch_image()
+        if frame is None:
+            return False
+        self._note_success()
+
+        # Last-Modified is when NOAA published the scan, which puts frames on
+        # the real four-to-six minute volume-scan cadence rather than on our
+        # arbitrary refresh boundary -- and makes two refreshes that see the
+        # same scan resolve to the same file, so dedup costs nothing.
+        # Hashing the bytes instead would be actively wrong: two consecutive
+        # scans of a clear sky are genuinely identical, so a quiet night would
+        # collapse to a single frame and the loop would cut straight from
+        # "clear" to "storm" with no sense of time passing.
+        timestamp = parse_http_date(self._last_modified)
+        if timestamp is None:
+            timestamp = dt_util.utcnow().replace(second=0, microsecond=0)
+
+        added = await self._store.async_add_frame(timestamp, frame)
+        if added:
+            await self._store.async_prune(self._window, dt_util.utcnow())
+        elif self._last_image_bytes is not None:
+            # Same scan as last time and we already have a loop built from it.
+            return False
+
+        return await self._async_rebuild_loop()
+
+    async def _async_rebuild_loop(self) -> bool:
+        """Assemble the stored frames, falling back to NOAA's loop if needed."""
+        frames = await self._store.async_frames()
+        if len(frames) < RADAR_LOOP_MIN_FRAMES:
+            _LOGGER.debug(
+                "Only %d radar frames stored for %s; showing NOAA's own loop "
+                "until the buffer fills", len(frames), self._office_code,
+            )
+            return await self._async_serve_upstream_loop()
+
+        paths = select_frames(
+            frames,
+            window=self._window,
+            max_frames=RADAR_LOOP_MAX_FRAMES,
+            now=dt_util.utcnow(),
+        )
+        # Encoding tens of full-size frames is CPU-bound, and this runs on a
+        # timer whether or not anyone is looking at the dashboard.
+        loop = await self.hass.async_add_executor_job(assemble_gif, paths)
+        if loop is None:
+            return await self._async_serve_upstream_loop()
+
+        chosen = set(paths)
+        covered = [timestamp for timestamp, path in frames if path in chosen]
+        self._serving_upstream = False
+        self._frame_count = len(paths)
+        self._window_start = covered[0] if covered else None
+        self._window_end = covered[-1] if covered else None
+
+        if loop == self._last_image_bytes:
+            return False
+        self._last_image_bytes = loop
+        self._attr_content_type = "image/gif"
+        self._attr_image_last_updated = dt_util.utcnow()
+        return True
+
+    async def _async_serve_upstream_loop(self) -> bool:
+        """Show NOAA's own animation instead of one we could not build.
+
+        Used while the buffer is still filling and whenever assembly fails, so
+        the card is never blank and never worse than it was before this
+        feature existed.
+        """
+        content = await self._async_fetch_image(
+            NWS_RADAR_LOOP_URL.format(radar=self._radar_site)
+        )
+        if content is None or content == self._last_image_bytes:
+            return False
+        self._serving_upstream = True
+        self._frame_count = 0
+        self._window_start = None
+        self._window_end = None
+        self._last_image_bytes = content
+        self._attr_image_last_updated = dt_util.utcnow()
+        return True
 
     @property
     def name(self):
