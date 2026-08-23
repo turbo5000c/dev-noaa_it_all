@@ -56,7 +56,7 @@
       "invalid_latitude": "Latitude must be between -90 and 90.",
       "invalid_longitude": "Longitude must be between -180 and 180.",
       "invalid_office": "Please choose a valid NWS forecast office.",
-      "invalid_radar_hours": "Radar history must be a whole number of hours between 0 and 24."
+      "invalid_radar_hours": "Radar history must be a whole number of hours between 0 and {max_hours}."
     }
   }
 }

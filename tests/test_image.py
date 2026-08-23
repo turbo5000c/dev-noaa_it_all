@@ -985,6 +985,12 @@ if __name__ == "__main__":
 GIF = b"GIF89a-fake-frame"
 
 
+def _loop_of(data, paths=("/frames/a.gif", "/frames/b.gif")):
+    """Build the RadarLoop that assemble_gif would return."""
+    from noaa_it_all.radar_loop import RadarLoop
+    return RadarLoop(data, list(paths))
+
+
 class _RecordingStore:
     """Stands in for RadarFrameStore, recording what the entity asks of it."""
 
@@ -1032,7 +1038,14 @@ def _local_loop_entity(frames=(), accept=True, loop_hours=24):
 
 
 def _stored(count, start_minutes_ago=240):
-    """A buffer of ``count`` frames, oldest first."""
+    """A buffer of ``count`` frames, oldest first.
+
+    Timestamps are derived from the real clock rather than a fixed date: the
+    code under test prunes and samples against ``dt_util.utcnow()``, so any
+    hard-coded date would silently stop being inside the window once enough
+    real time had passed, and the suite would start failing on a calendar day
+    rather than on a code change.
+    """
     from noaa_it_all import image as image_module
 
     now = image_module.dt_util.utcnow()
@@ -1085,7 +1098,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_a_fetched_scan_is_stored_under_its_published_time(self):
         entity = _local_loop_entity(frames=_stored(10))
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"LOOP")):
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF,
                 headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
@@ -1098,7 +1111,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_the_assembled_loop_is_what_gets_served(self):
         entity = _local_loop_entity(frames=_stored(10))
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"ASSEMBLED"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"ASSEMBLED")):
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF,
                 headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
@@ -1109,7 +1122,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
     def test_a_scan_already_held_is_not_reassembled(self):
         entity = _local_loop_entity(frames=_stored(10))
         headers = {"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"}
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"ASSEMBLED") as build:
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"ASSEMBLED")) as build:
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF, headers=headers))
             self.assertEqual(1, build.call_count)
@@ -1119,7 +1132,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_storing_a_frame_prunes_the_window(self):
         entity = _local_loop_entity(frames=_stored(10))
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"LOOP")):
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF,
                 headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
@@ -1128,7 +1141,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_a_missing_last_modified_still_yields_a_frame(self):
         entity = _local_loop_entity(frames=_stored(10))
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"LOOP")):
             _refresh(entity, _FakeResponse(content_type="image/gif", body=GIF))
         self.assertEqual(1, len(entity._store.added))
 
@@ -1152,7 +1165,7 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_a_disk_that_refuses_the_frame_still_shows_a_loop(self):
         entity = _local_loop_entity(frames=_stored(10), accept=False)
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"LOOP")):
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF,
                 headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
@@ -1161,20 +1174,37 @@ class TestRadarLoopLocalMode(unittest.TestCase):
 
     def test_the_reported_window_matches_the_frames_used(self):
         frames = _stored(10)
+        used = [path for _, path in frames[2:8]]
         entity = _local_loop_entity(frames=frames)
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"LOOP"):
-            with patch(
-                "noaa_it_all.image.select_frames",
-                return_value=[path for _, path in frames[2:6]],
-            ):
-                _refresh(entity, _FakeResponse(
-                    content_type="image/gif", body=GIF,
-                    headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
-                ))
+        with patch("noaa_it_all.image.assemble_gif",
+                   return_value=_loop_of(b"LOOP", used)):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
         attributes = entity.extra_state_attributes
-        self.assertEqual(4, attributes["frame_count"])
+        self.assertEqual(6, attributes["frame_count"])
         self.assertEqual(frames[2][0].isoformat(), attributes["window_start"])
-        self.assertEqual(frames[5][0].isoformat(), attributes["window_end"])
+        self.assertEqual(frames[7][0].isoformat(), attributes["window_end"])
+
+    def test_the_reported_count_is_what_the_encoder_used_not_what_it_was_given(self):
+        """Frames shed to fit the size limit must not be counted as shown.
+
+        These attributes exist so a loop quietly shorter than configured is
+        visible; counting the frames offered rather than the frames encoded
+        would hide precisely that case.
+        """
+        frames = _stored(10)
+        entity = _local_loop_entity(frames=frames)
+        # The encoder kept three of the ten it was handed.
+        with patch("noaa_it_all.image.assemble_gif",
+                   return_value=_loop_of(
+                       b"LOOP", [path for _, path in frames[7:]])):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        self.assertEqual(3, entity.extra_state_attributes["frame_count"])
 
 
 class TestRadarLoopValidatorsAreScopedToTheirResource(unittest.TestCase):
@@ -1190,46 +1220,94 @@ class TestRadarLoopValidatorsAreScopedToTheirResource(unittest.TestCase):
         "etag": '"frame-etag"',
     }
 
+    LOOP_HEADERS = {"etag": '"loop-etag"'}
+
     @staticmethod
-    def _validators(session, needle):
+    def _sent_to(session, needle):
+        """Return the conditional headers sent to the matching request."""
         for url, kwargs in session.calls:
             if needle in url:
                 headers = kwargs.get("headers", {})
                 return {
-                    key for key in headers
+                    key: value for key, value in headers.items()
                     if key in ("If-None-Match", "If-Modified-Since")
                 }
         raise AssertionError(f"no request was made to {needle}")
 
-    def test_the_frames_validators_are_not_sent_to_the_loop(self):
-        entity = _local_loop_entity(frames=_stored(2))
-        # Seed the cached validators from a single-frame fetch.
-        _refresh(entity, _FakeResponse(
-            content_type="image/gif", body=GIF, headers=self.HEADERS))
-        # A later scan, so this refresh gets as far as the fallback again
-        # rather than stopping at "we already hold that one".
-        session = _refresh(entity, _FakeResponse(
-            content_type="image/gif", body=b"GIF89a-newer-frame",
-            headers={
-                "last-modified": "Sun, 23 Aug 2026 12:04:00 GMT",
-                "etag": '"newer-frame-etag"',
-            },
-        ))
-        self.assertEqual(set(), self._validators(session, "_loop.gif"))
-
-    def test_the_loops_validators_are_not_sent_to_the_frame(self):
-        entity = _local_loop_entity(frames=_stored(2))
+    def _seed_both_resources(self, entity):
+        """Fetch the frame and the fallback loop once each, caching both."""
         _refresh(
             entity,
-            _FakeResponse(content_type="image/gif", body=GIF, headers=self.HEADERS),
+            _FakeResponse(
+                content_type="image/gif", body=GIF, headers=self.HEADERS),
             _FakeResponse(
                 content_type="image/gif", body=b"GIF89a-loop",
-                headers={"etag": '"loop-etag"'},
-            ),
+                headers=self.LOOP_HEADERS),
         )
-        session = _refresh(entity, _FakeResponse(
-            content_type="image/gif", body=GIF, headers=self.HEADERS))
-        self.assertEqual(set(), self._validators(session, "_0.gif"))
+
+    def test_each_resource_is_revalidated_with_its_own_validator(self):
+        """Not merely "never the wrong one" -- each must still get the right one.
+
+        Scoping validators by resource is only half the job: if the two
+        resources shared one slot, each fetch would evict the other's and
+        neither could ever revalidate, so the fallback loop would be
+        re-downloaded in full on every refresh for as long as the buffer was
+        filling.
+        """
+        entity = _local_loop_entity(frames=_stored(2))
+        self._seed_both_resources(entity)
+        session = _refresh(
+            entity,
+            _FakeResponse(
+                content_type="image/gif", body=b"GIF89a-newer",
+                headers={
+                    "last-modified": "Sun, 23 Aug 2026 12:04:00 GMT",
+                    "etag": '"newer-frame-etag"',
+                },
+            ),
+            _FakeResponse(
+                content_type="image/gif", body=b"GIF89a-loop",
+                headers=self.LOOP_HEADERS),
+        )
+        self.assertEqual(
+            {"If-None-Match": '"frame-etag"'}, self._sent_to(session, "_0.gif")
+        )
+        self.assertEqual(
+            {"If-None-Match": '"loop-etag"'}, self._sent_to(session, "_loop.gif")
+        )
+
+    def test_neither_resource_is_offered_the_others_validator(self):
+        entity = _local_loop_entity(frames=_stored(2))
+        self._seed_both_resources(entity)
+        session = _refresh(
+            entity,
+            _FakeResponse(
+                content_type="image/gif", body=b"GIF89a-newer",
+                headers={"last-modified": "Sun, 23 Aug 2026 12:04:00 GMT",
+                         "etag": '"newer-frame-etag"'},
+            ),
+            _FakeResponse(
+                content_type="image/gif", body=b"GIF89a-loop",
+                headers=self.LOOP_HEADERS),
+        )
+        self.assertNotIn(
+            '"loop-etag"', self._sent_to(session, "_0.gif").values()
+        )
+        self.assertNotIn(
+            '"frame-etag"', self._sent_to(session, "_loop.gif").values()
+        )
+
+    def test_the_fallback_loop_is_cache_busted_like_every_other_url(self):
+        """It was before this PR, and a CDN will happily serve a stale copy."""
+        entity = _local_loop_entity(frames=_stored(2))
+        session = _refresh(
+            entity,
+            _FakeResponse(
+                content_type="image/gif", body=GIF, headers=self.HEADERS),
+            _FakeResponse(content_type="image/gif", body=b"GIF89a-loop"),
+        )
+        loop_url = next(url for url, _ in session.calls if "_loop.gif" in url)
+        self.assertIn("?t=", loop_url)
 
     def test_a_single_url_entity_still_revalidates(self):
         """Scoping validators must not switch conditional requests off."""
@@ -1250,7 +1328,7 @@ class TestRadarLoopLocalModeSurvivesFailures(unittest.TestCase):
 
     def _seeded(self):
         entity = _local_loop_entity(frames=_stored(10))
-        with patch("noaa_it_all.image.assemble_gif", return_value=b"GOOD-LOOP"):
+        with patch("noaa_it_all.image.assemble_gif", return_value=_loop_of(b"GOOD-LOOP")):
             _refresh(entity, _FakeResponse(
                 content_type="image/gif", body=GIF,
                 headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
@@ -1262,7 +1340,8 @@ class TestRadarLoopLocalModeSurvivesFailures(unittest.TestCase):
     def _assert_survives(self, result, build=b"GOOD-LOOP"):
         entity = self._seeded()
         stamp = entity.image_last_updated
-        with patch("noaa_it_all.image.assemble_gif", return_value=build):
+        with patch("noaa_it_all.image.assemble_gif",
+                   return_value=_loop_of(build) if build else None):
             _refresh(entity, result)
         self.assertEqual(b"GOOD-LOOP", _run(entity.async_image()))
         self.assertEqual(stamp, entity.image_last_updated)
@@ -1390,6 +1469,22 @@ class TestRadarLoopEndToEnd(unittest.TestCase):
         entity.async_write_ha_state = MagicMock()
         return entity
 
+    @staticmethod
+    def _start(polls):
+        """The publication time of the first frame in a run of ``polls``.
+
+        Anchored to the real clock, not to a fixed date. The code under test
+        prunes and samples against ``dt_util.utcnow()``, so frames pinned to a
+        calendar date drop out of the window as soon as enough real time
+        passes -- which would make this suite start failing on a date rather
+        than on a change. Truncated to whole seconds because that is the
+        resolution both the HTTP date header and the frame filename carry.
+        """
+        from noaa_it_all import image as image_module
+
+        now = image_module.dt_util.utcnow().replace(microsecond=0)
+        return now - timedelta(minutes=10 * polls)
+
     def _poll(self, entity, index, start):
         """One refresh, with NOAA's loop queued behind it as the fallback."""
         published = (start + timedelta(minutes=10 * index)).strftime(
@@ -1408,7 +1503,7 @@ class TestRadarLoopEndToEnd(unittest.TestCase):
     def test_the_loop_grows_from_noaas_into_a_locally_built_animation(self):
         with tempfile.TemporaryDirectory() as directory:
             entity = self._entity(directory)
-            start = datetime(2026, 8, 23, 0, 0, tzinfo=timezone.utc)
+            start = self._start(12)
 
             # Too thin to improve on NOAA: its own loop is what gets served.
             self._poll(entity, 0, start)
@@ -1443,7 +1538,7 @@ class TestRadarLoopEndToEnd(unittest.TestCase):
     def test_frames_collected_before_a_restart_are_still_there_after_it(self):
         """The whole feature rests on this: a restart must not start over."""
         with tempfile.TemporaryDirectory() as directory:
-            start = datetime(2026, 8, 23, 0, 0, tzinfo=timezone.utc)
+            start = self._start(9)
             first = self._entity(directory)
             for index in range(8):
                 self._poll(first, index, start)
@@ -1456,3 +1551,120 @@ class TestRadarLoopEndToEnd(unittest.TestCase):
             self.assertEqual("local", attributes["loop_mode"])
             self.assertEqual(9, attributes["frame_count"])
             self.assertEqual(start.isoformat(), attributes["window_start"])
+
+
+class TestRadarLoopPruning(unittest.TestCase):
+    """Pruning has to keep up with the window even when nothing new arrives."""
+
+    def test_pruning_runs_even_when_the_scan_has_not_changed(self):
+        """A radar site stuck on one scan must not let the window stretch.
+
+        Maintenance windows and outages hold one Last-Modified for hours. If
+        pruning only ran when a frame was stored, nothing would age out for the
+        whole outage and the loop would quietly cover more than it claims.
+        """
+        entity = _local_loop_entity(frames=_stored(10))
+        headers = {"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"}
+        with patch("noaa_it_all.image.assemble_gif",
+                   return_value=_loop_of(b"LOOP")):
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF, headers=headers))
+            first = len(entity._store.pruned)
+            _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF, headers=headers))
+        self.assertGreater(len(entity._store.pruned), first)
+
+
+class TestRadarLoopMinimumFrames(unittest.TestCase):
+    """The floor has to apply to what ships, not to what is on disk."""
+
+    def test_a_sparse_window_falls_back_even_with_frames_on_disk(self):
+        """The floor has to be judged on the sampled frames, not the directory.
+
+        Here the store holds 84 frames -- comfortably over the floor -- but all
+        bar four are older than the window, so the loop that would actually
+        ship is four frames long. That is fewer than NOAA's ten, which is
+        precisely what RADAR_LOOP_MIN_FRAMES exists to prevent, and it is
+        enough frames that the encoder would happily build it.
+        """
+        from noaa_it_all import image as image_module
+
+        now = image_module.dt_util.utcnow()
+        recent = [
+            (now - timedelta(minutes=15 * index), f"/frames/recent-{index}.gif")
+            for index in range(4)
+        ][::-1]
+        ancient = [
+            (now - timedelta(days=3, minutes=10 * index), f"/frames/old-{index}.gif")
+            for index in range(80)
+        ][::-1]
+        entity = _local_loop_entity(frames=ancient + recent)
+        self.assertGreaterEqual(len(entity._store.frames), 84)
+
+        with patch("noaa_it_all.image.assemble_gif",
+                   return_value=_loop_of(b"LOOP")) as build:
+            session = _refresh(entity, _FakeResponse(
+                content_type="image/gif", body=GIF,
+                headers={"last-modified": "Sun, 23 Aug 2026 11:54:00 GMT"},
+            ))
+        build.assert_not_called()
+        self.assertTrue(any("_loop.gif" in url for url, _ in session.calls))
+        self.assertEqual("upstream", entity.extra_state_attributes["loop_mode"])
+
+
+class TestRadarFrameHousekeeping(unittest.TestCase):
+    """Frames for a site nothing collects any more must not be orphaned."""
+
+    def _hass(self, entries, present):
+        hass = MagicMock()
+        hass.config.path = MagicMock(return_value="/config/radar_frames")
+        hass.config_entries.async_entries = MagicMock(return_value=entries)
+
+        async def _executor(func, *args):
+            return list(present)
+
+        hass.async_add_executor_job = _executor
+        return hass
+
+    @staticmethod
+    def _entry(office, hours):
+        entry = MagicMock()
+        entry.data = {"office_code": office}
+        entry.options = {"radar_loop_hours": hours}
+        return entry
+
+    def _run_cleanup(self, hass, keep):
+        from noaa_it_all import image as image_module
+
+        removed = []
+
+        class _Store:
+            def __init__(self, _hass, _base, site):
+                self.site = site
+
+            async def async_remove_all(self):
+                removed.append(self.site)
+
+        with patch.object(image_module, "RadarFrameStore", _Store):
+            _run(image_module.async_discard_unused_radar_frames(hass, keep=keep))
+        return removed
+
+    def test_the_site_in_use_is_kept(self):
+        hass = self._hass([self._entry("ILM", 24)], ["KLTX"])
+        self.assertEqual([], self._run_cleanup(hass, keep="KLTX"))
+
+    def test_a_site_switched_away_from_is_removed(self):
+        """Changing office leaves the old site's frames with no owner."""
+        hass = self._hass([self._entry("SGX", 24)], ["KLTX", "KNKX"])
+        self.assertEqual(["KLTX"], self._run_cleanup(hass, keep="KNKX"))
+
+    def test_turning_the_loop_off_reclaims_the_disk(self):
+        """The options screen promises 0 hours will "store nothing"."""
+        hass = self._hass([self._entry("ILM", 0)], ["KLTX"])
+        self.assertEqual(["KLTX"], self._run_cleanup(hass, keep=None))
+
+    def test_a_site_another_entry_still_uses_is_kept(self):
+        hass = self._hass(
+            [self._entry("ILM", 0), self._entry("SGX", 24)], ["KLTX", "KNKX"]
+        )
+        self.assertEqual(["KLTX"], self._run_cleanup(hass, keep=None))

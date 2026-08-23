@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import timedelta
 
 import aiohttp
@@ -115,6 +116,56 @@ def radar_loop_hours(config_entry) -> int:
     return max(0, min(hours, RADAR_LOOP_MAX_HOURS))
 
 
+async def async_discard_unused_radar_frames(hass, keep=None) -> None:
+    """Delete stored frames for radar sites nothing is collecting any more.
+
+    ``keep`` is the site this entry has just claimed, if any.  Every other
+    directory is checked against the sites the remaining entries are actually
+    building loops for, so switching office, or setting the duration to 0 --
+    which the options screen promises will "store nothing" -- reclaims the
+    disk instead of orphaning it until the integration is deleted.
+    """
+    base = hass.config.path(DOMAIN, RADAR_FRAME_DIR)
+
+    wanted = set()
+    if keep:
+        wanted.add(keep)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if radar_loop_hours(entry) <= 0:
+            continue
+        site = OFFICE_RADAR_SITES.get(
+            resolve_entry_config(entry).get(CONF_OFFICE_CODE)
+        )
+        if site:
+            wanted.add(site)
+
+    try:
+        present = await hass.async_add_executor_job(_list_radar_frame_dirs, base)
+    except Exception as err:  # noqa: BLE001 - housekeeping must never break setup
+        _LOGGER.debug("Could not list stored radar frames: %s", err)
+        return
+
+    for site in present:
+        if site in wanted:
+            continue
+        _LOGGER.info(
+            "Removing stored radar frames for %s; no configured office is "
+            "building a loop from it any more", site,
+        )
+        await RadarFrameStore(hass, base, site).async_remove_all()
+
+
+def _list_radar_frame_dirs(base: str) -> list[str]:
+    """Return the radar site directories under ``base`` (executor side)."""
+    try:
+        return [
+            name for name in os.listdir(base)
+            if os.path.isdir(os.path.join(base, name))
+        ]
+    except FileNotFoundError:
+        return []
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -190,6 +241,16 @@ async def async_setup_entry(
             hass, office_code, radar_site, loop_hours=loop_hours
         )
         entities.extend([base_reflectivity_image, radar_loop_image])
+        # Setup runs again on every options change, so this is where a switch
+        # away from a radar site -- or the loop being turned off entirely --
+        # becomes visible.  Nothing else would ever clean those frames up:
+        # async_remove_entry only knows the site the entry ends on, and a
+        # store that is no longer constructed never prunes.
+        hass.async_create_task(
+            async_discard_unused_radar_frames(hass, keep=(
+                radar_site if loop_hours > 0 else None
+            ))
+        )
         _LOGGER.info("Added radar image entities for office %s using radar site %s", office_code, radar_site)
     else:
         _LOGGER.warning("No radar site mapping found for office %s", office_code)
@@ -242,11 +303,12 @@ class NoaaImageEntity(ImageEntity):
         # -- so conditional revalidation and the 304 short-circuit have to key
         # off the fetched frame rather than the displayed picture.
         self._last_fetched_bytes: bytes | None = None
-        # Which URL those bytes, and the validators below, came from.  The
-        # radar loop fetches two different resources through this one entity,
-        # and an ETag from one must never be offered as a validator for the
-        # other.
-        self._last_fetched_url: str | None = None
+        # Revalidation state per upstream resource: {url: (etag, last_modified,
+        # bytes)}.  The radar loop fetches two different resources through this
+        # one entity, so a single slot would mean an ETag from one being
+        # offered as a validator for the other -- and each fetch evicting the
+        # other's, leaving neither able to revalidate.
+        self._resource_cache: dict[str, tuple] = {}
         self._attr_image_last_updated = None
         self._last_etag: str | None = None
         self._last_modified: str | None = None
@@ -259,17 +321,21 @@ class NoaaImageEntity(ImageEntity):
         """Return the upstream URL without cache busting."""
         return self._url
 
-    def get_cache_busted_url(self) -> str:
-        """Return the upstream URL with a coarse timestamp appended.
+    def get_cache_busted_url(self, url: str | None = None) -> str:
+        """Return an upstream URL with a coarse timestamp appended.
 
         The timestamp is rounded down to a 10-minute bucket: NOAA does not
         publish these images more often than that, and a coarse bucket keeps
         upstream and CDN caching effective while still defeating a stale
         cached copy.
+
+        ``url`` defaults to this entity's own; the radar loop passes its
+        fallback URL so that it is busted too rather than being served a stale
+        copy from a CDN.
         """
         timestamp = dt_util.utcnow().strftime('%Y%m%d%H%M')
         timestamp = timestamp[:-1] + '0'
-        return f"{self._base_url()}?t={timestamp}"
+        return f"{url or self._base_url()}?t={timestamp}"
 
     # -- Home Assistant plumbing -----------------------------------------
 
@@ -382,12 +448,14 @@ class NoaaImageEntity(ImageEntity):
         answered 304 to that would hand back the wrong image.
         """
         headers = {"User-Agent": USER_AGENT}
-        if self._last_fetched_bytes is None or self._last_fetched_url != resource:
+        cached = self._resource_cache.get(resource)
+        if cached is None:
             return headers
-        if self._last_etag:
-            headers["If-None-Match"] = self._last_etag
-        elif self._last_modified:
-            headers["If-Modified-Since"] = self._last_modified
+        etag, last_modified, _ = cached
+        if etag:
+            headers["If-None-Match"] = etag
+        elif last_modified:
+            headers["If-Modified-Since"] = last_modified
         return headers
 
     async def _async_fetch_image(self, url: str | None = None) -> bytes | None:
@@ -404,7 +472,7 @@ class NoaaImageEntity(ImageEntity):
         # The cache-busting query string changes every ten minutes, so identity
         # is tracked by the underlying resource rather than the fetched URL.
         resource = url or self._base_url()
-        self._image_url = url or self.get_cache_busted_url()
+        self._image_url = self.get_cache_busted_url(resource)
         try:
             session = async_get_clientsession(self.hass)
             timeout = aiohttp.ClientTimeout(total=IMAGE_FETCH_TIMEOUT)
@@ -413,12 +481,20 @@ class NoaaImageEntity(ImageEntity):
                 timeout=timeout,
                 headers=self._conditional_headers(resource),
             ) as response:
-                if response.status == 304 and self._last_fetched_bytes is not None:
+                if response.status == 304 and resource in self._resource_cache:
                     _LOGGER.debug(
                         "The %s image is unchanged upstream (HTTP 304)",
                         self._log_label,
                     )
-                    return self._last_fetched_bytes
+                    # Republish this resource's validators as the current ones:
+                    # callers read ``_last_modified`` straight after a fetch to
+                    # date what came back, and a 304 still describes this
+                    # resource, not whichever one was fetched most recently.
+                    etag, last_modified, cached = self._resource_cache[resource]
+                    self._last_etag = etag
+                    self._last_modified = last_modified
+                    self._last_fetched_bytes = cached
+                    return cached
                 if response.status != 200:
                     self._log_failure(
                         f"HTTP {response.status}",
@@ -462,7 +538,7 @@ class NoaaImageEntity(ImageEntity):
         self._last_etag = etag
         self._last_modified = last_modified
         self._last_fetched_bytes = content
-        self._last_fetched_url = resource
+        self._resource_cache[resource] = (etag, last_modified, content)
         return content
 
     def _log_failure(self, reason: str, *, transient: bool) -> None:
@@ -786,9 +862,12 @@ class RadarLoopImageEntity(NoaaImageEntity):
             timestamp = dt_util.utcnow().replace(second=0, microsecond=0)
 
         added = await self._store.async_add_frame(timestamp, frame)
-        if added:
-            await self._store.async_prune(self._window, dt_util.utcnow())
-        elif self._last_image_bytes is not None:
+        # Pruned every refresh rather than only when something was stored: a
+        # radar site stuck on one scan for hours -- maintenance, an outage --
+        # would otherwise never prune at all, and the window would quietly
+        # stretch past what was asked for.
+        await self._store.async_prune(self._window, dt_util.utcnow())
+        if not added and self._last_image_bytes is not None:
             # Same scan as last time and we already have a loop built from it.
             return False
 
@@ -804,31 +883,57 @@ class RadarLoopImageEntity(NoaaImageEntity):
             )
             return await self._async_serve_upstream_loop()
 
+        # Sampling and encoding go to the executor together.  Both are pure
+        # CPU over the frame list, this runs on a timer whether or not anyone
+        # is looking at the dashboard, and splitting them would put the
+        # sampler's work back on the event loop for nothing.
+        loop = await self.hass.async_add_executor_job(
+            self._build_loop, frames, dt_util.utcnow()
+        )
+        if loop is None:
+            return await self._async_serve_upstream_loop()
+
+        # The window is described from the frames the encoder actually used,
+        # not the ones it was offered: unreadable frames and any shed to get
+        # under the size limit are not in the animation, and reporting them
+        # would hide exactly the shortfall these attributes exist to show.
+        used = set(loop.paths)
+        covered = [timestamp for timestamp, path in frames if path in used]
+        self._serving_upstream = False
+        self._frame_count = len(loop.paths)
+        self._window_start = covered[0] if covered else None
+        self._window_end = covered[-1] if covered else None
+
+        if loop.data == self._last_image_bytes:
+            return False
+        self._last_image_bytes = loop.data
+        self._attr_content_type = "image/gif"
+        self._attr_image_last_updated = dt_util.utcnow()
+        return True
+
+    def _build_loop(self, frames, now):
+        """Sample the stored frames and encode them (executor side).
+
+        Returns None when the sample is too thin to beat NOAA's own loop.  The
+        floor is applied here, to the frames that will actually be encoded --
+        checking it against everything on disk would let a window with a long
+        outage in the middle ship a three-frame animation in place of NOAA's
+        ten, which is the outcome the floor exists to prevent.
+        """
         paths = select_frames(
             frames,
             window=self._window,
             max_frames=RADAR_LOOP_MAX_FRAMES,
-            now=dt_util.utcnow(),
+            now=now,
         )
-        # Encoding tens of full-size frames is CPU-bound, and this runs on a
-        # timer whether or not anyone is looking at the dashboard.
-        loop = await self.hass.async_add_executor_job(assemble_gif, paths)
-        if loop is None:
-            return await self._async_serve_upstream_loop()
-
-        chosen = set(paths)
-        covered = [timestamp for timestamp, path in frames if path in chosen]
-        self._serving_upstream = False
-        self._frame_count = len(paths)
-        self._window_start = covered[0] if covered else None
-        self._window_end = covered[-1] if covered else None
-
-        if loop == self._last_image_bytes:
-            return False
-        self._last_image_bytes = loop
-        self._attr_content_type = "image/gif"
-        self._attr_image_last_updated = dt_util.utcnow()
-        return True
+        if len(paths) < RADAR_LOOP_MIN_FRAMES:
+            _LOGGER.debug(
+                "Only %d of %d stored radar frames for %s fall inside the "
+                "loop window; showing NOAA's own loop instead",
+                len(paths), len(frames), self._office_code,
+            )
+            return None
+        return assemble_gif(paths)
 
     async def _async_serve_upstream_loop(self) -> bool:
         """Show NOAA's own animation instead of one we could not build.

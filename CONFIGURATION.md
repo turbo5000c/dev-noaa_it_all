@@ -76,8 +76,9 @@ What to expect when it is on:
   back to NOAA's own loop rather than showing a near-still image.
 - **Frames persist across restarts**, under `<config>/noaa_it_all/radar_frames/<RADAR_SITE>/`, one
   small GIF per scan. Expect a few megabytes per radar site. Frames outside the window are deleted
-  on every refresh, and the whole directory is removed if you delete the integration — unless
-  another configured office shares the same radar site.
+  on every refresh. The directory is removed when you delete the integration, when you switch the
+  entry to a different forecast office, or when you set this option back to `0` — unless another
+  configured office is still building a loop from the same radar site.
 - **Frame spacing follows the window.** The animation is capped at 72 frames and plays through in
   about ten seconds, so a 24-hour loop steps every 20 minutes while a 6-hour loop keeps roughly one
   frame per radar scan.

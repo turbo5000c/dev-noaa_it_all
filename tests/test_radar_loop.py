@@ -177,19 +177,37 @@ class TestFrameStore(unittest.TestCase):
         _run(self.store.async_prune(timedelta(hours=1), NOW))
         self.assertEqual(["20260823T120000Z.gif"], os.listdir(self.store.path))
 
-    def test_a_clock_jump_cannot_fill_the_disk(self):
+    def test_frames_dated_in_the_future_are_discarded(self):
+        """A wrong clock must not produce frames that outlive every real one.
+
+        Ageing works backwards from now, so a future-dated frame is never
+        reached by the cutoff. Without an upper bound it would survive
+        indefinitely while genuine frames aged out around it, and the loop
+        would stick on a set that never updates.
+        """
+        self._add(10)
+        self._add(-600)  # ten hours ahead of the clock
+        removed = _run(self.store.async_prune(timedelta(hours=24), NOW))
+        self.assertEqual(1, removed)
+        remaining = _run(self.store.async_frames())
+        self.assertEqual([NOW - timedelta(minutes=10)], [t for t, _ in remaining])
+
+    def test_ordinary_clock_skew_is_tolerated(self):
+        """NOAA's clock and ours need not agree to the second."""
+        self._add(-5)
+        _run(self.store.async_prune(timedelta(hours=24), NOW))
+        self.assertEqual(1, len(_run(self.store.async_frames())))
+
+    def test_the_file_cap_trims_the_oldest(self):
         original = radar_loop.RADAR_FRAME_MAX_FILES
         radar_loop.RADAR_FRAME_MAX_FILES = 5
         self.addCleanup(setattr, radar_loop, "RADAR_FRAME_MAX_FILES", original)
-        # Frames dated into the future are inside every window, so the cutoff
-        # alone would never reach them.
-        for minutes in range(0, -80, -10):
+        for minutes in range(0, 80, 10):
             self._add(minutes)
         _run(self.store.async_prune(timedelta(hours=24), NOW))
         remaining = _run(self.store.async_frames())
         self.assertEqual(5, len(remaining))
-        # The cap keeps the newest, not an arbitrary five.
-        self.assertEqual(NOW + timedelta(minutes=70), remaining[-1][0])
+        self.assertEqual(NOW, remaining[-1][0])
 
     def test_a_directory_that_cannot_be_created_reports_failure(self):
         """A disk that will not take the frame must not reach the dashboard.
@@ -267,21 +285,65 @@ class TestSelectFrames(unittest.TestCase):
         self.assertEqual(frames[-1][1], chosen[-1])
 
     def test_a_gap_shortens_the_loop_rather_than_repeating_a_frame(self):
+        """Exercises the sampler proper, so the buffer must exceed the cap.
+
+        With 72 or fewer frames the function returns them wholesale and the
+        step/tolerance logic -- the part that decides whether a gap gets filled
+        with a frame from the wrong time -- never runs at all.
+        """
         # Home Assistant was off for the middle eight hours of the window.
         frames = [
-            (NOW - timedelta(hours=h), f"/frames/{h}.gif")
-            for h in list(range(0, 8)) + list(range(16, 24))
+            (NOW - timedelta(minutes=5 * i), f"/frames/{i}.gif")
+            for i in range(288)
+            if not 8 * 60 <= 5 * i < 16 * 60
         ]
+        self.assertGreater(len(frames), 72)
         chosen = select_frames(
             frames, window=timedelta(hours=24), max_frames=72, now=NOW
         )
         self.assertEqual(len(set(chosen)), len(chosen))
-        self.assertLessEqual(len(chosen), len(frames))
+        # The gap is a third of the window, so a sampler that filled it with
+        # the nearest available frame would still return the full 72.
+        self.assertLess(len(chosen), 72)
 
     def test_an_empty_buffer_selects_nothing(self):
         self.assertEqual([], select_frames(
             [], window=timedelta(hours=24), max_frames=72, now=NOW
         ))
+
+    def test_frames_outside_the_window_are_excluded(self):
+        """A small buffer must not skip the window check.
+
+        Pruning is what normally keeps the directory inside the window, and it
+        can be behind -- a radar site stuck on one scan, or an entity that has
+        just found an old directory on disk.  Handing those frames to the
+        encoder would build a loop from the wrong day and then report it as
+        covering the configured window.
+        """
+        stale = [
+            (NOW - timedelta(days=5) + timedelta(minutes=10 * i), f"/old/{i}.gif")
+            for i in range(10)
+        ]
+        self.assertEqual([], select_frames(
+            stale, window=timedelta(hours=6), max_frames=72, now=NOW
+        ))
+
+    def test_a_mixed_buffer_keeps_only_the_frames_in_window(self):
+        recent = self._frames(4, step_minutes=30)
+        stale = [(NOW - timedelta(days=2), "/old/x.gif")]
+        chosen = select_frames(
+            stale + recent, window=timedelta(hours=6), max_frames=72, now=NOW
+        )
+        self.assertEqual([path for _, path in recent], chosen)
+
+    def test_frames_dated_in_the_future_are_not_selected(self):
+        frames = self._frames(4, step_minutes=10) + [
+            (NOW + timedelta(hours=3), "/future/x.gif")
+        ]
+        chosen = select_frames(
+            frames, window=timedelta(hours=6), max_frames=72, now=NOW
+        )
+        self.assertNotIn("/future/x.gif", chosen)
 
 
 @unittest.skipUnless(PIL_AVAILABLE, "Pillow is required to assemble a GIF")
@@ -300,11 +362,21 @@ class TestAssembleGif(unittest.TestCase):
             paths.append(path)
         return paths
 
-    def _open(self, data):
+    def _open(self, loop):
+        """Write an assembled loop out and reopen it as an image."""
         out = os.path.join(self._tmp.name, "out.gif")
         with open(out, "wb") as handle:
-            handle.write(data)
+            handle.write(loop.data)
         return Image.open(out)
+
+    def test_the_result_names_the_frames_it_used(self):
+        """Callers describe the loop from this, so it must be the truth."""
+        paths = self._frames([(253, 0, 0), (2, 253, 2), (3, 0, 244)])
+        broken = os.path.join(self._tmp.name, "broken.gif")
+        with open(broken, "wb") as handle:
+            handle.write(b"not a gif")
+        loop = assemble_gif(paths + [broken])
+        self.assertEqual(paths, list(loop.paths))
 
     def test_every_frame_keeps_its_own_colour(self):
         """The regression that matters.
@@ -340,9 +412,9 @@ class TestAssembleGif(unittest.TestCase):
 
     def test_the_loop_repeats_and_holds_on_the_newest_frame(self):
         paths = self._frames([(253, 0, 0), (2, 253, 2), (3, 0, 244)])
-        result = self._open(assemble_gif(
-            paths, frame_ms=120, last_frame_ms=1500
-        ))
+        loop = assemble_gif(paths, frame_ms=120, last_frame_ms=1500)
+        result = self._open(loop)
+        self.assertEqual(paths, list(loop.paths))
         durations = []
         for index in range(result.n_frames):
             result.seek(index)
@@ -386,23 +458,32 @@ class TestAssembleGif(unittest.TestCase):
     def test_an_oversized_loop_is_rebuilt_with_fewer_frames(self):
         paths = self._frames([c for c in SCALE], size=(120, 90))
         full = assemble_gif(paths)
-        halved = assemble_gif(paths, max_bytes=len(full) - 1)
+        halved = assemble_gif(paths, max_bytes=len(full.data) - 1)
         self.assertIsNotNone(halved)
-        self.assertLess(len(halved), len(full))
+        self.assertLess(len(halved.data), len(full.data))
+        # Thinning must count back from the newest frame, not forward from the
+        # oldest: with an even frame count, every-other-from-the-front drops
+        # the current scan and the hold lands on a stale one.
+        self.assertIn(paths[-1], halved.paths)
 
     def test_a_loop_that_cannot_be_shrunk_enough_is_abandoned(self):
         paths = self._frames([c for c in SCALE], size=(120, 90))
         self.assertIsNone(assemble_gif(paths, max_bytes=1))
 
     def test_frames_of_differing_sizes_are_still_combined(self):
-        """NOAA has changed product dimensions before; old frames still count."""
+        """NOAA has changed product dimensions before; old frames still count.
+
+        The newest frame sets the size. Taking it from the oldest would mean
+        that after a product change every new full-resolution scan was scaled
+        back down to the superseded dimensions for a whole window.
+        """
         paths = self._frames([(253, 0, 0), (2, 253, 2)])
         odd = os.path.join(self._tmp.name, "odd.gif")
         _write_frame(odd, (3, 0, 244), size=(80, 60))
         paths.append(odd)
         result = self._open(assemble_gif(paths))
         self.assertEqual(3, result.n_frames)
-        self.assertEqual((60, 40), result.size)
+        self.assertEqual((80, 60), result.size)
 
 
 class TestAssembleWithoutPillow(unittest.TestCase):

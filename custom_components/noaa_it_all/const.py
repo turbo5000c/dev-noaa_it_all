@@ -124,7 +124,11 @@ RADAR_LOOP_BACKGROUND = (0, 0, 0)
 # that changing the duration re-samples from real history instead of starting
 # over.  That is ~144 files, a few MB, per radar site.
 RADAR_FRAME_DIR = "radar_frames"
-RADAR_FRAME_MAX_FILES = 200  # backstop against a clock jump filling the disk
+RADAR_FRAME_MAX_FILES = 200  # backstop against a directory growing unbounded
+# A frame dated beyond now + this is the product of a wrong clock rather than a
+# scan we have not reached yet.  Ageing never reaches such a frame, so it is
+# discarded outright; the slack absorbs ordinary skew between us and NOAA.
+RADAR_FRAME_FUTURE_SLACK_MINUTES = 60
 
 # API endpoints
 NWS_SRF_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=SRF&format=TXT"

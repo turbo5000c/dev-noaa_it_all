@@ -19,10 +19,12 @@ import io
 import logging
 import os
 import shutil
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 from .const import (
+    RADAR_FRAME_FUTURE_SLACK_MINUTES,
     RADAR_FRAME_MAX_FILES,
     RADAR_LOOP_BACKGROUND,
     RADAR_LOOP_FRAME_MS,
@@ -38,6 +40,12 @@ except ImportError:  # pragma: no cover - Pillow ships with Home Assistant core
     PIL_AVAILABLE = False
 
 _LOGGER = logging.getLogger(__name__)
+
+# What ``assemble_gif`` hands back: the encoded animation, and the frames it
+# actually used.  The caller needs the second part to describe the loop
+# honestly -- a frame dropped as unreadable, or shed to get under the size
+# limit, is not in the animation and must not be counted as though it were.
+RadarLoop = namedtuple("RadarLoop", "data paths")
 
 # Sorts lexicographically in the same order it sorts chronologically, which is
 # what lets the directory listing double as the index.
@@ -191,6 +199,12 @@ class RadarFrameStore:
             return 0
 
         cutoff = now - window
+        # A frame dated in the future is the product of a wrong clock -- either
+        # ours when it was written, or NOAA's Last-Modified.  Ageing cannot
+        # reach it, so without an upper bound it would outlive every real frame
+        # and hold the loop on a set that never updates.  A little slack
+        # absorbs ordinary clock skew.
+        horizon = now + timedelta(minutes=RADAR_FRAME_FUTURE_SLACK_MINUTES)
         removed = 0
         keep = []
         for name in entries:
@@ -199,14 +213,14 @@ class RadarFrameStore:
             # Anything that is not a frame we can date -- an abandoned .tmp, a
             # file someone dropped in by hand -- is not useful and cannot be
             # aged out later, so it goes now.
-            if timestamp is None or timestamp < cutoff:
+            if timestamp is None or timestamp < cutoff or timestamp > horizon:
                 removed += self._unlink(path)
                 continue
             keep.append((timestamp, path))
 
-        # A clock jump can date frames far into the future, where the cutoff
-        # will not reach them for as long as the clock is wrong.  Cap the count
-        # so that cannot quietly consume the disk.
+        # Backstop against a directory growing without bound for any reason the
+        # window did not catch.  Frames are now known to be inside it, so
+        # trimming the oldest is the right end.
         if len(keep) > RADAR_FRAME_MAX_FILES:
             keep.sort(key=lambda item: item[0])
             for _, path in keep[: len(keep) - RADAR_FRAME_MAX_FILES]:
@@ -259,8 +273,18 @@ def select_frames(frames, *, window: timedelta, max_frames: int, now: datetime):
     """
     if not frames or max_frames < 1:
         return []
-    if len(frames) <= max_frames:
-        return [path for _, path in frames]
+
+    # Filter by the window first.  Skipping straight to "few enough frames,
+    # take them all" would put frames from outside the requested window into
+    # the loop whenever pruning had not caught up -- and then report them as
+    # the window it covers.
+    cutoff = now - window
+    inside = [item for item in frames if cutoff <= item[0] <= now]
+    if not inside:
+        return []
+    if len(inside) <= max_frames:
+        return [path for _, path in inside]
+    frames = inside
 
     step = window / max_frames
     tolerance = step / 2
@@ -351,16 +375,27 @@ def _encode(paths, *, frame_ms, last_frame_ms, background):
     # settled before encoding starts rather than discovered during it.
     usable = [path for path in paths if _probe(path) is not None]
 
+    # The newest frame sets the dimensions everything else is scaled to.  Using
+    # the oldest instead would mean that after NOAA changed a product's size,
+    # every new full-resolution scan was squeezed back down to the old one for
+    # a whole window -- degrading the frames that matter to preserve the ones
+    # about to age out.
+    size = None
+    while usable:
+        size = _probe(usable[-1])
+        if size is not None:
+            break
+        usable.pop()
+
     first = None
     while usable:
-        first = _load_frame(usable[0], None, background)
+        first = _load_frame(usable[0], size, background)
         if first is not None:
             break
         # Header parsed but the pixels did not: drop it and take the next.
         usable.pop(0)
-    if first is None or len(usable) < 2:
+    if first is None or size is None or len(usable) < 2:
         return None
-    size = first.size
 
     # One palette for the whole animation.  Left to itself the GIF writer takes
     # frame one's palette as the global table and then remaps every later frame
@@ -409,7 +444,7 @@ def _encode(paths, *, frame_ms, last_frame_ms, background):
         # table above for no useful gain once the table is already minimal.
         optimize=False,
     )
-    return buffer.getvalue(), len(usable)
+    return RadarLoop(buffer.getvalue(), usable)
 
 
 def assemble_gif(
@@ -420,7 +455,11 @@ def assemble_gif(
     max_bytes: int = RADAR_LOOP_MAX_BYTES,
     background=RADAR_LOOP_BACKGROUND,
 ):
-    """Return animated GIF bytes for ``paths``, or None if one cannot be made.
+    """Return a :class:`RadarLoop`, or None if one cannot be made.
+
+    The result carries the frames actually encoded as well as the bytes, so the
+    caller can describe the animation truthfully rather than assuming it got
+    everything it asked for.
 
     Synchronous and CPU-bound -- callers run it in an executor.  Every failure
     is None rather than an exception, because the caller's response to "no loop
@@ -441,34 +480,41 @@ def assemble_gif(
         )
         if result is None:
             return None
-        data, count = result
-        if len(data) > max_bytes:
+        if len(result.data) > max_bytes:
             # Rather than push something absurd through the image proxy, halve
             # the frame count and try once more.  Sampling every other frame
             # keeps the window the same length and only coarsens it.
+            #
+            # Counted back from the end, not forward from the start: with an
+            # even number of frames, every other one from the front excludes
+            # the last, which would leave the animation ending -- and holding
+            # -- on a scan that is not the current one.
+            thinned = paths[::-2][::-1]
             _LOGGER.warning(
                 "The radar loop came to %d bytes over the %d byte limit; "
-                "rebuilding it with half the frames",
-                len(data), max_bytes,
+                "rebuilding it with %d of %d frames",
+                len(result.data), max_bytes, len(thinned), len(paths),
             )
             result = _encode(
-                paths[::2],
+                thinned,
                 frame_ms=frame_ms,
                 last_frame_ms=last_frame_ms,
                 background=background,
             )
             if result is None:
                 return None
-            data, count = result
-            if len(data) > max_bytes:
+            if len(result.data) > max_bytes:
                 _LOGGER.warning(
                     "The radar loop is still %d bytes; falling back to NOAA's "
-                    "own loop", len(data),
+                    "own loop", len(result.data),
                 )
                 return None
     except Exception as err:  # noqa: BLE001 - a bad frame must not break the entity
         _LOGGER.warning("Could not assemble the radar loop: %s", err)
         return None
 
-    _LOGGER.debug("Assembled a %d frame radar loop (%d bytes)", count, len(data))
-    return data
+    _LOGGER.debug(
+        "Assembled a %d frame radar loop (%d bytes)",
+        len(result.paths), len(result.data),
+    )
+    return result

@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the card shows NOAA's own loop instead, so it is never blank and never worse than before.
   - **Frames survive restarts**, stored as one small GIF per scan under
     `<config>/noaa_it_all/radar_frames/<RADAR_SITE>/`. Budget a few megabytes per radar site.
-    Anything outside the window is pruned on every refresh, and removing the integration deletes
-    the directory — unless another configured office shares the radar site.
+    Anything outside the window — or dated in the future by a wrong clock — is pruned on every
+    refresh. The directory is removed when the integration is deleted, when the entry is switched
+    to another forecast office, and when the option is set back to `0`, unless another configured
+    office is still building a loop from the same radar site.
   - **The animation is larger than NOAA's**, and every open dashboard re-downloads it whenever it
     changes. A 24-hour loop is capped at 72 frames (one every 20 minutes) and plays through in
     about ten seconds; shorter windows are proportionally finer, with a 6-hour loop keeping roughly
