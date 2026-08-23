@@ -5,7 +5,60 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.3] - Current
+## [0.6.0] - Current
+
+### Added
+- **The radar loop can now cover up to 24 hours instead of NOAA's fixed 50 minutes.** NOAA
+  publishes a ready-made animation at `{SITE}_loop.gif`, but it is fixed at ten frames covering
+  roughly 50 minutes, and only those ten frames exist on its server — so a longer loop cannot be
+  downloaded, it has to be collected. The Radar Loop entity now fetches the latest single scan on
+  each refresh, files it under the time NOAA published it, and assembles the animation itself from
+  an evenly time-spaced sample of what it holds.
+
+  Set the window under **Settings → Devices & Services → NOAA It All → Configure**, which gained a
+  third step. It defaults to **24 hours**; `0` restores the previous behaviour exactly — NOAA's own
+  loop, proxied unchanged, with nothing written to disk.
+
+  Things worth knowing:
+  - **The loop fills in over time.** A freshly configured loop is only as long as the history
+    collected so far and reaches its full length after that many hours of uptime. Below six frames
+    the card shows NOAA's own loop instead, so it is never blank and never worse than before.
+  - **Frames survive restarts**, stored as one small GIF per scan under
+    `<config>/noaa_it_all/radar_frames/<RADAR_SITE>/`. Budget a few megabytes per radar site.
+    Anything outside the window — or dated in the future by a wrong clock — is pruned on every
+    refresh. The directory is removed when the integration is deleted, when the entry is switched
+    to another forecast office, and when the option is set back to `0`, unless another configured
+    office is still building a loop from the same radar site.
+  - **The animation is larger than NOAA's**, and every open dashboard re-downloads it whenever it
+    changes. A 24-hour loop is capped at 72 frames (one every 20 minutes) and plays through in
+    about ten seconds; shorter windows are proportionally finer, with a 6-hour loop keeping roughly
+    one frame per scan.
+  - Frames are identified by `Last-Modified` — the time NOAA published the scan — which puts them
+    on the real volume-scan cadence rather than on our refresh boundary, and makes two refreshes
+    that see the same scan resolve to the same file. Hashing the image bytes would have been
+    actively wrong: two consecutive scans of a clear sky are genuinely identical, so a quiet night
+    would collapse into a single frame and the loop would cut straight from "clear" to "storm" with
+    no sense of time passing.
+  - Every failure — too few frames yet, Pillow missing, assembly failing, a disk that will not take
+    the frame — falls back to NOAA's own loop, and no failure path changes the picture already on
+    screen.
+- **The Radar Loop entity exposes what it is actually showing.** `loop_mode` is `local` when the
+  animation was built here and `upstream` when it is NOAA's, alongside `loop_hours`, `frame_count`,
+  `window_start` and `window_end` — so a loop quietly shorter than configured is visible from a
+  template rather than only from the logs.
+
+### Changed
+- **The locally built loop is opaque where NOAA's is transparent.** Source frames are transparent
+  overlays that each carry their own palette, and reconciling per-frame transparency across
+  differing palettes is the most reliable way to produce a psychedelic radar loop. Frames are
+  composited onto a solid black background before being combined. Cards that relied on the radar
+  loop being transparent over a custom background will see black instead; set the option to `0` to
+  keep NOAA's transparent animation.
+- **Cached image validators are only offered back to the URL they came from.** The radar loop
+  entity fetches two different resources, and an `ETag` from the single frame must never be sent as
+  a validator for the animation — a server answering `304` to that would hand back the wrong image.
+
+## [0.5.3] - Previous
 
 ### Fixed
 - **A network blip no longer blanks the NOAA image cards.** Every image entity's `async_image()`

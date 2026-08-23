@@ -57,6 +57,7 @@ HURRICANE_COORDINATOR_KEY = "_hurricane_coordinator"
 CONF_OFFICE_CODE = "office_code"
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
+CONF_RADAR_LOOP_HOURS = "radar_loop_hours"
 
 # Default values
 DEFAULT_SCAN_INTERVAL = 10  # minutes
@@ -83,6 +84,51 @@ IMAGE_FAILURE_ERROR_AFTER = 6  # consecutive failed refreshes (~1 hour)
 # coordinators) and of Home Assistant's own 10s image-proxy budget.
 IMAGE_FETCH_TIMEOUT = 20  # seconds
 IMAGE_MAX_BYTES = 20 * 1024 * 1024  # refuse absurd payloads rather than cache them
+
+# -------------------------------------------------------------------
+# Radar loop
+# -------------------------------------------------------------------
+# NOAA publishes a ready-made radar animation, but it is fixed at ten frames
+# covering roughly fifty minutes, which is long enough to see that it is
+# raining and too short to see where the rain came from.  NOAA also keeps only
+# those ten frames on the server, so a longer loop cannot be downloaded -- it
+# has to be accumulated here, one frame per refresh, and assembled locally.
+#
+# The window is measured in hours and 0 means "serve NOAA's own loop
+# unchanged", which is both the escape hatch and the behaviour every release
+# before this one had.
+DEFAULT_RADAR_LOOP_HOURS = 24
+RADAR_LOOP_MAX_HOURS = 24
+
+# The assembled animation is re-downloaded by every open dashboard each time it
+# changes, so frame count is a bandwidth and memory decision, not a fidelity
+# one.  Seventy-two frames spreads a 24-hour window over 20-minute steps: storm
+# motion stays legible, the GIF lands around 1-2 MB, and a cycle plays in about
+# ten seconds, which is roughly as long as anyone watches a loop.  Shorter
+# windows get proportionally finer steps from the same cap -- a six-hour loop
+# works out at one frame per five minutes, i.e. every scan NOAA publishes.
+RADAR_LOOP_MAX_FRAMES = 72
+RADAR_LOOP_MIN_FRAMES = 6  # below this the local loop is worse than NOAA's
+RADAR_LOOP_FRAME_MS = 120  # browsers clamp anything under ~20ms
+RADAR_LOOP_LAST_FRAME_MS = 1500  # hold on "now" so the loop reads as a loop
+RADAR_LOOP_MAX_BYTES = 8 * 1024 * 1024
+
+# Frames are composited onto an opaque background before being combined.  The
+# source frames are transparent overlays with a palette each, and reconciling
+# per-frame transparency across differing palettes is the single most reliable
+# way to produce a psychedelic radar loop.  Compositing removes the problem.
+RADAR_LOOP_BACKGROUND = (0, 0, 0)
+
+# Frames live in <config>/noaa_it_all/radar_frames/<SITE>/.  Every polled frame
+# inside the window is kept, not just the ones the current window displays, so
+# that changing the duration re-samples from real history instead of starting
+# over.  That is ~144 files, a few MB, per radar site.
+RADAR_FRAME_DIR = "radar_frames"
+RADAR_FRAME_MAX_FILES = 200  # backstop against a directory growing unbounded
+# A frame dated beyond now + this is the product of a wrong clock rather than a
+# scan we have not reached yet.  Ageing never reaches such a frame, so it is
+# discarded outright; the slack absorbs ordinary skew between us and NOAA.
+RADAR_FRAME_FUTURE_SLACK_MINUTES = 60
 
 # API endpoints
 NWS_SRF_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=SRF&format=TXT"
