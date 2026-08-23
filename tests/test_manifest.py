@@ -110,12 +110,48 @@ class TestUserAgent(unittest.TestCase):
         self.assertIn(
             f"{self.manifest['domain']}/{self.manifest['version']}",
             self.user_agent,
-            "User-Agent version is out of step with manifest.json — bump both",
+            "User-Agent version is out of step with manifest.json",
         )
+
+    def test_version_is_read_from_the_manifest_not_hardcoded(self):
+        """Bumping a release must not require remembering a second place.
+
+        ``test_version_matches_the_manifest`` cannot catch a regression here on
+        its own: the moment someone pastes the current version back in as a
+        literal it still passes, right up until the next bump. So assert the
+        string is actually interpolated.
+        """
+        with open(os.path.join(_COMPONENT, "const.py"), encoding="utf-8") as f:
+            assignment = next(
+                line for line in f if line.startswith("USER_AGENT")
+            )
+        self.assertNotRegex(
+            assignment,
+            r"\d+\.\d+",
+            f"User-Agent must build its version from the manifest: {assignment.strip()}",
+        )
+        self.assertIn("VERSION", assignment)
+
+    def test_manifest_reader_returns_the_real_manifest(self):
+        """The reader behind VERSION/DOCUMENTATION_URL must actually work."""
+        sys.path.insert(0, _COMPONENT)
+        try:
+            import const
+        finally:
+            sys.path.remove(_COMPONENT)
+        self.assertEqual(const._manifest(), self.manifest)
 
     def test_carries_contact_information(self):
         """NOAA asks for a website or email so they can make contact."""
         self.assertIn(self.manifest["documentation"], self.user_agent)
+
+    def test_documentation_url_is_read_from_the_manifest_not_hardcoded(self):
+        with open(os.path.join(_COMPONENT, "const.py"), encoding="utf-8") as f:
+            assignment = next(
+                line for line in f if line.startswith("USER_AGENT")
+            )
+        self.assertNotIn("https://", assignment)
+        self.assertIn("DOCUMENTATION_URL", assignment)
 
     def test_does_not_point_at_the_dev_repo(self):
         self.assertNotIn("dev-noaa_it_all", self.user_agent)

@@ -1,6 +1,36 @@
 """Constants for NOAA Integration."""
 
+import json
+from pathlib import Path
+
 DOMAIN = "noaa_it_all"
+
+
+def _manifest() -> dict:
+    """Return the parsed ``manifest.json`` sitting next to this file.
+
+    Read here so the version and documentation URL have exactly one home and
+    a release bump does not have to be remembered in two places. Home
+    Assistant imports custom integration modules in an executor thread, and
+    this is a single small local file, so the read does not block the event
+    loop.
+    """
+    try:
+        with open(Path(__file__).parent / "manifest.json", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        # A broken manifest means Home Assistant will not load the
+        # integration at all; fall back to sentinels rather than raising an
+        # obscure error while merely importing constants.
+        return {}
+
+
+_MANIFEST = _manifest()
+
+VERSION = _MANIFEST.get("version") or "0.0.0"
+DOCUMENTATION_URL = (
+    _MANIFEST.get("documentation") or "https://github.com/dawg-io/noaa_it_all"
+)
 
 # Global (non office-specific) device identifiers.
 # Hurricane data comes from the National Hurricane Center and is global,
@@ -35,8 +65,10 @@ REQUEST_TIMEOUT = 30  # seconds
 # and asks that it be unique to the application, with a website or email so
 # they can make contact instead of simply blocking traffic they cannot place.
 # The version is part of the string so an old release can be told apart from a
-# fixed one; tests/test_manifest.py keeps it in step with manifest.json.
-USER_AGENT = "noaa_it_all/0.5.3 (+https://github.com/dawg-io/noaa_it_all)"
+# fixed one -- built from manifest.json so bumping the release is enough.
+# To add a contact address later, put it in the parenthesised part alongside
+# the URL: f"... (+{DOCUMENTATION_URL}, you@example.com)".
+USER_AGENT = f"{DOMAIN}/{VERSION} (+{DOCUMENTATION_URL})"
 
 # Image entities keep the last successfully fetched frame and re-fetch on a
 # background timer, so a transient upstream failure leaves the previous
