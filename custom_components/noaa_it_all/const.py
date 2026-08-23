@@ -33,6 +33,20 @@ DEFAULT_SCAN_INTERVAL = 10  # minutes
 REQUEST_TIMEOUT = 30  # seconds
 USER_AGENT = "HomeAssistant/NOAA-Integration"
 
+# Image entities keep the last successfully fetched frame and re-fetch on a
+# background timer, so a transient upstream failure leaves the previous
+# picture on screen.  These thresholds keep the log quiet while that is
+# happening: a blip stays at debug level, a short outage warns once, and only
+# a sustained outage is reported as an error (and then only periodically).
+IMAGE_FAILURE_WARN_AFTER = 3   # consecutive failed refreshes (~30 min)
+IMAGE_FAILURE_ERROR_AFTER = 6  # consecutive failed refreshes (~1 hour)
+
+# Images are fetched in the background rather than while serving an HTTP
+# request, so this is independent of REQUEST_TIMEOUT (which belongs to the
+# coordinators) and of Home Assistant's own 10s image-proxy budget.
+IMAGE_FETCH_TIMEOUT = 20  # seconds
+IMAGE_MAX_BYTES = 20 * 1024 * 1024  # refuse absurd payloads rather than cache them
+
 # API endpoints
 NWS_SRF_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=SRF&format=TXT"
 NWS_API_BASE = "https://api.weather.gov"

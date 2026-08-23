@@ -1,19 +1,37 @@
-import aiohttp
+"""NOAA image entities.
+
+Every entity here follows the same shape, provided by :class:`NoaaImageEntity`:
+the image is fetched from NOAA on a background timer and the last frame that
+came back successfully is kept in memory.  ``async_image()`` only ever hands
+back that cached copy, so a transient upstream failure -- a DNS timeout, an
+unreachable network, a 503 from NOAA -- leaves the previous picture on the
+dashboard instead of blanking the tile.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import logging
+from datetime import timedelta
+
+import aiohttp
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from datetime import timedelta, datetime
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_OFFICE_CODE, DEFAULT_SCAN_INTERVAL, DOMAIN,
     HURRICANE_DEVICE_ID, HURRICANE_DEVICE_NAME,
     HURRICANE_IMAGES_ADDED_KEY,
+    IMAGE_FAILURE_ERROR_AFTER, IMAGE_FAILURE_WARN_AFTER,
+    IMAGE_FETCH_TIMEOUT, IMAGE_MAX_BYTES,
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
-    OFFICE_RADAR_SITES, REQUEST_TIMEOUT,
+    OFFICE_RADAR_SITES, USER_AGENT,
 )
 from .entry_config import resolve_entry_config
 
@@ -32,6 +50,19 @@ HURRICANE_OUTLOOK_URL = 'https://www.nhc.noaa.gov/xgtwo/two_atl_2d0.png'
 # NOAA GOES Satellite Image Sources
 GOES_AIRMASS_URL = 'https://cdn.star.nesdis.noaa.gov/GOES19/ABI/CONUS/AirMass/1250x750.jpg'
 GOES_GEOCOLOR_URL = 'https://cdn.star.nesdis.noaa.gov/GOES19/ABI/CONUS/GEOCOLOR/1250x750.jpg'
+
+# Failures that mean "the network or NOAA is having a moment" rather than
+# "this integration is asking for the wrong thing".  ``asyncio.TimeoutError``
+# has to be listed explicitly: a ``ClientTimeout`` expiry raises it, and it is
+# *not* an ``aiohttp.ClientError``, so it would otherwise be reported as an
+# unexpected error.
+_TRANSIENT_FETCH_ERRORS = (
+    aiohttp.ClientConnectorError,   # DNS failure, refused, network unreachable
+    aiohttp.ClientOSError,
+    aiohttp.ServerDisconnectedError,
+    aiohttp.ServerTimeoutError,
+    asyncio.TimeoutError,
+)
 
 
 def _hurricane_device_info() -> DeviceInfo:
@@ -134,28 +165,307 @@ async def async_setup_entry(
     else:
         _LOGGER.warning("No radar site mapping found for office %s", office_code)
 
-    async_add_entities(entities, True)
+    # No ``update_before_add``: the first fetch is scheduled by
+    # ``async_added_to_hass`` once the entity actually exists, so a slow or
+    # unreachable NOAA can never hold up setting up the config entry.
+    async_add_entities(entities)
 
 
-class GeoelectricFieldImageEntity(ImageEntity):
-    """Representation of the Geoelectric Field Image."""
+class NoaaImageEntity(ImageEntity):
+    """Base class for the NOAA image entities.
 
-    def __init__(self, hass, office_code):
+    Subclasses supply the upstream URL, the content type and a short label
+    used in log messages; everything else -- fetching, caching, failure
+    handling and the refresh timer -- lives here.
+
+    The important behaviour is that ``async_image()`` never performs I/O.  It
+    hands back whatever was last fetched successfully, and a failed fetch
+    changes nothing at all, so a transient upstream failure is invisible to
+    the dashboard: the previous frame stays on screen until a later refresh
+    replaces it.
+
+    Subclasses must assign anything ``_base_url()`` reads *before* calling
+    ``super().__init__(hass)``; the base constructor resolves the first URL.
+    """
+
+    # Overridden per subclass; Home Assistant defaults everything to JPEG,
+    # which is wrong for the PNG and GIF sources below.
+    _attr_content_type = "image/jpeg"
+
+    # Short human-readable subject used in log messages, e.g. "aurora forecast".
+    _log_label = "NOAA"
+
+    # Upstream URL without the cache-busting query string.  Subclasses whose
+    # URL depends on instance state override ``_base_url()`` instead.
+    _url = ""
+
+    def __init__(self, hass) -> None:
         """Initialize the image entity."""
         super().__init__(hass)
         self.hass = hass
-        self._office_code = office_code
+        # Note the name: Home Assistant's own ImageEntity owns ``_cached_image``
+        # and stores an ``Image`` dataclass in it, so the raw bytes need a
+        # attribute of their own.
+        self._last_image_bytes: bytes | None = None
+        self._attr_image_last_updated = None
+        self._last_etag: str | None = None
+        self._last_modified: str | None = None
+        self._failure_count = 0
         self._image_url = self.get_cache_busted_url()
+
+    # -- URL handling ----------------------------------------------------
+
+    def _base_url(self) -> str:
+        """Return the upstream URL without cache busting."""
+        return self._url
+
+    def get_cache_busted_url(self) -> str:
+        """Return the upstream URL with a coarse timestamp appended.
+
+        The timestamp is rounded down to a 10-minute bucket: NOAA does not
+        publish these images more often than that, and a coarse bucket keeps
+        upstream and CDN caching effective while still defeating a stale
+        cached copy.
+        """
+        timestamp = dt_util.utcnow().strftime('%Y%m%d%H%M')
+        timestamp = timestamp[:-1] + '0'
+        return f"{self._base_url()}?t={timestamp}"
+
+    # -- Home Assistant plumbing -----------------------------------------
+
+    async def async_added_to_hass(self) -> None:
+        """Fetch the first frame and start the background refresh timer."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass, self._async_scheduled_refresh, SCAN_INTERVAL
+            )
+        )
+        # Kick off the first fetch as a scheduled call rather than awaiting it
+        # here: entity setup must not block on a NOAA round trip, and during
+        # the outages this class guards against that round trip is precisely
+        # what hangs.
+        self.async_on_remove(
+            async_call_later(self.hass, 0, self._async_scheduled_refresh)
+        )
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Return the picture URL, preferring Home Assistant's image proxy.
+
+        Once a frame has been fetched the browser is pointed at
+        ``/api/image_proxy/...``, which is what lets the cached copy survive a
+        NOAA outage.  Before that first fetch ``image_last_updated`` is None
+        and the base class returns None, which would render an empty card --
+        so fall back to the upstream URL, on the grounds that the browser may
+        well have working connectivity when Home Assistant does not.  That is
+        exactly the case when Home Assistant restarts while its own resolver
+        is broken.
+        """
+        return super().entity_picture or self._image_url
+
+    async def async_image(self) -> bytes | None:
+        """Return the bytes of the most recently fetched image.
+
+        Deliberately does no I/O: a refresh failure must not be able to blank
+        a picture we already have, and a slow NOAA must not be able to blow
+        Home Assistant's 10-second image-proxy budget.  ``None`` (rather than
+        ``b""``) is returned when nothing has ever been fetched, matching the
+        upstream signature.
+        """
+        return self._last_image_bytes
+
+    def _write_state_if_added(self) -> None:
+        """Push new state, but only once Home Assistant has added the entity.
+
+        A refresh that completes before the entity is added -- or after it has
+        been removed -- must not raise ``NoEntitySpecifiedError``, which is
+        the startup-error regression fixed in c7ed6e6.
+        """
+        if self.hass is None or self.entity_id is None:
+            return
+        self.async_write_ha_state()
+
+    # -- Fetching --------------------------------------------------------
+
+    async def _async_scheduled_refresh(self, now=None) -> None:
+        """Refresh the cached image and publish the new state if it changed."""
+        if await self._async_update_cache():
+            self._write_state_if_added()
+
+    async def _async_update_cache(self) -> bool:
+        """Fetch the image and cache it.
+
+        Returns True when the cached bytes actually changed, so the caller
+        knows whether a state write is warranted.  A failed fetch changes
+        nothing at all -- neither the cached bytes nor ``image_last_updated``
+        -- which is what keeps the previous frame on the dashboard.
+        """
+        content = await self._async_fetch_image()
+        if content is None:
+            return False
+
+        if self._failure_count >= IMAGE_FAILURE_WARN_AFTER:
+            _LOGGER.info(
+                "The %s image is available again after %d failed attempts",
+                self._log_label, self._failure_count,
+            )
+        self._failure_count = 0
+
+        if content == self._last_image_bytes:
+            _LOGGER.debug(
+                "The %s image is unchanged (%d bytes)", self._log_label, len(content)
+            )
+            return False
+
+        self._last_image_bytes = content
+        self._attr_image_last_updated = dt_util.utcnow()
+        _LOGGER.debug(
+            "Fetched the %s image (%d bytes)", self._log_label, len(content)
+        )
+        return True
+
+    def _conditional_headers(self) -> dict[str, str]:
+        """Return revalidation headers for the copy already in hand.
+
+        The refresh runs on a timer whether or not anyone is looking at the
+        dashboard, so revalidating keeps the steady-state cost close to zero
+        for sources that publish infrequently.
+        """
+        headers = {"User-Agent": USER_AGENT}
+        if self._last_image_bytes is None:
+            return headers
+        if self._last_etag:
+            headers["If-None-Match"] = self._last_etag
+        elif self._last_modified:
+            headers["If-Modified-Since"] = self._last_modified
+        return headers
+
+    async def _async_fetch_image(self) -> bytes | None:
+        """Fetch the image from NOAA, returning None on any failure.
+
+        No failure path may touch ``_last_image_bytes``, ``_last_etag``,
+        ``_last_modified`` or ``image_last_updated``.  That invariant is what
+        keeps a blip from blanking the picture.
+        """
+        self._image_url = self.get_cache_busted_url()
+        try:
+            session = async_get_clientsession(self.hass)
+            timeout = aiohttp.ClientTimeout(total=IMAGE_FETCH_TIMEOUT)
+            async with session.get(
+                self._image_url,
+                timeout=timeout,
+                headers=self._conditional_headers(),
+            ) as response:
+                if response.status == 304 and self._last_image_bytes is not None:
+                    _LOGGER.debug(
+                        "The %s image is unchanged upstream (HTTP 304)",
+                        self._log_label,
+                    )
+                    return self._last_image_bytes
+                if response.status != 200:
+                    self._log_failure(
+                        f"HTTP {response.status}",
+                        transient=response.status >= 500,
+                    )
+                    return None
+                content_type = response.headers.get('content-type', '')
+                content_type = content_type.split(';')[0].strip().lower()
+                if 'image' not in content_type:
+                    self._log_failure(
+                        f"expected an image but the content type was {content_type!r}",
+                        transient=False,
+                    )
+                    return None
+                content = await response.read()
+                etag = response.headers.get('etag')
+                last_modified = response.headers.get('last-modified')
+        except _TRANSIENT_FETCH_ERRORS as err:
+            self._log_failure(f"{err}" or type(err).__name__, transient=True)
+            return None
+        except aiohttp.ClientError as err:
+            self._log_failure(f"{err}" or type(err).__name__, transient=False)
+            return None
+        except Exception as err:  # noqa: BLE001
+            self._log_failure(f"unexpected error: {err}", transient=False)
+            return None
+
+        if not content:
+            self._log_failure("the response body was empty", transient=False)
+            return None
+        if len(content) > IMAGE_MAX_BYTES:
+            self._log_failure(
+                f"the response was {len(content)} bytes, over the "
+                f"{IMAGE_MAX_BYTES} byte limit",
+                transient=False,
+            )
+            return None
+
+        # Serve what NOAA actually sent rather than the class default.
+        self._attr_content_type = content_type
+        self._last_etag = etag
+        self._last_modified = last_modified
+        return content
+
+    def _log_failure(self, reason: str, *, transient: bool) -> None:
+        """Record a failed fetch and log it at a level that fits its duration.
+
+        A NOAA image source being briefly unreachable is normal for a
+        ``cloud_polling`` integration and is not worth an error per blip, so
+        transient failures start at debug while a cached frame is still being
+        served, warn once the outage has lasted a while, and only escalate to
+        error when it is sustained -- and then only periodically.
+
+        A non-transient failure (a 404, a content type that is not an image)
+        means the URL or our expectations are wrong rather than the weather,
+        so it always warns.
+        """
+        self._failure_count += 1
+        count = self._failure_count
+
+        if not transient:
+            level = logging.WARNING
+        elif self._last_image_bytes is None and count < IMAGE_FAILURE_WARN_AFTER:
+            # Nothing to fall back on, so the user does see a blank card.
+            level = logging.WARNING
+        elif count == IMAGE_FAILURE_WARN_AFTER:
+            level = logging.WARNING
+        elif count >= IMAGE_FAILURE_ERROR_AFTER and count % IMAGE_FAILURE_ERROR_AFTER == 0:
+            level = logging.ERROR
+        else:
+            level = logging.DEBUG
+
+        if self._last_image_bytes is None:
+            _LOGGER.log(
+                level,
+                "Could not fetch the %s image (attempt %d, no image cached yet): %s",
+                self._log_label, count, reason,
+            )
+        else:
+            _LOGGER.log(
+                level,
+                "Could not refresh the %s image (attempt %d); still showing the "
+                "copy fetched at %s: %s",
+                self._log_label, count, self._attr_image_last_updated, reason,
+            )
+
+
+class GeoelectricFieldImageEntity(NoaaImageEntity):
+    """Representation of the Geoelectric Field Image."""
+
+    _attr_content_type = "image/png"
+    _log_label = "geoelectric field"
+    _url = BASE_IMAGE_URL
+
+    def __init__(self, hass, office_code):
+        """Initialize the image entity."""
+        self._office_code = office_code
+        super().__init__(hass)
 
     @property
     def name(self):
         """Return the name of the entity."""
         return 'Geoelectric Field Image'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest geoelectric field image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -171,64 +481,23 @@ class GeoelectricFieldImageEntity(ImageEntity):
             manufacturer="NOAA"
         )
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 5-minute intervals for cache busting since NOAA updates aren't more frequent
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        return f"{BASE_IMAGE_URL}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated geoelectric field image URL")
-        except Exception as e:
-            _LOGGER.error("Error during geoelectric field image update: %s", e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s", content_type)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched geoelectric field image (%d bytes)", len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch geoelectric field image: HTTP %d", response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching geoelectric field image: %s", e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching geoelectric field image: %s", e)
-        return b""
-
-
-class AuroraForecastImageEntity(ImageEntity):
+class AuroraForecastImageEntity(NoaaImageEntity):
     """Representation of the aurora Field Image."""
+
+    _attr_content_type = "image/jpeg"
+    _log_label = "aurora forecast"
+    _url = AURORA_URL
 
     def __init__(self, hass, office_code):
         """Initialize the image entity."""
-        super().__init__(hass)
-        self.hass = hass
         self._office_code = office_code
-        self._image_url = self.get_cache_busted_url()
+        super().__init__(hass)
 
     @property
     def name(self):
         """Return the name of the entity."""
         return 'Aurora Forecast Image'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest aurora forecast image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -244,46 +513,8 @@ class AuroraForecastImageEntity(ImageEntity):
             manufacturer="NOAA"
         )
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 5-minute intervals for cache busting since NOAA updates aren't more frequent
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        return f"{AURORA_URL}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated aurora forecast image URL")
-        except Exception as e:
-            _LOGGER.error("Error during aurora forecast image update: %s", e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s", content_type)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched aurora forecast image (%d bytes)", len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch aurora forecast image: HTTP %d", response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching aurora forecast image: %s", e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching aurora forecast image: %s", e)
-        return b""
-
-
-class HurricaneOutlookImageEntity(ImageEntity):
+class HurricaneOutlookImageEntity(NoaaImageEntity):
     """Representation of the Hurricane Outlook Image.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -293,6 +524,9 @@ class HurricaneOutlookImageEntity(ImageEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_content_type = "image/png"
+    _log_label = "hurricane outlook"
+    _url = HURRICANE_OUTLOOK_URL
 
     def __init__(self, hass, office_code=None):
         """Initialize the image entity.
@@ -301,18 +535,11 @@ class HurricaneOutlookImageEntity(ImageEntity):
         unused: this entity is global (NHC).
         """
         super().__init__(hass)
-        self.hass = hass
-        self._image_url = self.get_cache_busted_url()
 
     @property
     def name(self):
         """Return the local entity name."""
         return 'Outlook Image'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest hurricane outlook image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -324,44 +551,8 @@ class HurricaneOutlookImageEntity(ImageEntity):
         """Return device information."""
         return _hurricane_device_info()
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        return f"{HURRICANE_OUTLOOK_URL}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated hurricane outlook image URL")
-        except Exception as e:
-            _LOGGER.error("Error during hurricane outlook image update: %s", e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s", content_type)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched hurricane outlook image (%d bytes)", len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch hurricane outlook image: HTTP %d", response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching hurricane outlook image: %s", e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching hurricane outlook image: %s", e)
-        return b""
-
-
-class RadarBaseReflectivityImageEntity(ImageEntity):
+class RadarBaseReflectivityImageEntity(NoaaImageEntity):
     """Representation of the Radar Base Reflectivity Image for a specific location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -372,24 +563,23 @@ class RadarBaseReflectivityImageEntity(ImageEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_content_type = "image/gif"
 
     def __init__(self, hass, office_code, radar_site):
         """Initialize the radar image entity."""
-        super().__init__(hass)
-        self.hass = hass
         self._office_code = office_code
         self._radar_site = radar_site
-        self._image_url = self.get_cache_busted_url()
+        self._log_label = f"radar base reflectivity for {office_code}"
+        super().__init__(hass)
+
+    def _base_url(self) -> str:
+        """Return the NEXRAD base reflectivity URL for this radar site."""
+        return NWS_RADAR_BASE_URL.format(radar=self._radar_site)
 
     @property
     def name(self):
         """Return the local entity name."""
         return 'Radar Base Reflectivity'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest radar base reflectivity image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -405,51 +595,8 @@ class RadarBaseReflectivityImageEntity(ImageEntity):
             manufacturer="NOAA"
         )
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 10-minute intervals for cache busting since radar updates every 5-10 minutes
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        base_url = NWS_RADAR_BASE_URL.format(radar=self._radar_site)
-        return f"{base_url}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated radar base reflectivity image URL for %s", self._office_code)
-        except Exception as e:
-            _LOGGER.error("Error during radar base reflectivity image update for %s: %s", self._office_code, e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s for radar %s",
-                                        content_type, self._radar_site)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched radar base reflectivity image for %s (%d bytes)",
-                                  self._office_code, len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch radar base reflectivity image for %s: HTTP %d",
-                                    self._office_code, response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching radar base reflectivity image for %s: %s", self._office_code, e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching radar base reflectivity image for %s: %s",
-                          self._office_code, e)
-        return b""
-
-
-class RadarLoopImageEntity(ImageEntity):
+class RadarLoopImageEntity(NoaaImageEntity):
     """Representation of the Radar Loop Image (animated) for a specific location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -459,24 +606,23 @@ class RadarLoopImageEntity(ImageEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_content_type = "image/gif"
 
     def __init__(self, hass, office_code, radar_site):
         """Initialize the radar loop image entity."""
-        super().__init__(hass)
-        self.hass = hass
         self._office_code = office_code
         self._radar_site = radar_site
-        self._image_url = self.get_cache_busted_url()
+        self._log_label = f"radar loop for {office_code}"
+        super().__init__(hass)
+
+    def _base_url(self) -> str:
+        """Return the NEXRAD radar loop URL for this radar site."""
+        return NWS_RADAR_LOOP_URL.format(radar=self._radar_site)
 
     @property
     def name(self):
         """Return the local entity name."""
         return 'Radar Loop'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest radar loop image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -492,52 +638,8 @@ class RadarLoopImageEntity(ImageEntity):
             manufacturer="NOAA"
         )
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 10-minute intervals for cache busting since radar updates every 5-10 minutes
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        base_url = NWS_RADAR_LOOP_URL.format(radar=self._radar_site)
-        return f"{base_url}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated radar loop image URL for %s", self._office_code)
-        except Exception as e:
-            _LOGGER.error("Error during radar loop image update for %s: %s",
-                          self._office_code, e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s for radar %s",
-                                        content_type, self._radar_site)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched radar loop image for %s (%d bytes)",
-                                  self._office_code, len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch radar loop image for %s: HTTP %d",
-                                    self._office_code, response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching radar loop image for %s: %s", self._office_code, e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching radar loop image for %s: %s",
-                          self._office_code, e)
-        return b""
-
-
-class GOESAirMassImageEntity(ImageEntity):
+class GOESAirMassImageEntity(NoaaImageEntity):
     """Representation of the GOES-19 Air Mass RGB Satellite Image.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -547,6 +649,9 @@ class GOESAirMassImageEntity(ImageEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_content_type = "image/jpeg"
+    _log_label = "GOES Air Mass"
+    _url = GOES_AIRMASS_URL
 
     def __init__(self, hass, office_code=None):
         """Initialize the image entity.
@@ -557,18 +662,11 @@ class GOESAirMassImageEntity(ImageEntity):
         tracking images.
         """
         super().__init__(hass)
-        self.hass = hass
-        self._image_url = self.get_cache_busted_url()
 
     @property
     def name(self):
         """Return the local entity name."""
         return 'GOES Air Mass'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest GOES Air Mass image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -580,46 +678,8 @@ class GOESAirMassImageEntity(ImageEntity):
         """Return device information."""
         return _hurricane_device_info()
 
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 5-minute intervals for cache busting since GOES updates every ~5 minutes
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        return f"{GOES_AIRMASS_URL}?t={timestamp}"
 
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated GOES Air Mass image URL")
-        except Exception as e:
-            _LOGGER.error("Error during GOES Air Mass image update: %s", e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s", content_type)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched GOES Air Mass image (%d bytes)", len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch GOES Air Mass image: HTTP %d", response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching GOES Air Mass image: %s", e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching GOES Air Mass image: %s", e)
-        return b""
-
-
-class GOESGeoColorImageEntity(ImageEntity):
+class GOESGeoColorImageEntity(NoaaImageEntity):
     """Representation of the GOES-19 GeoColor Satellite Image.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -629,6 +689,9 @@ class GOESGeoColorImageEntity(ImageEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_content_type = "image/jpeg"
+    _log_label = "GOES GeoColor"
+    _url = GOES_GEOCOLOR_URL
 
     def __init__(self, hass, office_code=None):
         """Initialize the image entity.
@@ -639,18 +702,11 @@ class GOESGeoColorImageEntity(ImageEntity):
         tracking images.
         """
         super().__init__(hass)
-        self.hass = hass
-        self._image_url = self.get_cache_busted_url()
 
     @property
     def name(self):
         """Return the local entity name."""
         return 'GOES Geocolor'
-
-    @property
-    def entity_picture(self):
-        """Return the URL of the latest GOES GeoColor image."""
-        return self._image_url
 
     @property
     def unique_id(self):
@@ -661,41 +717,3 @@ class GOESGeoColorImageEntity(ImageEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return _hurricane_device_info()
-
-    def get_cache_busted_url(self):
-        """Add a timestamp to the URL to prevent caching."""
-        # Use 5-minute intervals for cache busting since GOES updates every ~5 minutes
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M')
-        timestamp = timestamp[:-1] + '0'  # Round to 10-minute intervals
-        return f"{GOES_GEOCOLOR_URL}?t={timestamp}"
-
-    async def async_update(self):
-        """Fetch and update the latest image content asynchronously."""
-        try:
-            # Fetch the image and update with cache busting
-            self._image_url = self.get_cache_busted_url()
-            _LOGGER.debug("Updated GOES GeoColor image URL")
-        except Exception as e:
-            _LOGGER.error("Error during GOES GeoColor image update: %s", e)
-
-    async def async_image(self) -> bytes:
-        """Return the bytes of the latest image."""
-        try:
-            session = async_get_clientsession(self.hass)
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
-            async with session.get(self._image_url, timeout=timeout) as response:
-                if response.status == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'image' not in content_type:
-                        _LOGGER.warning("Expected image content but got: %s", content_type)
-                        return b""
-                    content = await response.read()
-                    _LOGGER.debug("Successfully fetched GOES GeoColor image (%d bytes)", len(content))
-                    return content
-                else:
-                    _LOGGER.warning("Failed to fetch GOES GeoColor image: HTTP %d", response.status)
-        except aiohttp.ClientError as e:
-            _LOGGER.error("Error fetching GOES GeoColor image: %s", e)
-        except Exception as e:
-            _LOGGER.error("Unexpected error fetching GOES GeoColor image: %s", e)
-        return b""

@@ -268,7 +268,9 @@ Visual representations of current conditions:
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
 - **Radar Loop** — Animated NEXRAD radar loop *(image.noaa_{office}_weather_radar_loop)*
 
-> **Tip**: Image entities can be displayed on dashboards using the standard `picture-entity` or `picture-glance` cards. Note that image entities are not polled by Home Assistant: their URL is resolved once when the integration loads, so the picture refreshes only when the browser re-fetches it or the config entry is reloaded.
+> **Tip**: Image entities can be displayed on dashboards using the standard `picture-entity` or `picture-glance` cards.
+>
+> Home Assistant fetches each image from NOAA in the background every 10 minutes and serves it to the browser through its own image proxy (`/api/image_proxy/...`), so the dashboard does not talk to NOAA directly. The most recently fetched frame is kept in memory: if NOAA is briefly unreachable the card keeps showing the last good image rather than going blank, and the outage is logged quietly unless it persists. Each entity's state is the timestamp of the image currently being served, so you can alert on an image going stale.
 
 ## NWS Forecast Offices
 

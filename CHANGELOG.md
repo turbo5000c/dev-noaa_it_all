@@ -5,7 +5,60 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.2] - Current
+## [0.5.3] - Current
+
+### Fixed
+- **A network blip no longer blanks the NOAA image cards.** Every image entity's `async_image()`
+  returned `b""` on any failure, and Home Assistant treats empty bytes as an error and turns them
+  into an HTTP 500 — so a momentary `Cannot connect to host services.swpc.noaa.gov:443 ... [Timeout
+  while contacting DNS servers]` was enough to replace a perfectly good picture with a broken tile.
+  Nothing was cached, so there was nothing to fall back on. The image bytes are now kept in memory
+  and re-served: a failed refresh changes neither the cached frame nor `image_last_updated`, so the
+  previous picture stays on the dashboard until a later refresh replaces it.
+- **Images are fetched on a timer instead of while serving the HTTP request.** All seven entities
+  now fetch in the background every 10 minutes, so a slow NOAA can no longer blow Home Assistant's
+  10-second image-proxy budget, and several dashboard clients asking at once no longer each start
+  their own request. The first fetch is scheduled rather than awaited during setup, so an
+  unreachable NOAA cannot hold up the config entry.
+- **`entity_picture` now points at Home Assistant's image proxy** (`/api/image_proxy/...`) once a
+  frame has been fetched, instead of always sending the browser straight to `services.swpc.noaa.gov`.
+  This is what makes the cache reachable — previously the browser fetched NOAA itself and the
+  entity's own bytes were never used, so the card broke whenever *the browser* could not reach NOAA.
+  Until the first successful fetch the entity still falls back to the upstream URL, so a restart
+  while Home Assistant's own resolver is broken still renders if the browser's network is fine.
+- **A total-request timeout is no longer reported as an unexpected error.** `aiohttp`'s
+  `ClientTimeout` expiry raises `asyncio.TimeoutError`, which is not an `aiohttp.ClientError`, so it
+  fell through to the catch-all arm and logged `Unexpected error fetching ... image`. Timeouts, DNS
+  failures, connection resets and server disconnects are now classified together as transient.
+- **Transient failures no longer log an error per blip.** A `cloud_polling` integration losing its
+  upstream for a minute is normal. Consecutive failures now stay at debug while a cached frame is
+  still being served, warn once the outage has lasted about half an hour, and only escalate to error
+  after roughly an hour — and then only periodically. Recovery logs a single info line. A failure
+  that is *not* transient (a 404, a content type that is not an image) still warns immediately, as
+  does any failure while there is no cached image to show.
+- **The declared content type now matches the actual image format.** Home Assistant defaults every
+  image entity to `image/jpeg`; five of the seven are not JPEGs. The geoelectric field and hurricane
+  outlook images are PNG, both radar images are GIF, and the content type reported by NOAA is
+  adopted when it differs.
+
+### Changed
+- **The seven image entity classes now share a `NoaaImageEntity` base.** Each was a near-identical
+  copy of the same ~70 lines, which is why the `b""` bug existed in seven places at once. Subclasses
+  keep only what differs: name, unique ID, device info, upstream URL, content type and a log label.
+- **Image entities now report a state.** Previously all seven sat at `unknown` forever, because
+  `image_last_updated` was never set. The state is now an ISO-8601 timestamp that advances whenever
+  the image bytes change, which also makes "this image has gone stale" templatable.
+- **Refreshes revalidate with `ETag` / `Last-Modified`.** Because the integration now polls whether
+  or not anyone is looking at the dashboard, conditional requests keep the steady-state cost close
+  to zero for sources that publish infrequently. Requests also send the integration's `User-Agent`,
+  matching the coordinators.
+
+### Known limitations
+- Two configured NWS offices means two entities fetching the byte-identical geoelectric and aurora
+  images, since those URLs are office-independent. Harmless but wasteful; a shared per-URL fetcher
+  is the follow-up.
+
+## [0.5.2]
 
 ### Fixed
 - **Image entities no longer log an error on every startup.** `image.py` sets up its entities with
