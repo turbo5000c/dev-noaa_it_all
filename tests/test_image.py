@@ -443,8 +443,11 @@ class TestAsyncUpdateBeforeAdd(unittest.TestCase):
     on every startup (and on every update, for entities disabled in the
     registry, which are never added at all).
 
-    The explicit write is redundant anyway: these are polled entities, so HA
-    writes the state itself once ``async_update()`` returns.
+    The explicit write is redundant anyway: Home Assistant writes the state
+    itself exactly once, in ``add_to_platform_finish()`` after the entity is
+    added. (Image entities are never polled -- upstream ``ImageEntity`` sets
+    ``_attr_should_poll = False`` -- so the pre-add call is the only time
+    ``async_update()`` runs at all.)
     """
 
     def _all_entities(self):
