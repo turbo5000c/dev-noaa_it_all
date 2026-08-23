@@ -63,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to zero for sources that publish infrequently. Requests also send the integration's `User-Agent`,
   matching the coordinators.
 
+- **The documented dashboard templates no longer blow up during startup.** Home Assistant renders
+  dashboard templates as soon as the frontend subscribes to them, which on a cold boot can be before
+  this integration has registered its entities — `async_setup_entry` awaits an initial refresh of ten
+  coordinators, all making live NWS calls, before forwarding any platform. In that window
+  `state_attr(...)` and `states.sensor....` both return `None`, so the README's own examples raised
+  `TypeError: 'NoneType' object is not iterable` and `UndefinedError: None has no element 0`, one
+  traceback per card, intermittently. The three Extended Forecast cards, the upcoming-meteor-shower
+  loop, the mobile header and the two alert automations now guard with `or []` and a truth test, and
+  the Dashboard Card Examples section explains the race so new cards get written the same way. The
+  sensors themselves were never at fault: `periods` and `upcoming` are always published as lists.
+- **Removed a duplicated "Dashboard Card Examples" heading** in `README.md`.
+
 ### Known limitations
 - Two configured NWS offices means two entities fetching the byte-identical geoelectric and aurora
   images, since those URLs are office-independent. Harmless but wasteful; a shared per-URL fetcher
