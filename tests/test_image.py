@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
@@ -1176,6 +1177,69 @@ class TestRadarLoopLocalMode(unittest.TestCase):
         self.assertEqual(frames[5][0].isoformat(), attributes["window_end"])
 
 
+class TestRadarLoopValidatorsAreScopedToTheirResource(unittest.TestCase):
+    """This entity fetches two URLs through one set of cached validators.
+
+    Offering the single frame's ETag back when asking for the animation is
+    asking the wrong question about the wrong file, and a server that answered
+    304 to it would hand back a still image as the loop.
+    """
+
+    HEADERS = {
+        "last-modified": "Sun, 23 Aug 2026 11:54:00 GMT",
+        "etag": '"frame-etag"',
+    }
+
+    @staticmethod
+    def _validators(session, needle):
+        for url, kwargs in session.calls:
+            if needle in url:
+                headers = kwargs.get("headers", {})
+                return {
+                    key for key in headers
+                    if key in ("If-None-Match", "If-Modified-Since")
+                }
+        raise AssertionError(f"no request was made to {needle}")
+
+    def test_the_frames_validators_are_not_sent_to_the_loop(self):
+        entity = _local_loop_entity(frames=_stored(2))
+        # Seed the cached validators from a single-frame fetch.
+        _refresh(entity, _FakeResponse(
+            content_type="image/gif", body=GIF, headers=self.HEADERS))
+        # A later scan, so this refresh gets as far as the fallback again
+        # rather than stopping at "we already hold that one".
+        session = _refresh(entity, _FakeResponse(
+            content_type="image/gif", body=b"GIF89a-newer-frame",
+            headers={
+                "last-modified": "Sun, 23 Aug 2026 12:04:00 GMT",
+                "etag": '"newer-frame-etag"',
+            },
+        ))
+        self.assertEqual(set(), self._validators(session, "_loop.gif"))
+
+    def test_the_loops_validators_are_not_sent_to_the_frame(self):
+        entity = _local_loop_entity(frames=_stored(2))
+        _refresh(
+            entity,
+            _FakeResponse(content_type="image/gif", body=GIF, headers=self.HEADERS),
+            _FakeResponse(
+                content_type="image/gif", body=b"GIF89a-loop",
+                headers={"etag": '"loop-etag"'},
+            ),
+        )
+        session = _refresh(entity, _FakeResponse(
+            content_type="image/gif", body=GIF, headers=self.HEADERS))
+        self.assertEqual(set(), self._validators(session, "_0.gif"))
+
+    def test_a_single_url_entity_still_revalidates(self):
+        """Scoping validators must not switch conditional requests off."""
+        entity = _make_entity()
+        _refresh(entity, _FakeResponse(headers={"etag": '"png-etag"'}))
+        session = _refresh(entity, _FakeResponse())
+        url, kwargs = session.calls[0]
+        self.assertEqual('"png-etag"', kwargs["headers"]["If-None-Match"])
+
+
 class TestRadarLoopLocalModeSurvivesFailures(unittest.TestCase):
     """The invariant the whole image module exists to hold, in local mode.
 
@@ -1269,3 +1333,126 @@ class TestRadarLoopHoursOption(unittest.TestCase):
     def test_an_unusable_value_falls_back_to_the_default(self):
         from noaa_it_all.image import radar_loop_hours
         self.assertEqual(24, radar_loop_hours(self._entry("lots")))
+
+
+try:
+    from PIL import Image as _PILImage
+    _PIL = True
+except ImportError:  # pragma: no cover - Pillow ships with Home Assistant core
+    _PIL = False
+
+
+def _nexrad_frame(index, size=(240, 200)):
+    """A transparent, separately-palettised GIF with a drifting echo."""
+    from io import BytesIO
+
+    scale = [
+        (4, 233, 231), (1, 159, 244), (3, 0, 244), (2, 253, 2),
+        (1, 197, 1), (0, 142, 0), (253, 248, 2), (253, 0, 0),
+    ]
+    image = _PILImage.new("P", size, 0)
+    palette = [0, 0, 0]
+    for colour in scale:
+        palette += list(colour)
+    palette += [0, 0, 0] * (256 - 1 - len(scale))
+    image.putpalette(palette)
+    origin = (index * 9) % (size[0] - 60)
+    for x in range(origin, origin + 60):
+        for y in range(size[1] // 4, size[1] // 4 * 3):
+            image.putpixel((x, y), 1 + ((x + y) // 9) % len(scale))
+    buffer = BytesIO()
+    image.save(buffer, format="GIF", transparency=0)
+    return buffer.getvalue()
+
+
+@unittest.skipUnless(_PIL, "Pillow is required to assemble a GIF")
+class TestRadarLoopEndToEnd(unittest.TestCase):
+    """The whole path, with a real directory and a real encoder.
+
+    Every other test in this file swaps the store or the encoder for a fake,
+    which leaves the wiring between them unexercised -- and that wiring is
+    where a 24-hour loop either works or quietly serves NOAA's 50 minutes
+    forever.
+    """
+
+    def _entity(self, directory):
+        from noaa_it_all.image import RadarLoopImageEntity
+
+        hass = MagicMock()
+        hass.config.path = MagicMock(return_value=directory)
+
+        async def _executor(func, *args):
+            return func(*args)
+
+        hass.async_add_executor_job = _executor
+        entity = RadarLoopImageEntity(hass, OFFICE, "KLTX", loop_hours=24)
+        entity.entity_id = "image.noaa_sgx_weather_radar_loop"
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    def _poll(self, entity, index, start):
+        """One refresh, with NOAA's loop queued behind it as the fallback."""
+        published = (start + timedelta(minutes=10 * index)).strftime(
+            "%a, %d %b %Y %H:%M:%S GMT"
+        )
+        return _refresh(
+            entity,
+            _FakeResponse(
+                content_type="image/gif",
+                body=_nexrad_frame(index),
+                headers={"last-modified": published},
+            ),
+            _FakeResponse(content_type="image/gif", body=b"GIF89a-noaa-loop"),
+        )
+
+    def test_the_loop_grows_from_noaas_into_a_locally_built_animation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            entity = self._entity(directory)
+            start = datetime(2026, 8, 23, 0, 0, tzinfo=timezone.utc)
+
+            # Too thin to improve on NOAA: its own loop is what gets served.
+            self._poll(entity, 0, start)
+            self.assertEqual("upstream", entity.extra_state_attributes["loop_mode"])
+            self.assertEqual(b"GIF89a-noaa-loop", _run(entity.async_image()))
+
+            for index in range(1, 12):
+                self._poll(entity, index, start)
+
+            attributes = entity.extra_state_attributes
+            self.assertEqual("local", attributes["loop_mode"])
+            self.assertEqual(12, attributes["frame_count"])
+            self.assertEqual(
+                start.isoformat(), attributes["window_start"]
+            )
+
+            served = _run(entity.async_image())
+            self.assertEqual("image/gif", entity.content_type)
+            with tempfile.NamedTemporaryFile(suffix=".gif") as handle:
+                handle.write(served)
+                handle.flush()
+                animation = _PILImage.open(handle.name)
+                # A drifting echo means no two frames are identical, so none of
+                # them are merged away.
+                self.assertEqual(12, animation.n_frames)
+                self.assertEqual(0, animation.info.get("loop"))
+
+            stored = os.listdir(os.path.join(directory, "KLTX"))
+            self.assertEqual(12, len(stored))
+            self.assertTrue(all(name.endswith(".gif") for name in stored))
+
+    def test_frames_collected_before_a_restart_are_still_there_after_it(self):
+        """The whole feature rests on this: a restart must not start over."""
+        with tempfile.TemporaryDirectory() as directory:
+            start = datetime(2026, 8, 23, 0, 0, tzinfo=timezone.utc)
+            first = self._entity(directory)
+            for index in range(8):
+                self._poll(first, index, start)
+            self.assertEqual("local", first.extra_state_attributes["loop_mode"])
+
+            # A new entity over the same directory stands in for the restart.
+            second = self._entity(directory)
+            self._poll(second, 8, start)
+            attributes = second.extra_state_attributes
+            self.assertEqual("local", attributes["loop_mode"])
+            self.assertEqual(9, attributes["frame_count"])
+            self.assertEqual(start.isoformat(), attributes["window_start"])
