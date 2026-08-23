@@ -40,6 +40,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image entity to `image/jpeg`; five of the seven are not JPEGs. The geoelectric field and hurricane
   outlook images are PNG, both radar images are GIF, and the content type reported by NOAA is
   adopted when it differs.
+- **A single failed Points API lookup no longer disables forecasts until a restart.** This is the
+  cause of the recurring `Error fetching NOAA Forecasts data: All forecast API requests failed`.
+  `ForecastCoordinator._resolve_forecast_urls()` set `self._urls_fetched = True` in its `except`
+  branch as well as on success, so one transient failure left both forecast URLs `None` with no way
+  to retry — and because each fetch is guarded by `if self._forecast_url:`, no request was even
+  attempted afterwards. Every subsequent refresh went straight to `UpdateFailed`, forever. The flag
+  is now only latched on success, so the next 10-minute cycle re-resolves. The same latch was in
+  `ObservationsCoordinator._resolve_station()` and `CloudCoverCoordinator._resolve_gridpoint_url()`,
+  where it silently retired the observation-station and gridpoint lookups; both are fixed too.
+- **Space weather and hurricane requests now send a `User-Agent`.** They were the only 5 of 19
+  outbound requests without one, and `_HURRICANE_ALERTS_URL` points at `api.weather.gov`, which
+  requires it.
+- **`All X API requests failed` now says which endpoints failed and why.** The message discarded
+  every underlying exception, so the log line naming the problem was useless on its own and the real
+  cause sat in separate `WARNING` lines above it — when a request had been attempted at all. Failures
+  are now collected and appended, e.g. `All forecast API requests failed: Points API lookup
+  (ClientConnectorError: Cannot connect to host api.weather.gov:443 ...)`.
+- **`coordinator.py` now has behavioural tests** (`tests/test_coordinator.py`). It had none, across
+  773 lines and 10 coordinators, which is how the latch bug survived. Every new test was confirmed
+  to fail against the pre-fix code.
 
 ### Changed
 - **The seven image entity classes now share a `NoaaImageEntity` base.** Each was a near-identical
