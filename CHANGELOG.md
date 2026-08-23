@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Image entities now report a state.** Previously all seven sat at `unknown` forever, because
   `image_last_updated` was never set. The state is now an ISO-8601 timestamp that advances whenever
   the image bytes change, which also makes "this image has gone stale" templatable.
+- **The `User-Agent` now identifies this integration honestly.** It was
+  `HomeAssistant/NOAA-Integration` on all 17 outbound request sites: generic, unversioned, carrying no
+  contact information, and implying Home Assistant core rather than a third-party custom integration.
+  `api.weather.gov` requires a User-Agent and asks that it be unique to the application, with a website
+  or email so they can make contact instead of simply blocking traffic they cannot place — which matters
+  more now that the integration polls on a timer. It is now
+  `noaa_it_all/<version> (+https://github.com/dawg-io/noaa_it_all)`, and `tests/test_manifest.py` fails if
+  the version drifts from `manifest.json`. A contact email may be added to the string later.
 - **Refreshes revalidate with `ETag` / `Last-Modified`.** Because the integration now polls whether
   or not anyone is looking at the dashboard, conditional requests keep the steady-state cost close
   to zero for sources that publish infrequently. Requests also send the integration's `User-Agent`,

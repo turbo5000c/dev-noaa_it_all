@@ -31,7 +31,12 @@ CONF_LONGITUDE = "longitude"
 # Default values
 DEFAULT_SCAN_INTERVAL = 10  # minutes
 REQUEST_TIMEOUT = 30  # seconds
-USER_AGENT = "HomeAssistant/NOAA-Integration"
+# Identifies this integration to NOAA. api.weather.gov requires a User-Agent
+# and asks that it be unique to the application, with a website or email so
+# they can make contact instead of simply blocking traffic they cannot place.
+# The version is part of the string so an old release can be told apart from a
+# fixed one; tests/test_manifest.py keeps it in step with manifest.json.
+USER_AGENT = "noaa_it_all/0.5.3 (+https://github.com/dawg-io/noaa_it_all)"
 
 # Image entities keep the last successfully fetched frame and re-fetch on a
 # background timer, so a transient upstream failure leaves the previous
