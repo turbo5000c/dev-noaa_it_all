@@ -266,7 +266,17 @@ Visual representations of current conditions:
 
 **NOAA {OFFICE} Weather** (one per configured office):
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
-- **Radar Loop** — Animated NEXRAD radar loop *(image.noaa_{office}_weather_radar_loop)*
+- **Radar Loop** — Animated NEXRAD radar loop, covering up to 24 hours *(image.noaa_{office}_weather_radar_loop)*
+
+> **Radar loop history**: NOAA's own radar animation is fixed at ten frames covering roughly 50 minutes, and only those ten frames exist on its server — a longer loop cannot simply be downloaded. So the integration collects one frame per refresh and assembles the animation itself. The window defaults to **24 hours** and is set under **Settings → Devices & Services → NOAA It All → Configure**; set it to `0` to serve NOAA's 50-minute loop unchanged and store nothing.
+>
+> Worth knowing before you turn it up:
+>
+> - **It fills in over time.** A newly configured loop starts at whatever history has been collected so far and reaches its full length after that many hours of uptime. Until there are enough frames, the card shows NOAA's own loop instead, so it is never blank.
+> - **Frames survive restarts.** They are stored under `<config>/noaa_it_all/radar_frames/<RADAR_SITE>/`, so a restart does not send the loop back to the beginning. Budget a few megabytes per radar site; the directory is deleted if you remove the integration.
+> - **The animation is bigger than NOAA's.** A 24-hour loop is sampled down to 72 frames (one every 20 minutes) and plays through in about ten seconds, but it is still a larger file that every open dashboard re-downloads whenever it changes. Shorter windows are proportionally finer: a 6-hour loop keeps one frame per scan.
+>
+> The entity's `loop_mode` attribute reports whether you are looking at a locally built animation (`local`) or NOAA's (`upstream`), alongside `frame_count`, `window_start` and `window_end`.
 
 > **Tip**: Image entities can be displayed on dashboards using the standard `picture-entity` or `picture-glance` cards.
 >
