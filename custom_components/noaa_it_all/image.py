@@ -207,6 +207,12 @@ class NoaaImageEntity(ImageEntity):
         # and stores an ``Image`` dataclass in it, so the raw bytes need a
         # attribute of their own.
         self._last_image_bytes: bytes | None = None
+        # What was last fetched from the upstream URL, which for most entities
+        # is the same object as ``_last_image_bytes``.  The radar loop breaks
+        # that equivalence -- it displays a GIF it assembled from many fetches
+        # -- so conditional revalidation and the 304 short-circuit have to key
+        # off the fetched frame rather than the displayed picture.
+        self._last_fetched_bytes: bytes | None = None
         self._attr_image_last_updated = None
         self._last_etag: str | None = None
         self._last_modified: str | None = None
@@ -305,12 +311,7 @@ class NoaaImageEntity(ImageEntity):
         if content is None:
             return False
 
-        if self._failure_count >= IMAGE_FAILURE_WARN_AFTER:
-            _LOGGER.info(
-                "The %s image is available again after %d failed attempts",
-                self._log_label, self._failure_count,
-            )
-        self._failure_count = 0
+        self._note_success()
 
         if content == self._last_image_bytes:
             _LOGGER.debug(
@@ -325,6 +326,15 @@ class NoaaImageEntity(ImageEntity):
         )
         return True
 
+    def _note_success(self) -> None:
+        """Reset the failure counter, announcing a recovery if there was one."""
+        if self._failure_count >= IMAGE_FAILURE_WARN_AFTER:
+            _LOGGER.info(
+                "The %s image is available again after %d failed attempts",
+                self._log_label, self._failure_count,
+            )
+        self._failure_count = 0
+
     def _conditional_headers(self) -> dict[str, str]:
         """Return revalidation headers for the copy already in hand.
 
@@ -333,7 +343,7 @@ class NoaaImageEntity(ImageEntity):
         for sources that publish infrequently.
         """
         headers = {"User-Agent": USER_AGENT}
-        if self._last_image_bytes is None:
+        if self._last_fetched_bytes is None:
             return headers
         if self._last_etag:
             headers["If-None-Match"] = self._last_etag
@@ -341,14 +351,18 @@ class NoaaImageEntity(ImageEntity):
             headers["If-Modified-Since"] = self._last_modified
         return headers
 
-    async def _async_fetch_image(self) -> bytes | None:
+    async def _async_fetch_image(self, url: str | None = None) -> bytes | None:
         """Fetch the image from NOAA, returning None on any failure.
 
         No failure path may touch ``_last_image_bytes``, ``_last_etag``,
         ``_last_modified`` or ``image_last_updated``.  That invariant is what
         keeps a blip from blanking the picture.
+
+        ``url`` overrides the entity's own URL, which the radar loop uses to
+        fall back to NOAA's ready-made animation without reimplementing any of
+        the error handling below.
         """
-        self._image_url = self.get_cache_busted_url()
+        self._image_url = url or self.get_cache_busted_url()
         try:
             session = async_get_clientsession(self.hass)
             timeout = aiohttp.ClientTimeout(total=IMAGE_FETCH_TIMEOUT)
@@ -357,12 +371,12 @@ class NoaaImageEntity(ImageEntity):
                 timeout=timeout,
                 headers=self._conditional_headers(),
             ) as response:
-                if response.status == 304 and self._last_image_bytes is not None:
+                if response.status == 304 and self._last_fetched_bytes is not None:
                     _LOGGER.debug(
                         "The %s image is unchanged upstream (HTTP 304)",
                         self._log_label,
                     )
-                    return self._last_image_bytes
+                    return self._last_fetched_bytes
                 if response.status != 200:
                     self._log_failure(
                         f"HTTP {response.status}",
@@ -405,6 +419,7 @@ class NoaaImageEntity(ImageEntity):
         self._attr_content_type = content_type
         self._last_etag = etag
         self._last_modified = last_modified
+        self._last_fetched_bytes = content
         return content
 
     def _log_failure(self, reason: str, *, transient: bool) -> None:
