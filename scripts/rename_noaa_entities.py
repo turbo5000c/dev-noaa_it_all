@@ -57,23 +57,45 @@ def device_names(storage: Path) -> dict[str, str]:
     return names
 
 
+def strip_prefix(entity_name: str | None, prefix: str | None) -> str | None:
+    """Port of entity_registry._async_strip_prefix_from_entity_name (ASCII path).
+
+    Returns None when the prefix does not meaningfully match.
+    """
+    if not entity_name or not prefix:
+        return None
+    if not entity_name[: len(prefix)].casefold().startswith(prefix.casefold()):
+        return None
+    new_name = entity_name[len(prefix):].lstrip(" -:")
+    if not new_name:
+        return ""
+    if len(new_name) == len(entity_name) - len(prefix):
+        return None  # no separator between the prefix and the remainder
+    return new_name
+
+
 def target_entity_id(entry: dict, devices: dict[str, str]) -> str | None:
-    """Return the entity_id a fresh install would assign, or None if undeterminable."""
+    """Return the entity_id a fresh install would assign, or None if undeterminable.
+
+    Mirrors homeassistant/helpers/entity_registry._async_get_full_entity_name: the
+    device name is ALWAYS prepended when the entity belongs to a device.
+    ``has_entity_name`` does NOT control that -- it only decides whether a redundant
+    device-name prefix is stripped off the entity's own name first.
+    """
     domain = entry["entity_id"].split(".", 1)[0]
-    name = entry.get("original_name")
-    if name is None:
-        # The integration supplied no name; HA would fall back to the device name.
-        name = ""
-    if entry.get("has_entity_name"):
-        device_name = devices.get(entry.get("device_id") or "", "")
-        if not device_name:
-            return None
-        base = device_name if not name else f"{device_name} {name}"
-    else:
-        if not name:
-            return None
-        base = name
-    return f"{domain}.{slugify(base)}"
+    name = entry.get("original_name") or ""
+    device_name = devices.get(entry.get("device_id") or "", "")
+
+    entity_name = name
+    if not entry.get("has_entity_name"):
+        stripped = strip_prefix(name, device_name)
+        if stripped is not None:
+            entity_name = stripped
+
+    full = " ".join(part for part in (device_name, entity_name) if part)
+    if not full:
+        return None
+    return f"{domain}.{slugify(full)}"
 
 
 def main() -> int:

@@ -30,8 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entities use `_attr_has_entity_name = True`"; three do not. The device table listed a
   `NOAA Surf` device that does not exist (it is `NOAA {OFFICE} Surf`) and omitted `NOAA Hurricane`;
   `CONFIGURATION.md`'s pattern omitted the device-group segment entirely. Both documents now carry
-  an **Exceptions to the pattern** table listing the seven entity IDs that contain no office code,
-  so a find-and-replace does not corrupt them.
+  an **Exceptions to the pattern** table listing the five entity IDs that contain no office code,
+  so a find-and-replace does not corrupt them. The rule itself is stated correctly: Home Assistant
+  prepends the device name whether or not an entity sets `has_entity_name` — that flag only decides
+  whether a redundant device-name prefix is stripped off the entity's own name first
+  (`entity_registry._async_get_full_entity_name`).
 - **Broken copy/paste examples fixed.** `state_attr()` calls naming attributes that do not exist
   (`total_alerts`, `alert_types`, `office`, `issued_time`, `product_link`) now use the real keys
   (`alert_count`, `alerts`, `office_code`, `issue_time`); the aurora automation's `condition: sun`
@@ -45,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   docs now say.
 
 ### Notes
+- The geoelectric and aurora images are `image.noaa_{office}_space_geoelectric_field_image` and
+  `image.noaa_{office}_space_aurora_forecast_image`. An earlier revision of this release documented
+  them without the device prefix, on the mistaken belief that omitting `_attr_has_entity_name`
+  suppressed it. It does not — the device name is always prepended.
 - An image entity **disabled in the entity registry** is never added, so the pre-add update was the
   only update it ever ran — the error repeated on every update instead of firing once at startup.
   That is how this surfaced.

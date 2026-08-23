@@ -50,8 +50,7 @@ All NOAA It All entities follow consistent naming patterns:
 
 The middle segment is the **device group**, and it is always present on office-scoped entities.
 Globally-scoped entities use `{entity_type}.noaa_hurricane_{sensor_name}` instead, with no office
-code — and two space images carry no prefix at all. See
-[Exceptions to the pattern](#exceptions-to-the-pattern).
+code. See [Exceptions to the pattern](#exceptions-to-the-pattern).
 
 **Every example in this guide uses the `ILM` office.** To adapt one, replace `ilm` with your own
 office code in lower case, leaving the exceptions below untouched.
@@ -64,7 +63,8 @@ office code in lower case, leaving the exceptions below untouched.
 
 ### Exceptions to the pattern
 
-These entity IDs contain **no office code**. Do not substitute into them:
+These five entity IDs contain **no office code** — they live on the shared, office-independent
+`NOAA Hurricane` device. Do not substitute into them:
 
 | Entity ID | Why |
 |---|---|
@@ -73,8 +73,6 @@ These entity IDs contain **no office code**. Do not substitute into them:
 | `image.noaa_hurricane_outlook_image` | Global NHC imagery |
 | `image.noaa_hurricane_goes_air_mass` | Global GOES imagery |
 | `image.noaa_hurricane_goes_geocolor` | Global GOES imagery |
-| `image.geoelectric_field_image` | No `has_entity_name`, so no device prefix is applied |
-| `image.aurora_forecast_image` | No `has_entity_name`, so no device prefix is applied |
 
 And two that follow the rule but read oddly:
 
@@ -122,8 +120,8 @@ your configured location.
 - `sensor.noaa_{office}_space_next_meteor_shower`
 - `sensor.noaa_{office}_space_meteor_viewing_score`
 - `binary_sensor.noaa_{office}_space_meteor_shower_active`
-- `image.geoelectric_field_image`
-- `image.aurora_forecast_image`
+- `image.noaa_ilm_space_geoelectric_field_image`
+- `image.noaa_ilm_space_aurora_forecast_image`
 
 > Meteor shower entities require latitude/longitude (Config Flow setup) because the radiant's
 > altitude — the single biggest factor in how many meteors you see — depends on where you are.
@@ -273,7 +271,7 @@ cards:
       - sensor.noaa_ilm_space_aurora_visibility_probability
   
   - type: picture-entity
-    entity: image.aurora_forecast_image
+    entity: image.noaa_ilm_space_aurora_forecast_image
     name: "Aurora Forecast"
     show_state: false
 ```

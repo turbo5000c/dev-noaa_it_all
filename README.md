@@ -256,8 +256,8 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
 Visual representations of current conditions:
 
 **NOAA Space** (global, shared):
-- **Geomagnetic Field Image** — Real-time geomagnetic storm intensity visualization *(image.geoelectric_field_image)*
-- **Aurora Forecast Image** — Tonight's aurora coverage forecast *(image.aurora_forecast_image)*
+- **Geomagnetic Field Image** — Real-time geomagnetic storm intensity visualization *(image.noaa_ilm_space_geoelectric_field_image)*
+- **Aurora Forecast Image** — Tonight's aurora coverage forecast *(image.noaa_ilm_space_aurora_forecast_image)*
 
 **NOAA Hurricane** (global, created once):
 - **Outlook Image** — 2-day tropical weather outlook from NHC *(image.noaa_hurricane_outlook_image)*
@@ -288,9 +288,12 @@ The integration supports all NWS offices that issue Surf Zone Forecasts (SRF):
 
 Understanding entity naming helps you quickly identify and use sensors in automations and dashboards.
 
-Most entities set `_attr_has_entity_name = True`, so Home Assistant derives the entity ID by
-combining the **device name** slug with the **local entity name** slug. Four entities are
-exceptions — see [Exceptions to the pattern](#exceptions-to-the-pattern) below.
+Home Assistant derives the entity ID by combining the **device name** slug with the entity's
+own **name** slug. The device name is prepended whether or not the integration sets
+`_attr_has_entity_name` — that flag only decides whether a redundant device-name prefix is
+stripped off the entity's own name first. The five global hurricane entities are the exception,
+because their device carries no office code — see
+[Exceptions to the pattern](#exceptions-to-the-pattern) below.
 
 **Every example in this document uses the `ILM` office.** To adapt one to your own location,
 replace `ilm` with your office code in lower case — and leave the entities listed under
@@ -315,8 +318,9 @@ replace `ilm` with your office code in lower case — and leave the entities lis
 
 ### Exceptions to the pattern
 
-These entity IDs do **not** contain an office code. When you copy an example and swap the office
-code, skip these — substituting into them produces an entity that does not exist:
+These five entity IDs do **not** contain an office code, because they live on the shared,
+office-independent `NOAA Hurricane` device. When you copy an example and swap the office code,
+skip these — substituting into them produces an entity that does not exist:
 
 | Entity ID | Why |
 |---|---|
@@ -325,8 +329,6 @@ code, skip these — substituting into them produces an entity that does not exi
 | `image.noaa_hurricane_outlook_image` | Global NHC data, on the shared `NOAA Hurricane` device |
 | `image.noaa_hurricane_goes_air_mass` | Global GOES imagery, on the shared `NOAA Hurricane` device |
 | `image.noaa_hurricane_goes_geocolor` | Global GOES imagery, on the shared `NOAA Hurricane` device |
-| `image.geoelectric_field_image` | Does not set `has_entity_name`, so no device prefix is applied |
-| `image.aurora_forecast_image` | Does not set `has_entity_name`, so no device prefix is applied |
 
 Two further IDs are easy to get wrong even though they do follow the rule:
 
@@ -371,7 +373,7 @@ Two further IDs are easy to get wrong even though they do follow the rule:
 | Weather Entity | `weather.noaa_{office}_weather` | `weather.noaa_ilm_weather` |
 | Hurricane (global) | `sensor.noaa_hurricane_{metric}` | `sensor.noaa_hurricane_activity` |
 | Hurricane Images (global) | `image.noaa_hurricane_{name}` | `image.noaa_hurricane_outlook_image` |
-| Space Images (global) | `image.{name}` — no prefix at all | `image.geoelectric_field_image` |
+| Space Images | `image.noaa_{office}_space_{name}` | `image.noaa_ilm_space_aurora_forecast_image` |
 | Radar Image | `image.noaa_{office}_weather_radar_{name}` | `image.noaa_ilm_weather_radar_base_reflectivity` |
 
 ### Migration: Old Entity IDs
@@ -1048,12 +1050,12 @@ cards:
   - type: horizontal-stack
     cards:
       - type: picture-entity
-        entity: image.geoelectric_field_image
+        entity: image.noaa_ilm_space_geoelectric_field_image
         name: "Geomagnetic Field"
         show_state: false
       
       - type: picture-entity
-        entity: image.aurora_forecast_image
+        entity: image.noaa_ilm_space_aurora_forecast_image
         name: "Aurora Forecast"
         show_state: false
 
