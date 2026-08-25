@@ -219,7 +219,7 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 - **Eclipse Coverage**: How much of the Sun or Moon you will actually see covered, 0–100% *(sensor.noaa_{office}_space_eclipse_coverage)*
   - This is the "will I get 29% or the whole thing" number
 - **Eclipse Viewing Score**: How worthwhile it is from here, 0–100% *(sensor.noaa_{office}_space_eclipse_viewing_score)*
-  - Attributes include `rating`, `watch_from_local`/`watch_until_local`, the totality window, `limiting_factor`, and the eye-safety notice
+  - Attributes include `rating`, `watch_from_local`/`watch_until_local`, `look_towards`, the totality window, `limiting_factor`, and the eye-safety notice
 - **Eclipse Visible Now**: Turns on an hour before first contact and off at last contact *(binary_sensor.noaa_{office}_space_eclipse_visible_now)*
   - The one to trigger an announcement from. Expect it on for a few hours a year at most, and in many years not at all
 - **Eclipse Coming Up**: Turns on two weeks before an eclipse worth planning around *(binary_sensor.noaa_{office}_space_eclipse_coming_up)*
@@ -227,7 +227,7 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 > **⚠️ Eye safety**: Never look at a partially eclipsed Sun without ISO 12312-2 eclipse glasses or a certified solar filter — sunglasses, exposed film and smoked glass are **not** safe. Only during **totality**, between second and third contact, may the Sun be viewed with the naked eye, and the filter goes back on the instant the first sliver reappears. An **annular** eclipse is never safe to view unfiltered: there is still a complete ring of photosphere at maximum. Every solar entity carries `eye_protection_required`, `safe_without_filter` and an `eye_safety` string so an automation can read the warning out.
 
-> **Note on "your" eclipse**: A total solar eclipse is total along a strip a couple of hundred kilometres wide and merely partial across a whole continent either side of it. Everything here reports the eclipse **you** get — a 43% partial is reported as a partial eclipse, with the headline classification kept alongside as `global_type`. Likewise `disc_covered` is measured at the best moment the Sun or Moon is actually above your horizon, so a site where the Sun sets mid-eclipse is not advertised a maximum that happens underground; `visible_fraction` says how much of the event you get at all.
+> **Note on "your" eclipse**: A total solar eclipse is total along a strip a couple of hundred kilometres wide and merely partial across a whole continent either side of it. Everything here reports the eclipse **you** get — a 43% partial is reported as a partial eclipse, with the headline classification kept alongside as `global_type`. Likewise `disc_covered`, the viewing score and `look_towards` are all measured at the best moment the Sun or Moon is actually above your horizon, so a site where the body sets mid-eclipse is not advertised a maximum that happens underground, or pointed at a horizon the Moon has already set behind. `visible_fraction` says how much of the event you get at all, and `altitude_at_maximum` still reports the geometric peak for reference.
 
 > **Note on the two percentages**: `disc_covered` is the fraction of the disc's **area** that is hidden. Eclipse *magnitude*, the figure usually quoted, is the fraction of its **diameter**, and the two are far apart — magnitude 0.5 is only 39% covered. Both are reported so you can compare against a published table.
 
@@ -665,7 +665,7 @@ automation:
             maximum
             {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'maximum_local') | as_timestamp | timestamp_custom('%-I:%M %p') }}
             — look
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'direction_at_maximum') }}.
+            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'look_towards') }}.
             {% if state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eye_protection_required') %}
             ⚠️ {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eye_safety') }}
             {% endif %}
@@ -1094,11 +1094,11 @@ entities:
     name: Watch Until
   - type: attribute
     entity: sensor.noaa_ilm_space_eclipse_viewing_score
-    attribute: direction_at_maximum
+    attribute: look_towards
     name: Look Towards
   - type: attribute
     entity: sensor.noaa_ilm_space_eclipse_viewing_score
-    attribute: altitude_at_maximum
+    attribute: altitude_when_visible
     name: Height Above Horizon
     suffix: "°"
   - type: divider

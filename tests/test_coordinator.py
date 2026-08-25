@@ -422,6 +422,30 @@ class TestEclipseCoordinator(unittest.TestCase):
         _run(coordinator._async_update_data())
         self.assertIsNotNone(coordinator.update_interval)
 
+    def test_the_catalog_exhausted_warning_is_logged_once_not_every_refresh(self):
+        """Regression: an unlatched warning on an hourly poll is a log line every hour forever.
+
+        The comment beside it already claimed it was said once, and it was not. Nobody can act on
+        "the catalog ends in 2075" quickly enough for the twenty-fourth repetition to help.
+        """
+        from noaa_it_all.coordinator import EclipseCoordinator
+        coordinator = self._coordinator()
+        exhausted = {"catalog_exhausted": True, "catalog_last_year": 2075,
+                     "current": None, "next": None}
+        with patch("noaa_it_all.coordinator.build_eclipse_forecast", return_value=exhausted):
+            with patch.object(EclipseCoordinator, "_interval_for", return_value=None):
+                with self.assertLogs("noaa_it_all.coordinator", level="WARNING") as first:
+                    _run(coordinator._async_update_data())
+                self.assertEqual(len(first.output), 1)
+                _run(coordinator._async_update_data())
+                _run(coordinator._async_update_data())
+        self.assertTrue(coordinator._warned_exhausted)
+
+    def test_a_healthy_catalog_logs_no_warning(self):
+        coordinator = self._coordinator()
+        _run(coordinator._async_update_data())
+        self.assertFalse(coordinator._warned_exhausted)
+
     def test_a_missing_elevation_falls_back_to_sea_level(self):
         self.assertEqual(self._coordinator(elevation=None)._elevation(), 0.0)
 

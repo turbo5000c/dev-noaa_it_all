@@ -864,6 +864,7 @@ class EclipseCoordinator(DataUpdateCoordinator):
         self.latitude = latitude
         self.longitude = longitude
         self._timezone = _ObserverTimezone()
+        self._warned_exhausted = False
 
     def _elevation(self) -> float:
         """Return the configured elevation in metres, or sea level if it is not usable.
@@ -905,9 +906,12 @@ class EclipseCoordinator(DataUpdateCoordinator):
         except Exception as err:
             raise UpdateFailed(f"Error computing eclipse forecast: {err}") from err
 
-        if forecast.get("catalog_exhausted"):
+        if forecast.get("catalog_exhausted") and not self._warned_exhausted:
             # Lunar eclipses keep working forever; only the solar half has a horizon. Saying so
-            # once is more useful than silently becoming a lunar-only sensor.
+            # once is more useful than silently becoming a lunar-only sensor -- and it has to be
+            # *once*, latched: this runs every hour, so an unlatched warning would be tens of
+            # thousands of identical log lines a year for a condition nobody can act on quickly.
+            self._warned_exhausted = True
             _LOGGER.warning(
                 "The bundled solar eclipse catalog ends in %s and is now exhausted; lunar "
                 "eclipses are unaffected. Regenerate it with scripts/build_eclipse_catalog.py",

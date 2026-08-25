@@ -110,11 +110,12 @@ def _in_progress_forecast():
 
 
 def _imminent_forecast(minutes):
-    """The next eclipse is *minutes* away and not yet under way."""
+    """The next eclipse's *first contact* is *minutes* away and it is not yet under way."""
     data = _forecast()
     eclipse = dict(data["next"])
     eclipse["in_progress"] = False
-    eclipse["hours_until"] = minutes / 60.0
+    eclipse["hours_until_start"] = minutes / 60.0
+    eclipse["hours_until"] = minutes / 60.0 + 1.5      # maximum is later still
     eclipse["days_until"] = minutes / 1440.0
     data["next"] = eclipse
     data["current"] = None
@@ -126,6 +127,7 @@ def _shallow_forecast(covered):
     data = _forecast()
     eclipse = dict(data["next"])
     eclipse["disc_covered"] = covered
+    eclipse["hours_until_start"] = 0.5
     eclipse["hours_until"] = 0.5
     eclipse["days_until"] = 0.5 / 24.0
     data["next"] = eclipse
@@ -351,6 +353,27 @@ class TestEclipseVisibleNowBinarySensor(unittest.TestCase):
         self.assertFalse(self._sensor(_imminent_forecast(
             ECLIPSE_VISIBLE_LEAD_MINUTES + 30)).is_on)
 
+    def test_the_lead_window_is_measured_from_first_contact(self):
+        """Regression: measured from maximum, the lead window was unreachable.
+
+        A lunar eclipse runs nearly three hours from first contact to greatest eclipse. Comparing
+        the hour of lead time against the time to *maximum* meant that by the moment the branch
+        could have matched, the eclipse had already started and was being reported as ``current``
+        instead -- so the documented hour of warning was in practice none at all.
+        """
+        from noaa_it_all.const import ECLIPSE_VISIBLE_LEAD_MINUTES
+        data = _imminent_forecast(ECLIPSE_VISIBLE_LEAD_MINUTES - 10)
+        # Maximum is comfortably outside the window; first contact is inside it.
+        self.assertGreater(data["next"]["hours_until"] * 60.0, ECLIPSE_VISIBLE_LEAD_MINUTES)
+        self.assertLess(data["next"]["hours_until_start"] * 60.0, ECLIPSE_VISIBLE_LEAD_MINUTES)
+        self.assertTrue(self._sensor(data).is_on)
+
+    def test_minutes_until_counts_down_to_first_contact(self):
+        from noaa_it_all.const import ECLIPSE_VISIBLE_LEAD_MINUTES
+        attrs = self._sensor(_imminent_forecast(
+            ECLIPSE_VISIBLE_LEAD_MINUTES - 10)).extra_state_attributes
+        self.assertAlmostEqual(attrs["minutes_until"], ECLIPSE_VISIBLE_LEAD_MINUTES - 10, delta=1)
+
     def test_off_when_the_eclipse_barely_covers_anything(self):
         # A three percent nibble is invisible without a filter, and announcing it would only
         # teach people to ignore this sensor.
@@ -363,9 +386,21 @@ class TestEclipseVisibleNowBinarySensor(unittest.TestCase):
         self.assertTrue(self._sensor(
             _shallow_forecast(ECLIPSE_VISIBLE_MIN_COVERAGE + 1)).is_on)
 
-    def test_off_when_the_body_is_below_the_horizon(self):
+    def test_on_even_when_the_body_sets_before_greatest_eclipse(self):
+        """Regression: gating on the instant of maximum silenced the alert for a whole eclipse.
+
+        When the Moon sets partway through a total lunar eclipse you can still watch most of it
+        -- the 2026-03-03 eclipse from New York is nearly three hours of it -- but the body is
+        below the horizon at greatest eclipse. Requiring it to be up *then* turned this sensor
+        off for the entire event, which is the one case it exists for.
+        """
         data = _in_progress_forecast()
         data["current"] = dict(data["current"], above_horizon_at_max=False)
+        self.assertTrue(self._sensor(data).is_on)
+
+    def test_off_when_the_eclipse_reaches_nothing_visible_here(self):
+        data = _in_progress_forecast()
+        data["current"] = dict(data["current"], visible=False)
         self.assertFalse(self._sensor(data).is_on)
 
     def test_off_when_the_eclipse_is_not_visible_from_here(self):
@@ -391,6 +426,11 @@ class TestEclipseVisibleNowBinarySensor(unittest.TestCase):
             self._sensor(_in_progress_forecast()).icon,
             self._sensor(_quiet_forecast()).icon,
         )
+
+    def test_attributes_point_at_where_the_eclipse_will_be_when_watchable(self):
+        attrs = self._sensor(_in_progress_forecast()).extra_state_attributes
+        self.assertIn("look_towards", attrs)
+        self.assertIn("altitude_when_visible", attrs)
 
     def test_attributes_carry_the_eye_safety_warning(self):
         # The automation that fires from this entity is exactly the one that sends somebody

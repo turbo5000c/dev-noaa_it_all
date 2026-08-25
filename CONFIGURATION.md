@@ -394,7 +394,7 @@ entities:
     name: "Conditions"
   - type: attribute
     entity: sensor.noaa_ilm_space_eclipse_viewing_score
-    attribute: direction_at_maximum
+    attribute: look_towards
     name: "Look Towards"
 ```
 

@@ -118,8 +118,8 @@ class NextEclipseSensor(_EclipseBaseSensor):
                 "disc_covered": headline["disc_covered"],
                 "viewing_score": headline["viewing_score"],
                 "rating": headline["rating"],
-                "altitude_at_maximum": headline["altitude_at_max"],
-                "direction_at_maximum": headline["direction_at_max"],
+                "altitude_when_visible": headline["altitude_when_visible"],
+                "look_towards": headline["direction_when_visible"],
                 "eye_protection_required": headline["eye_protection_required"],
             })
         return attrs
@@ -262,10 +262,13 @@ class EclipseViewingScoreSensor(_EclipseBaseSensor):
             "eclipse_type": headline["type"],
             "limiting_factor": headline["limiting_factor"],
             "disc_covered": headline["disc_covered"],
+            # The geometry at the moment worth watching, which is where people should be
+            # looking -- not the geometry at greatest eclipse, which for a body that sets partway
+            # through is a point below the horizon.
+            "altitude_when_visible": headline["altitude_when_visible"],
+            "azimuth_when_visible": headline["azimuth_when_visible"],
+            "look_towards": headline["direction_when_visible"],
             "altitude_at_maximum": headline["altitude_at_max"],
-            "azimuth_at_maximum": headline["azimuth_at_max"],
-            "direction_at_maximum": headline["direction_at_max"],
-            "above_horizon_at_maximum": headline["above_horizon_at_max"],
             "watch_from_local": headline["visible_start_local"],
             "watch_until_local": headline["visible_end_local"],
             "totality_starts_local": headline["central_start_local"],

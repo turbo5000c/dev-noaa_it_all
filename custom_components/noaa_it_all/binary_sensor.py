@@ -633,8 +633,8 @@ class _EclipseBinarySensor(CoordinatorEntity, BinarySensorEntity):
             'starts_local': eclipse['start_local'],
             'maximum_local': eclipse['max_local'],
             'ends_local': eclipse['end_local'],
-            'altitude_at_maximum': eclipse['altitude_at_max'],
-            'direction_at_maximum': eclipse['direction_at_max'],
+            'altitude_when_visible': eclipse['altitude_when_visible'],
+            'look_towards': eclipse['direction_when_visible'],
             'limiting_factor': eclipse['limiting_factor'],
             # Repeated on both sensors rather than left to the score sensor: an automation that
             # announces an eclipse is exactly the thing that sends somebody outside to look at
@@ -657,11 +657,16 @@ class EclipseVisibleNowBinarySensor(_EclipseBinarySensor):
     ``ECLIPSE_VISIBLE_LEAD_MINUTES`` before first contact -- long enough to find the eclipse
     glasses -- and goes off at last contact.
 
-    Three conditions, and all three are needed. The eclipse has to be genuinely visible from
-    here, which most are not; the body has to be above the horizon, because an eclipse happening
-    under your feet is still an eclipse; and it has to cover at least
-    ``ECLIPSE_VISIBLE_MIN_COVERAGE`` of the disc, because a 3% nibble at the edge of the Sun is
-    invisible without a filter and would only teach people to ignore this sensor.
+    Two conditions. The eclipse has to be genuinely visible from here -- which already means the
+    body is above the horizon for some worthwhile part of it, an eclipse happening under your feet
+    being no use -- and it has to cover at least ``ECLIPSE_VISIBLE_MIN_COVERAGE`` of the disc,
+    because a 3% nibble at the edge of the Sun is invisible without a filter and would only teach
+    people to ignore this sensor.
+
+    It deliberately does *not* also require the body to be up at greatest eclipse. That sounds
+    like the same question and is not: when the Moon sets partway through a total lunar eclipse
+    you can still watch most of it, and gating on the instant of maximum turns the alert off for
+    the entire event.
 
     Expect it on for a few hours a year at most, and in many years not at all.
     """
@@ -686,7 +691,11 @@ class EclipseVisibleNowBinarySensor(_EclipseBinarySensor):
         upcoming = forecast.get('next')
         if not upcoming:
             return None
-        hours = upcoming.get('hours_until')
+        # Against first contact, not maximum. A lunar eclipse runs nearly three hours from one to
+        # the other, so measuring the lead against maximum makes this branch unreachable: by the
+        # time it would be within an hour of maximum the eclipse has long since started and is
+        # being reported as 'current' instead. The documented hour of warning became none at all.
+        hours = upcoming.get('hours_until_start')
         if hours is None or hours < 0:
             return None
         if hours * 60.0 <= ECLIPSE_VISIBLE_LEAD_MINUTES:
@@ -701,7 +710,6 @@ class EclipseVisibleNowBinarySensor(_EclipseBinarySensor):
             return False
         return (
             eclipse['visible']
-            and eclipse['above_horizon_at_max']
             and eclipse['disc_covered'] >= ECLIPSE_VISIBLE_MIN_COVERAGE
         )
 
@@ -726,7 +734,7 @@ class EclipseVisibleNowBinarySensor(_EclipseBinarySensor):
         attrs.update(self._describe(eclipse))
         attrs.update({
             'in_progress': eclipse['in_progress'],
-            'minutes_until': round(eclipse['hours_until'] * 60.0, 1),
+            'minutes_until': round(eclipse['hours_until_start'] * 60.0, 1),
             'watch_from_local': eclipse['visible_start_local'],
             'watch_until_local': eclipse['visible_end_local'],
             'totality_starts_local': eclipse['central_start_local'],

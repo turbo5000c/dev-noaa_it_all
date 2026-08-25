@@ -26,10 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Telling somebody who will see 43% that there is a Total Solar Eclipse tonight would be the
     most misleading thing this could do, so the type is always re-derived from your own geometry,
     with the global classification kept alongside as `global_type`.
-  - **The percentage is what you can actually watch.** Coverage is measured at the best moment
-    the Sun or Moon is above your horizon, not at the geometric maximum — which, for a site where
-    the Sun sets mid-eclipse, happens underground. `visible_fraction` says how much of the event
-    you get at all.
+  - **Everything is measured at the moment you can actually watch.** Coverage, the viewing score
+    and `look_towards` all come from the best moment the Sun or Moon is above your horizon, not
+    from the geometric maximum — which, for a site where the body sets mid-eclipse, happens
+    underground. `visible_fraction` says how much of the event you get at all, and
+    `altitude_at_maximum` still reports the geometric peak for reference.
+
+    This is the distinction the whole feature turns on. New York's 2026-03-03 total lunar
+    eclipse is visible there for nearly three hours and then sets before greatest eclipse; scored
+    on the geometry at maximum it comes out as 0, "Poor", with the alert silent throughout, which
+    is the exact opposite of the truth.
   - **Two percentages, because there are two honest readings.** `disc_covered` is the fraction of
     the disc's *area* hidden. Eclipse *magnitude*, the figure usually quoted, is the fraction of
     its *diameter* — magnitude 0.5 is only 39% covered. Both are reported.
@@ -48,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     catalogued eclipses. Each entry carries NASA's own answer at greatest eclipse purely so the
     test-suite can check the solver reproduces it — 114 regression cases with no hand-typed
     expected values and nothing that goes stale.
+  - **The "go outside" alert gives an hour's warning from first contact**, not from maximum —
+    a lunar eclipse runs nearly three hours between the two, so measuring the lead against
+    maximum would mean no warning at all.
+  - **The Moon gets its own horizon.** It is close enough to have about a degree of horizontal
+    parallax, so the geocentric altitude at which it truly rises and sets sits slightly *above*
+    zero rather than below it (Meeus: `h0 = 0.7275·π − 0.5667`). Using the Sun's figure counts
+    about five minutes per eclipse as watchable while the Moon is really down.
   - **The eclipse coordinator re-paces itself**, which no other coordinator here does. The others
     watch conditions that drift over hours; totality lasts two minutes. It recomputes hourly,
     every five minutes within six hours of first contact, and every minute while one is under way.

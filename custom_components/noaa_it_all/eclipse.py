@@ -114,9 +114,19 @@ _EARTH_RADIUS_M = 6378140.0
 #: because what is being corrected is the planet's orientation, not a clock face.
 _ROTATION_DEG_PER_DELTA_T_SECOND = 0.0041780
 
-#: Altitude at which a body's upper limb is on the horizon, allowing for refraction. Below this
+#: Altitude at which the Sun's upper limb is on the horizon, allowing for refraction. Below this
 #: an eclipse is happening but you cannot watch it.
 _HORIZON_DEG = -0.833
+
+#: The same threshold for the Moon, which is not the same number. The Moon is close enough to
+#: have about 0.95 degrees of horizontal parallax, so an observer on the surface sees it roughly a
+#: degree lower than a geocentric calculation puts it -- and ``astro.moon_equatorial`` is
+#: geocentric. Meeus gives the standard altitude as ``h0 = 0.7275 * parallax - 0.5667``, which
+#: comes out just *above* zero rather than below it, because parallax outweighs refraction and
+#: semidiameter combined. Using the Sun's -0.833 here counts about five minutes per eclipse as
+#: watchable while the Moon is really below the horizon, and it is exactly at this threshold that
+#: a fraction of a degree decides whether an eclipse is visible at all.
+_MOON_HORIZON_DEG = 0.125
 
 #: Half-width of the window scanned for solar contacts, in hours either side of the elements'
 #: reference instant. No solar eclipse runs longer than about 5.5 hours end to end anywhere on
@@ -642,7 +652,8 @@ def solar_local_circumstances(
     during = [s.resolve(entry, latitude, longitude)
               for s in eclipsed if start_t <= s.t <= end_t]
     watchable = [s for s in during if s.above_horizon]
-    best = max(watchable, key=lambda s: s.obscuration) if watchable else None
+    best = (max(watchable, key=lambda s: (round(s.obscuration, 4), s.altitude))
+            if watchable else None)
 
     duration = (end_t - start_t) * 3600.0
     visible_fraction = (len(watchable) / len(during)) if during else 0.0
@@ -681,6 +692,8 @@ def solar_local_circumstances(
             "visible_type": TYPE_NONE,
             "visible_start_utc": None,
             "visible_end_utc": None,
+            "visible_altitude": peak.altitude,
+            "visible_azimuth": peak.azimuth,
         })
     else:
         result.update({
@@ -688,6 +701,10 @@ def solar_local_circumstances(
             "visible_type": local_solar_type(best.geometry),
             "visible_start_utc": watchable[0].when,
             "visible_end_utc": watchable[-1].when,
+            # See the note in lunar_local_circumstances: an eclipse that starts before sunrise or
+            # runs past sunset has its best watchable moment somewhere other than its maximum.
+            "visible_altitude": best.altitude,
+            "visible_azimuth": best.azimuth,
         })
     result["in_progress_at_rise"] = bool(watchable) and not during[0].above_horizon
     result["in_progress_at_set"] = bool(watchable) and not during[-1].above_horizon
@@ -856,6 +873,11 @@ def lunar_coverage(eclipse_: Dict[str, Any], minutes_from_greatest: float = 0.0)
     )
 
 
+def _sun_altitude_at(when: datetime, latitude: float, longitude: float) -> float:
+    """Return the Sun's altitude at *when*, for the sky-brightness term of a lunar eclipse."""
+    return astro.sun_altitude(astro.julian_day(when), latitude, longitude)
+
+
 def lunar_local_circumstances(
     eclipse_: Dict[str, Any],
     latitude: float,
@@ -870,6 +892,7 @@ def lunar_local_circumstances(
     """
     greatest = eclipse_["greatest_utc"]
     half_window = eclipse_["penumbral_semi_duration_min"]
+
     step = 2.0
     offsets = [-half_window + index * step
                for index in range(int(2.0 * half_window / step) + 1)]
@@ -886,7 +909,7 @@ def lunar_local_circumstances(
             right_ascension, declination, latitude, astro.local_sidereal_time(jd, longitude),
         )
         total += 1
-        if altitude > _HORIZON_DEG:
+        if altitude > _MOON_HORIZON_DEG:
             above.append((offset, when, altitude, azimuth, lunar_coverage(eclipse_, offset)))
 
     jd_greatest = astro.julian_day(greatest)
@@ -911,7 +934,10 @@ def lunar_local_circumstances(
     partial_start, partial_end = phase_bounds(eclipse_["partial_semi_duration_min"])
     total_start, total_end = phase_bounds(eclipse_["total_semi_duration_min"])
 
-    best = max(above, key=lambda item: item[4]) if above else None
+    # Coverage first, then altitude. Totality holds at 100% for the best part of an hour, so
+    # coverage alone leaves the choice on that plateau to list order; of two equally total
+    # moments the observer wants the one with the Moon highest.
+    best = max(above, key=lambda item: (round(item[4], 4), item[2])) if above else None
 
     return {
         "visible": best is not None,
@@ -933,12 +959,20 @@ def lunar_local_circumstances(
         "duration_s": int(round(half_window * 120.0)),
         "altitude_at_max": altitude_at_max,
         "azimuth_at_max": azimuth_at_max,
-        "above_horizon_at_max": altitude_at_max > _HORIZON_DEG,
+        "above_horizon_at_max": altitude_at_max > _MOON_HORIZON_DEG,
         "sun_altitude_at_max": sun_altitude,
+        "visible_sun_altitude": _sun_altitude_at(
+            best[1] if best else greatest, latitude, longitude,
+        ),
         "visible_fraction": (len(above) / total) if total else 0.0,
         "gamma": eclipse_["gamma"],
         "visible_obscuration": best[4] if best else 0.0,
         "visible_type": eclipse_["type"] if best else TYPE_NONE,
+        # The geometry at the moment worth watching, which is not the geometry at greatest
+        # eclipse whenever the Moon sets partway through. Scoring and "where do I look" both
+        # need this one; reporting the other sends people to a horizon the Moon set behind.
+        "visible_altitude": best[2] if best else altitude_at_max,
+        "visible_azimuth": best[3] if best else azimuth_at_max,
         "visible_start_utc": above[0][1] if above else None,
         "visible_end_utc": above[-1][1] if above else None,
         "in_progress_at_rise": bool(above) and offsets[0] < above[0][0],
@@ -1053,14 +1087,16 @@ def limiting_factor(circumstances: Dict[str, Any]) -> str:
     """
     if not circumstances.get("visible"):
         return FACTOR_BELOW_HORIZON
-    altitude = circumstances.get("altitude_at_max", 0.0)
+    altitude = circumstances.get("visible_altitude", circumstances.get("altitude_at_max", 0.0))
     losses = [
         (1.0 - _clamp(circumstances.get("visible_obscuration", 0.0)), FACTOR_COVERAGE),
         (1.0 - altitude_factor(altitude), FACTOR_ALTITUDE),
     ]
-    if circumstances.get("sun_altitude_at_max") is not None:
-        losses.append((1.0 - darkness_factor(circumstances["sun_altitude_at_max"]),
-                       FACTOR_TWILIGHT))
+    sun_altitude = circumstances.get(
+        "visible_sun_altitude", circumstances.get("sun_altitude_at_max"),
+    )
+    if sun_altitude is not None:
+        losses.append((1.0 - darkness_factor(sun_altitude), FACTOR_TWILIGHT))
     loss, factor = max(losses, key=lambda item: item[0])
     return factor if loss > 0.01 else FACTOR_NONE
 
@@ -1117,7 +1153,11 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
     """Return the rendered payload for one eclipse, ready for an entity to read straight out."""
     covered = circumstances.get("visible_obscuration", 0.0)
     local_type = circumstances.get("visible_type") or circumstances.get("local_type", TYPE_NONE)
-    altitude = circumstances.get("altitude_at_max", 0.0)
+    # Everything scored here describes the eclipse the observer can actually watch, so the
+    # altitude has to come from that same moment. Taking it from greatest eclipse instead scores
+    # a totally eclipsed Moon that is up for three hours as zero, because by the instant of
+    # maximum it has set.
+    altitude = circumstances.get("visible_altitude", circumstances.get("altitude_at_max", 0.0))
 
     if not circumstances.get("visible"):
         score = 0
@@ -1128,9 +1168,13 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
             circumstances.get("umbral_magnitude", 0.0),
             circumstances.get("penumbral_magnitude", 0.0),
             altitude,
-            circumstances.get("sun_altitude_at_max", -90.0),
+            circumstances.get("visible_sun_altitude",
+                              circumstances.get("sun_altitude_at_max", -90.0)),
         )
 
+    visible_azimuth = circumstances.get(
+        "visible_azimuth", circumstances.get("azimuth_at_max", 0.0),
+    )
     maximum = circumstances["max_utc"]
     start = circumstances.get("start_utc") or maximum
     end = circumstances.get("end_utc") or maximum
@@ -1179,10 +1223,18 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
         "duration_s": circumstances.get("duration_s", 0),
         "days_until": round((maximum - now).total_seconds() / 86400.0, 3),
         "hours_until": round((maximum - now).total_seconds() / 3600.0, 2),
+        # Both, because they answer different questions and the difference is hours. The lead
+        # time on the "go outside" alert is about first contact -- a lunar eclipse runs nearly
+        # three hours from there to maximum, so measuring the lead against maximum means the
+        # window has already opened and closed before the alert would have fired.
+        "hours_until_start": round((start - now).total_seconds() / 3600.0, 2),
 
-        "altitude_at_max": round(altitude, 1),
+        "altitude_at_max": round(circumstances.get("altitude_at_max", 0.0), 1),
         "azimuth_at_max": round(circumstances.get("azimuth_at_max", 0.0), 1),
         "direction_at_max": compass_direction(circumstances.get("azimuth_at_max", 0.0)),
+        "altitude_when_visible": round(altitude, 1),
+        "azimuth_when_visible": round(visible_azimuth, 1),
+        "direction_when_visible": compass_direction(visible_azimuth),
         "above_horizon_at_max": bool(circumstances.get("above_horizon_at_max")),
         "visible_fraction": round(_clamp(circumstances.get("visible_fraction", 0.0)) * 100.0, 1),
         "in_progress_at_rise": bool(circumstances.get("in_progress_at_rise")),
@@ -1296,8 +1348,11 @@ def build_eclipse_forecast(
     current = next((item for item in visible if item["in_progress"]), None)
     future = [item for item in visible if item["days_until"] >= 0.0]
 
-    catalog_exhausted = not solar_entries and bool(catalog) and (
-        now.year > catalog[-1]["date"][0]
+    # Compared against the last catalogued eclipse's *date*, not its year: the final entry is in
+    # July 2075, so a year comparison leaves the last five months of 2075 returning nothing at all
+    # with the flag still False and nothing in the log to explain it.
+    catalog_exhausted = (
+        not solar_entries and bool(catalog) and _entry_date(catalog[-1]) < now.date()
     )
 
     return {

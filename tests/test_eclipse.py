@@ -719,3 +719,97 @@ class TestNoHomeAssistantDependency(unittest.TestCase):
         source = inspect.getsource(eclipse)
         self.assertNotIn("from eclipse_catalog", source)
         self.assertNotIn("import eclipse_catalog", source)
+
+
+class TestWatchableMomentIsWhatCounts(unittest.TestCase):
+    """Regression tests for the review findings on PR #36.
+
+    Every one of these had the same root cause: the model separates *the eclipse* from *the
+    eclipse you can watch*, and the layers on top of it were reading coverage from one and
+    geometry from the other. Where the whole eclipse is above the horizon the two are identical,
+    which is why it went unnoticed -- and it is exactly the sites where they differ that most need
+    telling what they are getting.
+
+    The standing example is New York on 2026-03-03: a totally eclipsed Moon, visible for nearly
+    three hours, that set before greatest eclipse.
+    """
+
+    NYC_TOTAL_LUNAR = datetime(2026, 2, 20, tzinfo=UTC)
+
+    def _nyc(self):
+        return build_eclipse_forecast(
+            self.NYC_TOTAL_LUNAR, NEW_YORK[0], NEW_YORK[1], UTC, SOLAR_ECLIPSES,
+        )["next_lunar"]
+
+    def test_a_total_eclipse_that_sets_partway_through_is_not_scored_as_poor(self):
+        entry = self._nyc()
+        self.assertEqual(entry["disc_covered"], 100.0)
+        self.assertGreater(entry["visible_fraction"], 40.0)
+        # It was 0 / "Poor" / "low altitude", scored on the Moon's altitude at an instant it
+        # had already set through.
+        self.assertGreater(entry["viewing_score"], 15)
+        self.assertNotEqual(entry["limiting_factor"], eclipse.FACTOR_ALTITUDE)
+
+    def test_the_watchable_altitude_beats_the_altitude_at_maximum(self):
+        # The invariant that was silently violated: for a body that sets during the eclipse, the
+        # best moment you can watch is necessarily higher than the moment of greatest eclipse.
+        entry = self._nyc()
+        self.assertTrue(entry["in_progress_at_set"])
+        self.assertGreater(entry["altitude_when_visible"], entry["altitude_at_max"])
+        self.assertGreater(entry["altitude_when_visible"], 0.0)
+        self.assertLess(entry["altitude_at_max"], 0.0)
+
+    def test_look_towards_is_where_the_eclipse_is_when_you_can_see_it(self):
+        entry = self._nyc()
+        self.assertIsInstance(entry["direction_when_visible"], str)
+        self.assertIn("azimuth_when_visible", entry)
+
+    def test_the_two_geometries_agree_when_the_whole_eclipse_is_visible(self):
+        # The containment half of the fix: it must change nothing for the ordinary case.
+        for site in (TOKYO, SYDNEY):
+            entry = build_eclipse_forecast(
+                self.NYC_TOTAL_LUNAR, site[0], site[1], UTC, SOLAR_ECLIPSES,
+            )["next_lunar"]
+            self.assertAlmostEqual(entry["visible_fraction"], 100.0, delta=1.0, msg=str(site))
+            self.assertAlmostEqual(
+                entry["altitude_when_visible"], entry["altitude_at_max"], delta=6.0, msg=str(site),
+            )
+
+    def test_the_best_moment_is_the_highest_one_at_equal_coverage(self):
+        # Totality holds at 100% for the best part of an hour. Picking by coverage alone leaves
+        # the choice on that plateau to list order rather than to what the observer would want.
+        entry = self._nyc()
+        self.assertEqual(entry["disc_covered"], 100.0)
+        self.assertGreater(entry["altitude_when_visible"], 2.0)
+
+    def test_time_to_first_contact_is_reported_separately_from_time_to_maximum(self):
+        # They differ by nearly three hours for a lunar eclipse, and the alert's lead window is
+        # about first contact. Measuring it against maximum made that window unreachable.
+        entry = self._nyc()
+        self.assertLess(entry["hours_until_start"], entry["hours_until"])
+        self.assertGreater(entry["hours_until"] - entry["hours_until_start"], 1.0)
+
+    def test_the_lunar_horizon_allows_for_the_moon_being_close(self):
+        # astro.moon_equatorial is geocentric, and the Moon has about a degree of horizontal
+        # parallax, so the geocentric altitude at which it truly rises and sets is slightly
+        # *above* zero -- not the Sun's -0.833. Meeus: h0 = 0.7275 * parallax - 0.5667.
+        self.assertGreater(eclipse._MOON_HORIZON_DEG, 0.0)
+        self.assertLess(eclipse._MOON_HORIZON_DEG, 0.3)
+        self.assertLess(eclipse._HORIZON_DEG, 0.0)
+
+    def test_the_catalog_running_out_is_flagged_from_the_last_eclipse_not_the_new_year(self):
+        # The final entry is in July; a year comparison left the rest of that year returning
+        # nothing with the flag still False and nothing in the log to explain it.
+        year, month, day = SOLAR_ECLIPSES[-1]["date"]
+        after = datetime(year, month, day, tzinfo=UTC) + timedelta(days=20)
+        self.assertEqual(after.year, year)
+        forecast = build_eclipse_forecast(after, ILM[0], ILM[1], UTC, SOLAR_ECLIPSES)
+        self.assertTrue(forecast["catalog_exhausted"])
+        self.assertIsNone(forecast["next_solar"])
+
+    def test_the_catalog_is_not_exhausted_on_the_day_of_its_last_eclipse(self):
+        year, month, day = SOLAR_ECLIPSES[-1]["date"]
+        forecast = build_eclipse_forecast(
+            datetime(year, month, day, tzinfo=UTC), ILM[0], ILM[1], UTC, SOLAR_ECLIPSES,
+        )
+        self.assertFalse(forecast["catalog_exhausted"])
