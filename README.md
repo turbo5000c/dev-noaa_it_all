@@ -216,6 +216,9 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 - **Next Eclipse**: The next eclipse visible from where you are, named the way *you* will see it *(sensor.noaa_{office}_space_next_eclipse)*
   - Attributes include the local start/maximum/end times, how much of the disc you get, where to look, and an `upcoming` list of the next five
+- **Next Eclipse Time**: When to go outside — a real timestamp, so Home Assistant shows "in 3 days" or "8:29 PM" and a time trigger can fire straight off it *(sensor.noaa_{office}_space_next_eclipse_time)*
+  - The moment the eclipse has begun **and** the Sun or Moon is above your horizon, which for an eclipse already under way at moonrise is moonrise. Attributes carry the end of the window, maximum, totality window, and `look_towards`
+  - `unknown` when no eclipse is due, which for a timestamp is the honest answer
 - **Eclipse Coverage**: How much of the Sun or Moon you will actually see covered, 0–100% *(sensor.noaa_{office}_space_eclipse_coverage)*
   - This is the "will I get 29% or the whole thing" number
 - **Eclipse Viewing Score**: How worthwhile it is from here, 0–100% *(sensor.noaa_{office}_space_eclipse_viewing_score)*
@@ -406,6 +409,7 @@ Two further IDs are easy to get wrong even though they do follow the rule:
 | Meteor Showers | `sensor.noaa_{office}_space_{metric}` | `sensor.noaa_ilm_space_meteor_viewing_score` |
 | Meteor Shower Binary | `binary_sensor.noaa_{office}_space_meteor_shower_active` | `binary_sensor.noaa_ilm_space_meteor_shower_active` |
 | Eclipses | `sensor.noaa_{office}_space_eclipse_{metric}` | `sensor.noaa_ilm_space_eclipse_coverage` |
+| Eclipse Timing | `sensor.noaa_{office}_space_next_eclipse_time` | `sensor.noaa_ilm_space_next_eclipse_time` |
 | Eclipse Binary | `binary_sensor.noaa_{office}_space_eclipse_{name}` | `binary_sensor.noaa_ilm_space_eclipse_visible_now` |
 | Forecast / Discussion | `sensor.noaa_{office}_weather_{name}` | `sensor.noaa_ilm_weather_extended_forecast` |
 | Weather Entity | `weather.noaa_{office}_weather` | `weather.noaa_ilm_weather` |
@@ -660,8 +664,8 @@ automation:
             🌑 {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eclipse') }}
           message: >
             {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'disc_covered') }}%
-            covered from here. Starts
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'starts_local') | as_timestamp | timestamp_custom('%-I:%M %p') }},
+            covered from here. Watchable from
+            {{ states('sensor.noaa_ilm_space_next_eclipse_time') | as_datetime | as_local | string | truncate(16, true, '') }},
             maximum
             {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'maximum_local') | as_timestamp | timestamp_custom('%-I:%M %p') }}
             — look
@@ -696,6 +700,28 @@ automation:
             {% if state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'eye_protection_required') %}
             Order ISO 12312-2 eclipse glasses now.
             {% endif %}
+```
+
+#### Remind Me an Hour Before
+```yaml
+automation:
+  - alias: "Eclipse Hour Warning"
+    description: >
+      A timestamp sensor can be used directly as a time trigger, offset and all — no templating,
+      no polling. This is what the Next Eclipse Time entity is for.
+    trigger:
+      - platform: time
+        at:
+          entity_id: sensor.noaa_ilm_space_next_eclipse_time
+          offset: "-01:00:00"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "🌑 Eclipse in an hour"
+          message: >
+            {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'eclipse') }} —
+            {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'disc_covered') }}% covered,
+            look {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'look_towards') }}.
 ```
 
 #### Only Bother if the Sky Is Clear
@@ -1071,6 +1097,8 @@ entities:
     name: Worth Planning For
   - entity: sensor.noaa_ilm_space_next_eclipse
     name: Next Eclipse
+  - entity: sensor.noaa_ilm_space_next_eclipse_time
+    name: Go Outside At
   - entity: sensor.noaa_ilm_space_eclipse_coverage
     name: How Much You Get
   - entity: sensor.noaa_ilm_space_eclipse_viewing_score

@@ -54,6 +54,7 @@ from .sensors import (  # noqa: F401
     NextMeteorShowerSensor,
     MeteorViewingScoreSensor,
     NextEclipseSensor,
+    NextEclipseTimeSensor,
     EclipseCoverageSensor,
     EclipseViewingScoreSensor,
 )
@@ -199,6 +200,7 @@ async def async_setup_entry(
     if eclipse_coord:
         entities.extend([
             NextEclipseSensor(eclipse_coord, office_code),
+            NextEclipseTimeSensor(eclipse_coord, office_code),
             EclipseCoverageSensor(eclipse_coord, office_code),
             EclipseViewingScoreSensor(eclipse_coord, office_code),
         ])

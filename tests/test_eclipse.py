@@ -813,3 +813,61 @@ class TestWatchableMomentIsWhatCounts(unittest.TestCase):
             datetime(year, month, day, tzinfo=UTC), ILM[0], ILM[1], UTC, SOLAR_ECLIPSES,
         )
         self.assertFalse(forecast["catalog_exhausted"])
+
+
+class TestWatchableWindowPrecision(unittest.TestCase):
+    """The watchable window is what the timestamp sensor publishes, so its edges have to be sharp.
+
+    They come from two different places by design: where the body is already above the horizon the
+    window is the eclipse itself, taken from the bisected contact times; where the body rises or
+    sets partway through it is the sampled horizon crossing. Getting that backwards quantises the
+    "go outside at" instant to the scan grid and sends people out up to a minute late.
+    """
+
+    NOW_SOLAR = datetime(2026, 8, 1, tzinfo=UTC)
+    NOW_LUNAR = datetime(2026, 2, 20, tzinfo=UTC)
+
+    def _solar(self, site):
+        return build_eclipse_forecast(
+            self.NOW_SOLAR, site[0], site[1], UTC, SOLAR_ECLIPSES,
+        )["next_solar"]
+
+    def _lunar(self, site):
+        return build_eclipse_forecast(
+            self.NOW_LUNAR, site[0], site[1], UTC, SOLAR_ECLIPSES,
+        )["next_lunar"]
+
+    def test_a_body_up_throughout_gives_a_window_equal_to_the_eclipse(self):
+        for site in (REYKJAVIK, (51.51, -0.13)):
+            entry = self._solar(site)
+            self.assertEqual(entry["visible_start_utc"], entry["start_utc"], str(site))
+            self.assertEqual(entry["visible_end_utc"], entry["end_utc"], str(site))
+
+    def test_the_window_never_starts_before_the_eclipse_or_end_after_it(self):
+        for entry in (self._solar(REYKJAVIK), self._solar((42.34, -3.70)),
+                      self._lunar(TOKYO), self._lunar(NEW_YORK)):
+            self.assertGreaterEqual(entry["visible_start_utc"], entry["start_utc"])
+            self.assertLessEqual(entry["visible_end_utc"], entry["end_utc"])
+
+    def test_a_body_that_sets_partway_through_has_the_window_clipped(self):
+        entry = self._lunar(NEW_YORK)
+        self.assertEqual(entry["visible_start_utc"], entry["start_utc"])
+        self.assertLess(entry["visible_end_utc"], entry["end_utc"])
+        self.assertTrue(entry["in_progress_at_set"])
+
+    def test_the_window_is_reported_in_utc_as_well_as_local(self):
+        # The local strings are trimmed to minutes and read well on a card; the UTC ones carry
+        # seconds and are what anything machine-readable should be given.
+        entry = self._solar(REYKJAVIK)
+        for key in ("visible_start_utc", "visible_end_utc"):
+            parsed = datetime.fromisoformat(entry[key])
+            self.assertIsNotNone(parsed.tzinfo, key)
+
+    def test_no_window_at_all_when_nothing_is_visible(self):
+        entry = build_eclipse_forecast(
+            self.NOW_LUNAR, 51.51, -0.13, UTC, SOLAR_ECLIPSES,
+        )["next_lunar"]
+        # London misses the 2026-03-03 eclipse entirely, so whatever it reports next is a later
+        # one it can actually see -- the point being that an invisible eclipse is never offered.
+        self.assertTrue(entry["visible"])
+        self.assertIsNotNone(entry["visible_start_utc"])

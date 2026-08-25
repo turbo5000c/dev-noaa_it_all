@@ -53,8 +53,10 @@
     "viewing_score": 91,
     "visible": true,
     "visible_end_local": "2026-08-12T21:19+02:00",
+    "visible_end_utc": "2026-08-12T19:19:44+00:00",
     "visible_fraction": 99.1,
-    "visible_start_local": "2026-08-12T19:33+02:00"
+    "visible_start_local": "2026-08-12T19:33+02:00",
+    "visible_start_utc": "2026-08-12T17:33:17+00:00"
   },
   "next_lunar": {
     "above_horizon_at_max": true,
@@ -103,8 +105,10 @@
     "viewing_score": 82,
     "visible": true,
     "visible_end_local": "2026-08-28T07:43+02:00",
+    "visible_end_utc": "2026-08-28T05:43:08+00:00",
     "visible_fraction": 76.9,
-    "visible_start_local": "2026-08-28T03:25+02:00"
+    "visible_start_local": "2026-08-28T03:25+02:00",
+    "visible_start_utc": "2026-08-28T01:25:08+00:00"
   },
   "next_solar": {
     "above_horizon_at_max": true,
@@ -153,8 +157,10 @@
     "viewing_score": 91,
     "visible": true,
     "visible_end_local": "2026-08-12T21:19+02:00",
+    "visible_end_utc": "2026-08-12T19:19:44+00:00",
     "visible_fraction": 99.1,
-    "visible_start_local": "2026-08-12T19:33+02:00"
+    "visible_start_local": "2026-08-12T19:33+02:00",
+    "visible_start_utc": "2026-08-12T17:33:17+00:00"
   },
   "next_solar_global": {
     "date": "2026-08-12",

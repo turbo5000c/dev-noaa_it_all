@@ -696,11 +696,22 @@ def solar_local_circumstances(
             "visible_azimuth": peak.azimuth,
         })
     else:
+        # Where the Sun is already up at first contact the watchable window simply *is* the
+        # eclipse, so it takes the precisely bisected contact time rather than the first sample
+        # of the scan grid -- which is up to a minute late, and this is the instant the whole
+        # point of which is telling somebody when to walk outside. Only a Sun that rises or sets
+        # mid-eclipse falls back to the sampled crossing.
         result.update({
             "visible_obscuration": best.obscuration,
             "visible_type": local_solar_type(best.geometry),
-            "visible_start_utc": watchable[0].when,
-            "visible_end_utc": watchable[-1].when,
+            "visible_start_utc": (
+                watchable[0].when if during[0] is not watchable[0]
+                else _entry_time(entry, start_t)
+            ),
+            "visible_end_utc": (
+                watchable[-1].when if during[-1] is not watchable[-1]
+                else _entry_time(entry, end_t)
+            ),
             # See the note in lunar_local_circumstances: an eclipse that starts before sunrise or
             # runs past sunset has its best watchable moment somewhere other than its maximum.
             "visible_altitude": best.altitude,
@@ -973,8 +984,16 @@ def lunar_local_circumstances(
         # need this one; reporting the other sends people to a horizon the Moon set behind.
         "visible_altitude": best[2] if best else altitude_at_max,
         "visible_azimuth": best[3] if best else azimuth_at_max,
-        "visible_start_utc": above[0][1] if above else None,
-        "visible_end_utc": above[-1][1] if above else None,
+        # Same rule as the solar side: a Moon that is up when the eclipse begins gives a
+        # watchable window that starts with the eclipse itself, not with the first sample.
+        "visible_start_utc": (
+            None if not above
+            else (start_utc if above[0][0] == offsets[0] else above[0][1])
+        ),
+        "visible_end_utc": (
+            None if not above
+            else (end_utc if above[-1][0] == offsets[-1] else above[-1][1])
+        ),
         "in_progress_at_rise": bool(above) and offsets[0] < above[0][0],
         "in_progress_at_set": bool(above) and offsets[-1] > above[-1][0],
         "path_width_km": 0.0,
@@ -1217,6 +1236,11 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
         "central_end_local": _local_iso(circumstances.get("central_end_utc"), tz),
         "partial_start_local": _local_iso(circumstances.get("partial_start_utc"), tz),
         "partial_end_local": _local_iso(circumstances.get("partial_end_utc"), tz),
+        # The watchable window in both forms, matching how start/max/end each carry a UTC twin.
+        # The UTC one is what the timestamp sensor publishes: a local string trimmed to minutes
+        # reads well on a card but is a weaker thing to hand a machine.
+        "visible_start_utc": _utc_iso(circumstances.get("visible_start_utc")),
+        "visible_end_utc": _utc_iso(circumstances.get("visible_end_utc")),
         "visible_start_local": _local_iso(circumstances.get("visible_start_utc"), tz),
         "visible_end_local": _local_iso(circumstances.get("visible_end_utc"), tz),
         "central_duration_s": circumstances.get("central_duration_s", 0),

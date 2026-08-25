@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -507,3 +508,82 @@ class TestEclipseComingUpBinarySensor(unittest.TestCase):
 
     def test_attributes_before_first_refresh(self):
         self.assertEqual(self._sensor(None).extra_state_attributes["office_code"], OFFICE)
+
+
+# ---------------------------------------------------------------------------
+# Next Eclipse Time
+# ---------------------------------------------------------------------------
+
+class TestNextEclipseTimeSensor(unittest.TestCase):
+    """The date to put on a dashboard, rather than an attribute to template out of one."""
+
+    def _sensor(self, data):
+        from noaa_it_all.sensors.eclipses import NextEclipseTimeSensor
+        return NextEclipseTimeSensor(_make_coordinator(data), OFFICE)
+
+    def test_state_is_when_the_eclipse_becomes_watchable(self):
+        self.assertEqual(
+            self._sensor(_forecast()).state, _forecast()["next"]["visible_start_utc"],
+        )
+
+    def test_state_is_a_parseable_timezone_aware_instant(self):
+        """The assertion the whole design rests on.
+
+        The state is published as a string rather than a datetime, so it being genuinely
+        machine-readable ISO-8601 is what makes the timestamp device class mean anything -- to the
+        frontend renderer, to a time trigger, and to any template doing date arithmetic.
+        """
+        parsed = datetime.fromisoformat(self._sensor(_forecast()).state)
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertIsNotNone(parsed.tzinfo.utcoffset(parsed))
+
+    def test_it_declares_itself_a_timestamp(self):
+        self.assertEqual(self._sensor(_forecast()).device_class, "timestamp")
+
+    def test_state_is_none_when_nothing_is_due(self):
+        # Not the string "None" and not 0, either of which a timestamp sensor would choke on.
+        # Home Assistant renders None as "unknown", which is the honest answer.
+        state = self._sensor(_quiet_forecast()).state
+        self.assertIsNone(state)
+        self.assertNotEqual(state, "None")
+
+    def test_state_before_first_refresh(self):
+        self.assertIsNone(self._sensor(None).state)
+
+    def test_it_reports_the_eclipse_under_way_in_preference_to_the_next_one(self):
+        sensor = self._sensor(_in_progress_forecast())
+        self.assertTrue(sensor.extra_state_attributes["in_progress"])
+
+    def test_naming(self):
+        sensor = self._sensor(_forecast())
+        self.assertEqual(sensor.name, "Next Eclipse Time")
+        self.assertEqual(sensor.unique_id, f"noaa_{OFFICE}_next_eclipse_time")
+
+    def test_attributes_carry_the_rest_of_the_window(self):
+        attrs = self._sensor(_forecast()).extra_state_attributes
+        self.assertEqual(attrs["date"], "2026-08-12")
+        self.assertEqual(attrs["watch_until_utc"], _forecast()["next"]["visible_end_utc"])
+        self.assertIn("look_towards", attrs)
+        self.assertIn("totality_starts_local", attrs)
+
+    def test_attributes_when_nothing_is_due(self):
+        attrs = self._sensor(_quiet_forecast()).extra_state_attributes
+        self.assertIsNone(attrs["eclipse"])
+        self.assertIsNone(attrs["date"])
+
+    def test_attributes_before_first_refresh(self):
+        self.assertEqual(self._sensor(None).extra_state_attributes["office_code"], OFFICE)
+
+    def test_device_grouping(self):
+        from noaa_it_all.const import DOMAIN
+        self.assertEqual(self._sensor(_forecast()).device_info, {
+            "identifiers": {(DOMAIN, f"noaa_{OFFICE}_space")},
+            "name": f"NOAA {OFFICE} Space",
+            "manufacturer": "NOAA",
+        })
+
+    def test_the_watchable_moment_is_never_before_the_eclipse_begins(self):
+        # It is the later of first contact and the body clearing the horizon, so it can equal
+        # first contact but must never precede it.
+        entry = _forecast()["next"]
+        self.assertGreaterEqual(entry["visible_start_utc"], entry["start_utc"])

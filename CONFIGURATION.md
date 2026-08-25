@@ -190,6 +190,7 @@ forecasts for your configured location.
 - `sensor.noaa_{office}_space_meteor_viewing_score`
 - `binary_sensor.noaa_{office}_space_meteor_shower_active`
 - `sensor.noaa_{office}_space_next_eclipse`
+- `sensor.noaa_{office}_space_next_eclipse_time`
 - `sensor.noaa_{office}_space_eclipse_coverage`
 - `sensor.noaa_{office}_space_eclipse_viewing_score`
 - `binary_sensor.noaa_{office}_space_eclipse_visible_now`
@@ -386,6 +387,7 @@ entities:
   - binary_sensor.noaa_ilm_space_eclipse_visible_now
   - binary_sensor.noaa_ilm_space_eclipse_coming_up
   - sensor.noaa_ilm_space_next_eclipse
+  - sensor.noaa_ilm_space_next_eclipse_time
   - sensor.noaa_ilm_space_eclipse_coverage
   - sensor.noaa_ilm_space_eclipse_viewing_score
   - type: attribute

@@ -279,3 +279,100 @@ class EclipseViewingScoreSensor(_EclipseBaseSensor):
             "eye_safety": headline["eye_safety"],
             "worthwhile_threshold": ECLIPSE_UPCOMING_MIN_COVERAGE,
         }
+
+
+class NextEclipseTimeSensor(_EclipseBaseSensor):
+    """When the next eclipse becomes watchable from here, as a timestamp.
+
+    The companion to Next Eclipse, which names the event: this one dates it. Its state is the
+    moment the eclipse has begun **and** the Sun or Moon is above your horizon -- for an eclipse
+    already under way at moonrise that is moonrise, not first contact -- so it answers "when do I
+    go outside" rather than "when does the geometry start".
+
+    Home Assistant renders a timestamp natively, so a card shows "in 3 days" or "8:29 PM" without
+    a template, and a time trigger can fire off this entity directly. That is the point of it: the
+    same instant was always available as an attribute of Next Eclipse, but only as a string that
+    every automation had to convert by hand.
+
+    Like its siblings it reads the current eclipse in preference to the next one, so mid-event it
+    reports when *this* one became watchable and reads as "started twenty minutes ago" -- which is
+    the useful thing to say while somebody is outside looking at it.
+
+    **On the device class.** This returns an ISO-8601 string and declares ``device_class`` as the
+    bare string ``"timestamp"``, rather than inheriting ``SensorEntity`` and returning a
+    ``datetime``. The latter is the textbook approach and is deliberately not used here: no sensor
+    in this integration inherits ``SensorEntity``, ``device_class`` is a plain string everywhere it
+    already appears (see ``weather_observations.py``), and adding a second base class to the
+    coordinator entity is what produced a metaclass conflict against the test suite's mocks when
+    it was last tried. An ISO-8601 string with an offset is what the frontend's timestamp renderer
+    and the ``time`` trigger parse, so the behaviour is identical for every use this has. What it
+    gives up is recorder statistics and core-side validation, neither of which means anything for
+    a value that changes a handful of times a year. Promoting it later is a contained change.
+    """
+
+    @property
+    def name(self):
+        """Return the local name of the sensor."""
+        return "Next Eclipse Time"
+
+    @property
+    def unique_id(self):
+        """Return a unique ID for this entity."""
+        return f"noaa_{self._office_code}_next_eclipse_time"
+
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return "timestamp"
+
+    @property
+    def state(self):
+        """Return when the eclipse becomes watchable, ISO-8601, or ``None``.
+
+        ``None`` rather than a placeholder: a timestamp sensor has to be a real instant or
+        nothing at all, and Home Assistant renders nothing as "unknown", which is the honest
+        reading when no eclipse is due. The sibling coverage sensor returns 0 in the same
+        situation, which is right for a percentage and would be meaningless here.
+        """
+        headline = self._headline
+        if not headline:
+            return None
+        return headline["visible_start_utc"]
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return "mdi:clock-start"
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        headline = self._headline
+        if not headline:
+            return {
+                "office_code": self._office_code,
+                "eclipse": None,
+                "date": None,
+            }
+
+        return {
+            "office_code": self._office_code,
+            "eclipse": headline["name"],
+            "kind": headline["kind"],
+            "eclipse_type": headline["type"],
+            "date": headline["date"],
+            "watch_until_utc": headline["visible_end_utc"],
+            "watch_from_local": headline["visible_start_local"],
+            "watch_until_local": headline["visible_end_local"],
+            "maximum_local": headline["max_local"],
+            "totality_starts_local": headline["central_start_local"],
+            "totality_ends_local": headline["central_end_local"],
+            "totality_seconds": headline["central_duration_s"],
+            "days_until": headline["days_until"],
+            "in_progress": headline["in_progress"],
+            "disc_covered": headline["disc_covered"],
+            "viewing_score": headline["viewing_score"],
+            "rating": headline["rating"],
+            "look_towards": headline["direction_when_visible"],
+            "eye_protection_required": headline["eye_protection_required"],
+        }

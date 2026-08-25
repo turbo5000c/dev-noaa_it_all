@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Eclipse Coming Up** turns on two weeks ahead of an eclipse worth planning around — a
     higher bar, because a partial eclipse worth glancing at is not one worth booking the day off.
   - **Eclipse Coverage** is the "will I get 29% or the whole thing" number.
+  - **Next Eclipse Time** is the date to put on a dashboard — the moment the eclipse becomes
+    watchable from where you are, published as a real timestamp rather than a string. Home
+    Assistant renders it natively ("in 3 days", "8:29 PM") and a time trigger can fire straight
+    off it, offset and all, with no templating. It reads `unknown` when nothing is due, which for
+    a timestamp is the honest answer rather than a placeholder.
   - **Eclipse Viewing Score** and **Next Eclipse** fill in the rest.
 
   Things worth knowing:
@@ -74,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     predictions do not. The numbers are the product here.
 
 ### Changed
+- The watchable window is now reported in UTC as well as local time, and its edges are exact:
+  where the Sun or Moon is above the horizon when the eclipse begins the window starts with the
+  eclipse itself rather than with the next sample of the internal scan grid, which was up to a
+  minute late. That instant is what tells somebody when to walk outside, so a minute matters.
 - `astro.py` gained `delta_t_seconds()`, and the module docstring no longer claims that modelling
   the TT–UT offset would be false precision. It is, for meteors. It is not for eclipse contact
   timing, where leaving it out costs up to two minutes — the whole point there being the instant a
