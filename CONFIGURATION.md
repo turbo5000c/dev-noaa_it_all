@@ -194,7 +194,6 @@ forecasts for your configured location.
 - `sensor.noaa_{office}_space_eclipse_viewing_score`
 - `binary_sensor.noaa_{office}_space_eclipse_visible_now`
 - `binary_sensor.noaa_{office}_space_eclipse_coming_up`
-- `image.noaa_{office}_space_eclipse_map`
 - `image.noaa_ilm_space_geoelectric_field_image`
 - `image.noaa_ilm_space_aurora_forecast_image`
 
@@ -205,8 +204,7 @@ forecasts for your configured location.
 > Eclipse entities require latitude/longitude for a stronger reason still: a solar eclipse is a
 > shadow a couple of hundred kilometres wide, so two towns an hour apart can get totality and
 > 60%. They are computed locally from bundled NASA Besselian elements covering 2025–2075 and
-> make no network requests, except the eclipse map image — which shows nothing rather than
-> failing when there is no map to show.
+> make no network requests.
 
 > ⚠️ **Never look at a partially eclipsed Sun without ISO 12312-2 eclipse glasses.** Only
 > totality is safe unfiltered; an annular eclipse never is. Every solar eclipse entity carries

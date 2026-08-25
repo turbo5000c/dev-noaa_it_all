@@ -798,6 +798,5 @@ class EclipseComingUpBinarySensor(_EclipseBinarySensor):
             'date': eclipse['date'],
             'days_until': eclipse['days_until'],
             'visible_fraction': eclipse['visible_fraction'],
-            'map_url': eclipse['map_url'],
         })
         return attrs

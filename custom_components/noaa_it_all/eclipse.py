@@ -670,7 +670,6 @@ def solar_local_circumstances(
         "visible_fraction": _clamp(visible_fraction),
         "gamma": entry["gamma"],
         "path_width_km": entry["path_width_km"],
-        "map_url": entry["map_url"],
     }
 
     if best is None:
@@ -945,7 +944,6 @@ def lunar_local_circumstances(
         "in_progress_at_rise": bool(above) and offsets[0] < above[0][0],
         "in_progress_at_set": bool(above) and offsets[-1] > above[-1][0],
         "path_width_km": 0.0,
-        "map_url": None,
     }
 
 
@@ -1191,7 +1189,6 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
         "in_progress_at_set": bool(circumstances.get("in_progress_at_set")),
 
         "path_width_km": circumstances.get("path_width_km", 0.0),
-        "map_url": circumstances.get("map_url"),
     }
     entry.update(safety)
     return entry

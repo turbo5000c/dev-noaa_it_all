@@ -486,11 +486,6 @@ ECLIPSE_MAX_CATALOG_SCAN = 24
 # genuine eclipse in the headline.
 ECLIPSE_INCLUDE_PENUMBRAL = False
 
-# How far ahead to advertise the eclipse map image, in days. NASA hosts one page per eclipse and
-# nothing else; pointing at one for the three years it takes the next eclipse to arrive would
-# log a warning every ten minutes for three years if the URL ever moved.
-ECLIPSE_MAP_DAYS = 400
-
 # Thresholds for the two eclipse binary sensors. Unlike the meteor equivalents these are not
 # fighting a permanently-on flag -- eclipses are rare -- they are here to stop a 3% nibble at
 # the Sun, which nobody would notice without a filter, from being announced as an event.

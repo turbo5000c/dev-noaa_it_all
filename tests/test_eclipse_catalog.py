@@ -116,16 +116,6 @@ class TestCatalogStructure(unittest.TestCase):
                 self.assertEqual(entry["path_width_km"], 0.0, str(entry["date"]))
                 self.assertEqual(entry["central_duration_s"], 0, str(entry["date"]))
 
-    def test_map_urls_are_absent_where_nasa_publishes_none(self):
-        # NASA plots only central eclipses, and its index stops in 2050. Anything else must be
-        # None rather than a URL that would 404 on every refresh for years.
-        for entry in SOLAR_ECLIPSES:
-            if entry["type"] == "partial" or entry["date"][0] > 2050:
-                self.assertIsNone(entry["map_url"], str(entry["date"]))
-            else:
-                self.assertTrue(entry["map_url"].startswith("https://"), str(entry["date"]))
-                self.assertTrue(entry["map_url"].endswith(".GIF"), str(entry["date"]))
-
     def test_acknowledgement_is_present(self):
         # NASA's terms of use require it to travel with the data.
         self.assertIn("Espenak", ACKNOWLEDGEMENT)

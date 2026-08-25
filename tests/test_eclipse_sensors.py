@@ -460,10 +460,10 @@ class TestEclipseComingUpBinarySensor(unittest.TestCase):
         self.assertEqual(sensor.name, "Eclipse Coming Up")
         self.assertEqual(sensor._attr_unique_id, f"noaa_{OFFICE}_eclipse_coming_up")
 
-    def test_attributes_carry_the_date_and_the_map(self):
+    def test_attributes_carry_the_date(self):
         attrs = self._sensor(_forecast()).extra_state_attributes
         self.assertEqual(attrs["date"], "2026-08-12")
-        self.assertIn("map_url", attrs)
+        self.assertAlmostEqual(attrs["days_until"], 2.4, delta=0.1)
 
     def test_attributes_before_first_refresh(self):
         self.assertEqual(self._sensor(None).extra_state_attributes["office_code"], OFFICE)

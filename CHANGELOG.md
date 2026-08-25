@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.0] - Current
 
 ### Added
-- **Solar and lunar eclipses, worked out for where you actually are.** Three sensors, two binary
-  sensors and a map image on the existing **NOAA {OFFICE} Space** device, answering one question:
-  if you walk outside, what will you see?
+- **Solar and lunar eclipses, worked out for where you actually are.** Three sensors and two
+  binary sensors on the existing **NOAA {OFFICE} Space** device, answering one question: if you
+  walk outside, what will you see?
 
   - **Eclipse Visible Now** turns on an hour before first contact and off at last contact. This
     is the one to trigger an announcement from. Expect it on for a few hours a year at most, and
@@ -18,8 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Eclipse Coming Up** turns on two weeks ahead of an eclipse worth planning around — a
     higher bar, because a partial eclipse worth glancing at is not one worth booking the day off.
   - **Eclipse Coverage** is the "will I get 29% or the whole thing" number.
-  - **Eclipse Viewing Score** and **Next Eclipse** fill in the rest, and the **Eclipse Map**
-    entity shows NASA's published shadow path.
+  - **Eclipse Viewing Score** and **Next Eclipse** fill in the rest.
 
   Things worth knowing:
   - **It reports *your* eclipse, not the headline.** A total solar eclipse is total along a strip
@@ -55,10 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Like the meteor score, it knows nothing about cloud** — deliberately, so the percentages
     stay correct for an eclipse fifty years out. Pair it with
     `sensor.noaa_{office}_weather_cloud_cover` in an automation; the README has an example.
-  - The **eclipse map** shows nothing rather than failing when there is nothing to show. NASA
-    plots only central eclipses and its index stops in 2050, so a purely partial eclipse has no
-    map, and the entity skips the fetch entirely instead of logging a 404 every ten minutes for
-    years.
+  - **There is no eclipse map image entity.** One was built and then removed: NASA hosts a single
+    static plot per eclipse, so the picture would have been unchanging for months at a time,
+    absent entirely for the third of eclipses that are purely partial, and gone altogether past
+    2050 where NASA's index stops. An image platform is for things that refresh, and eclipse
+    predictions do not. The numbers are the product here.
 
 ### Changed
 - `astro.py` gained `delta_t_seconds()`, and the module docstring no longer claims that modelling

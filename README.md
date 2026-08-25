@@ -224,7 +224,6 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
   - The one to trigger an announcement from. Expect it on for a few hours a year at most, and in many years not at all
 - **Eclipse Coming Up**: Turns on two weeks before an eclipse worth planning around *(binary_sensor.noaa_{office}_space_eclipse_coming_up)*
   - A higher bar than the live alert: a partial eclipse worth glancing at is not one worth booking the day off for
-- **Eclipse Map**: NASA's published shadow-path map for the next solar eclipse *(image.noaa_{office}_space_eclipse_map)*
 
 > **⚠️ Eye safety**: Never look at a partially eclipsed Sun without ISO 12312-2 eclipse glasses or a certified solar filter — sunglasses, exposed film and smoked glass are **not** safe. Only during **totality**, between second and third contact, may the Sun be viewed with the naked eye, and the filter goes back on the instant the first sliver reappears. An **annular** eclipse is never safe to view unfiltered: there is still a complete ring of photosphere at maximum. Every solar entity carries `eye_protection_required`, `safe_without_filter` and an `eye_safety` string so an automation can read the warning out.
 
@@ -232,7 +231,7 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 > **Note on the two percentages**: `disc_covered` is the fraction of the disc's **area** that is hidden. Eclipse *magnitude*, the figure usually quoted, is the fraction of its **diameter**, and the two are far apart — magnitude 0.5 is only 39% covered. Both are reported so you can compare against a published table.
 
-> **Note on the data source**: Lunar eclipses are computed from first principles and stay correct indefinitely. Solar eclipses need Besselian elements from full planetary ephemerides, so this feature bundles NASA's for **2025–2075** — 114 eclipses — and does the observer-specific geometry locally. There is no API call, no API key and no extra dependency, and it keeps working with no internet connection (the eclipse map is the one exception, and it degrades to no picture rather than an error). Computed contact times land within 20 seconds of NASA's published values, checked against all 114. Regenerate or extend the catalog with `python3 scripts/build_eclipse_catalog.py`. *Eclipse Predictions by Fred Espenak, NASA's GSFC.*
+> **Note on the data source**: Lunar eclipses are computed from first principles and stay correct indefinitely. Solar eclipses need Besselian elements from full planetary ephemerides, so this feature bundles NASA's for **2025–2075** — 114 eclipses — and does the observer-specific geometry locally. There is no API call, no API key and no extra dependency, and it keeps working with no internet connection. Computed contact times land within 20 seconds of NASA's published values, checked against all 114. Regenerate or extend the catalog with `python3 scripts/build_eclipse_catalog.py`. *Eclipse Predictions by Fred Espenak, NASA's GSFC.*
 
 > **Note on the score**: Unlike the meteor viewing score this deliberately does **not** factor out the strength of the event — whether the Moon covers a tenth of the Sun or all of it is the single most important thing about a solar eclipse. It accounts for how much is covered, how high the Sun or Moon sits, and for lunar eclipses how dark the sky is. It does **not** account for cloud cover; pair it with `sensor.noaa_{office}_weather_cloud_cover` if you want that.
 
@@ -1107,15 +1106,6 @@ entities:
     entity: sensor.noaa_ilm_space_next_eclipse
     attribute: days_until
     name: Days Away
-```
-
-The eclipse map is an ordinary picture entity — note it is blank for a purely partial eclipse,
-which has no shadow path to draw:
-
-```yaml
-type: picture-entity
-entity: image.noaa_ilm_space_eclipse_map
-show_state: false
 ```
 
 To list what is coming, read the `upcoming` attribute with a markdown card. It includes eclipses

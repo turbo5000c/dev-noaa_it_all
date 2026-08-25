@@ -47,7 +47,6 @@ Field reference:
 ``path_width_km``       Width of the central path at greatest eclipse, 0 if partial
 ``central_duration_s``  Duration of totality/annularity at greatest eclipse
 ``greatest_*``          NASA's own circumstances at greatest eclipse -- see below
-``map_url``             NASA path map, or ``None`` -- see below
 ======================  =========================================================
 
 The ``greatest_jd`` / ``greatest_latitude`` / ``greatest_longitude`` / ``greatest_altitude``
@@ -60,8 +59,6 @@ nothing that goes stale with the passage of time.
 ``l2`` is negative for a total eclipse. That sign is not a quirk to be normalised away: it is
 what says the Moon's disc is the larger of the two, and ``eclipse.py`` depends on it.
 
-``map_url`` is ``None`` for every purely partial eclipse -- there is no path to plot -- and for
-everything after 2050, where NASA's own index stops. Consumers must handle a missing map.
 """
 
 from __future__ import annotations
@@ -88,7 +85,6 @@ REQUIRED_FIELDS: Tuple[str, ...] = (
     "x", "y", "d", "mu", "l1", "l2", "tanf1", "tanf2",
     "path_width_km", "central_duration_s",
     "greatest_jd", "greatest_latitude", "greatest_longitude", "greatest_altitude",
-    "map_url",
 )
 
 #: Eclipse types that may appear in ``type``.
@@ -104,7 +100,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2460763.949554, "greatest_latitude": 61.1,
         "greatest_longitude": -77.1, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2025, 9, 21), "type": "partial", "t0_jd": 2460940.333333, "delta_t": 74.8,
@@ -115,7 +110,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2460940.320708, "greatest_latitude": -60.9,
         "greatest_longitude": 153.5, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2026, 2, 17), "type": "annular", "t0_jd": 2461089.0, "delta_t": 75.1,
@@ -126,7 +120,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 616.3, "central_duration_s": 140,
         "greatest_jd": 2461089.008228, "greatest_latitude": -64.7,
         "greatest_longitude": 86.8, "greatest_altitude": 12.3,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2026Feb17A.GIF',
     },
     {
         "date": (2026, 8, 12), "type": "total", "t0_jd": 2461265.25, "delta_t": 75.4,
@@ -137,7 +130,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 293.9, "central_duration_s": 138,
         "greatest_jd": 2461265.240169, "greatest_latitude": 65.2,
         "greatest_longitude": -25.2, "greatest_altitude": 25.8,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2026Aug12T.GIF',
     },
     {
         "date": (2027, 2, 6), "type": "annular", "t0_jd": 2461443.166667, "delta_t": 75.7,
@@ -148,7 +140,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 281.6, "central_duration_s": 471,
         "greatest_jd": 2461443.166346, "greatest_latitude": -31.3,
         "greatest_longitude": -48.5, "greatest_altitude": 72.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2027Feb06A.GIF',
     },
     {
         "date": (2027, 8, 2), "type": "total", "t0_jd": 2461619.916667, "delta_t": 76.0,
@@ -159,7 +150,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 257.7, "central_duration_s": 383,
         "greatest_jd": 2461619.921227, "greatest_latitude": 25.5,
         "greatest_longitude": 33.2, "greatest_altitude": 81.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2027Aug02T.GIF',
     },
     {
         "date": (2028, 1, 26), "type": "annular", "t0_jd": 2461797.125, "delta_t": 76.3,
@@ -170,7 +160,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 323.0, "central_duration_s": 627,
         "greatest_jd": 2461797.130355, "greatest_latitude": 3.0,
         "greatest_longitude": -51.5, "greatest_altitude": 67.0,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2028Jan26A.GIF',
     },
     {
         "date": (2028, 7, 22), "type": "total", "t0_jd": 2461974.625, "delta_t": 76.6,
@@ -181,7 +170,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 230.2, "central_duration_s": 310,
         "greatest_jd": 2461974.621799, "greatest_latitude": -15.6,
         "greatest_longitude": 126.7, "greatest_altitude": 52.6,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2028Jul22T.GIF',
     },
     {
         "date": (2029, 1, 14), "type": "partial", "t0_jd": 2462151.208333, "delta_t": 76.9,
@@ -192,7 +180,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2462151.217027, "greatest_latitude": 63.7,
         "greatest_longitude": -114.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2029, 6, 12), "type": "partial", "t0_jd": 2462299.666667, "delta_t": 77.2,
@@ -203,7 +190,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2462299.67009, "greatest_latitude": 66.8,
         "greatest_longitude": -66.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2029, 7, 11), "type": "partial", "t0_jd": 2462329.166667, "delta_t": 77.2,
@@ -214,7 +200,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2462329.150021, "greatest_latitude": -64.3,
         "greatest_longitude": -85.6, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2029, 12, 5), "type": "partial", "t0_jd": 2462476.125, "delta_t": 77.5,
@@ -225,7 +210,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2462476.126858, "greatest_latitude": -67.5,
         "greatest_longitude": 135.7, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2030, 6, 1), "type": "annular", "t0_jd": 2462653.75, "delta_t": 77.8,
@@ -236,7 +220,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 249.6, "central_duration_s": 321,
         "greatest_jd": 2462653.769389, "greatest_latitude": 56.5,
         "greatest_longitude": 80.1, "greatest_altitude": 55.5,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2030Jun01A.GIF',
     },
     {
         "date": (2030, 11, 25), "type": "total", "t0_jd": 2462830.791667, "delta_t": 78.1,
@@ -247,7 +230,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 169.3, "central_duration_s": 224,
         "greatest_jd": 2462830.784941, "greatest_latitude": -43.6,
         "greatest_longitude": 71.2, "greatest_altitude": 67.0,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2030Nov25T.GIF',
     },
     {
         "date": (2031, 5, 21), "type": "annular", "t0_jd": 2463007.791667, "delta_t": 78.5,
@@ -258,7 +240,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 152.2, "central_duration_s": 326,
         "greatest_jd": 2463007.801916, "greatest_latitude": 8.9,
         "greatest_longitude": 71.7, "greatest_altitude": 78.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2031May21A.GIF',
     },
     {
         "date": (2031, 11, 14), "type": "hybrid", "t0_jd": 2463185.375, "delta_t": 78.8,
@@ -269,7 +250,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 38.3, "central_duration_s": 68,
         "greatest_jd": 2463185.379308, "greatest_latitude": -0.6,
         "greatest_longitude": -137.6, "greatest_altitude": 72.1,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2031Nov14H.GIF',
     },
     {
         "date": (2032, 5, 9), "type": "annular", "t0_jd": 2463362.041667, "delta_t": 79.1,
@@ -280,7 +260,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 43.7, "central_duration_s": 22,
         "greatest_jd": 2463362.059293, "greatest_latitude": -51.3,
         "greatest_longitude": -7.1, "greatest_altitude": 19.9,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2032May09A.GIF',
     },
     {
         "date": (2032, 11, 3), "type": "partial", "t0_jd": 2463539.75, "delta_t": 79.5,
@@ -291,7 +270,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2463539.731175, "greatest_latitude": 70.4,
         "greatest_longitude": 132.6, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2033, 3, 30), "type": "total", "t0_jd": 2463687.25, "delta_t": 79.7,
@@ -302,7 +280,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 781.1, "central_duration_s": 157,
         "greatest_jd": 2463687.250883, "greatest_latitude": 71.3,
         "greatest_longitude": -155.8, "greatest_altitude": 11.2,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2033Mar30T.GIF',
     },
     {
         "date": (2033, 9, 23), "type": "partial", "t0_jd": 2463864.083333, "delta_t": 80.1,
@@ -313,7 +290,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2463864.078598, "greatest_latitude": -72.2,
         "greatest_longitude": -121.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2034, 3, 20), "type": "total", "t0_jd": 2464041.916667, "delta_t": 80.4,
@@ -324,7 +300,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 159.1, "central_duration_s": 249,
         "greatest_jd": 2464041.928757, "greatest_latitude": 16.1,
         "greatest_longitude": 22.2, "greatest_altitude": 73.1,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2034Mar20T.GIF',
     },
     {
         "date": (2034, 9, 12), "type": "annular", "t0_jd": 2464218.166667, "delta_t": 80.7,
@@ -335,7 +310,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 102.1, "central_duration_s": 178,
         "greatest_jd": 2464218.179251, "greatest_latitude": -18.2,
         "greatest_longitude": -72.6, "greatest_altitude": 66.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2034Sep12A.GIF',
     },
     {
         "date": (2035, 3, 9), "type": "annular", "t0_jd": 2464396.458333, "delta_t": 81.1,
@@ -346,7 +320,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 31.5, "central_duration_s": 48,
         "greatest_jd": 2464396.461492, "greatest_latitude": -29.0,
         "greatest_longitude": -154.9, "greatest_altitude": 63.9,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2035Mar09A.GIF',
     },
     {
         "date": (2035, 9, 2), "type": "total", "t0_jd": 2464572.583333, "delta_t": 81.4,
@@ -357,7 +330,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 116.3, "central_duration_s": 174,
         "greatest_jd": 2464572.580146, "greatest_latitude": 29.1,
         "greatest_longitude": 158.0, "greatest_altitude": 67.9,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2035Sep02T.GIF',
     },
     {
         "date": (2036, 2, 27), "type": "partial", "t0_jd": 2464750.708333, "delta_t": 81.8,
@@ -368,7 +340,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2464750.698231, "greatest_latitude": -71.6,
         "greatest_longitude": -131.4, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2036, 7, 23), "type": "partial", "t0_jd": 2464897.958333, "delta_t": 82.1,
@@ -379,7 +350,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2464897.938008, "greatest_latitude": -68.9,
         "greatest_longitude": 3.6, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2036, 8, 21), "type": "partial", "t0_jd": 2464927.208333, "delta_t": 82.1,
@@ -390,7 +360,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2464927.225265, "greatest_latitude": 71.1,
         "greatest_longitude": 47.0, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2037, 1, 16), "type": "partial", "t0_jd": 2465074.916667, "delta_t": 82.4,
@@ -401,7 +370,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2465074.908016, "greatest_latitude": 68.5,
         "greatest_longitude": 20.8, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2037, 7, 13), "type": "total", "t0_jd": 2465252.625, "delta_t": 82.8,
@@ -412,7 +380,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 200.6, "central_duration_s": 238,
         "greatest_jd": 2465252.610569, "greatest_latitude": -24.8,
         "greatest_longitude": 139.1, "greatest_altitude": 43.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2037Jul13T.GIF',
     },
     {
         "date": (2038, 1, 5), "type": "annular", "t0_jd": 2465429.083333, "delta_t": 83.2,
@@ -423,7 +390,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 107.2, "central_duration_s": 198,
         "greatest_jd": 2465429.07347, "greatest_latitude": 2.1,
         "greatest_longitude": -25.4, "greatest_altitude": 65.3,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2038Jan05A.GIF',
     },
     {
         "date": (2038, 7, 2), "type": "annular", "t0_jd": 2465607.083333, "delta_t": 83.5,
@@ -434,7 +400,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 31.2, "central_duration_s": 60,
         "greatest_jd": 2465607.063559, "greatest_latitude": 25.4,
         "greatest_longitude": -21.9, "greatest_altitude": 87.6,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2038Jul02A.GIF',
     },
     {
         "date": (2038, 12, 26), "type": "total", "t0_jd": 2465783.541667, "delta_t": 83.9,
@@ -445,7 +410,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 95.2, "central_duration_s": 138,
         "greatest_jd": 2465783.540811, "greatest_latitude": -40.3,
         "greatest_longitude": 164.0, "greatest_altitude": 73.0,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2038Dec26T.GIF',
     },
     {
         "date": (2039, 6, 21), "type": "annular", "t0_jd": 2465961.208333, "delta_t": 84.3,
@@ -456,7 +420,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 365.3, "central_duration_s": 245,
         "greatest_jd": 2465961.216316, "greatest_latitude": 78.9,
         "greatest_longitude": -102.1, "greatest_altitude": 33.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2039Jun21A.GIF',
     },
     {
         "date": (2039, 12, 15), "type": "total", "t0_jd": 2466138.166667, "delta_t": 84.6,
@@ -467,7 +430,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 379.8, "central_duration_s": 111,
         "greatest_jd": 2466138.182192, "greatest_latitude": -80.9,
         "greatest_longitude": 172.8, "greatest_altitude": 18.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2039Dec15T.GIF',
     },
     {
         "date": (2040, 5, 11), "type": "partial", "t0_jd": 2466285.666667, "delta_t": 84.9,
@@ -478,7 +440,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2466285.653902, "greatest_latitude": -62.8,
         "greatest_longitude": 174.4, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2040, 11, 4), "type": "partial", "t0_jd": 2466463.291667, "delta_t": 85.3,
@@ -489,7 +450,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2466463.296953, "greatest_latitude": 62.2,
         "greatest_longitude": -53.4, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2041, 4, 30), "type": "total", "t0_jd": 2466640.0, "delta_t": 85.7,
@@ -500,7 +460,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 71.6, "central_duration_s": 111,
         "greatest_jd": 2466639.993696, "greatest_latitude": -9.6,
         "greatest_longitude": 12.2, "greatest_altitude": 63.2,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2041Apr30T.GIF',
     },
     {
         "date": (2041, 10, 25), "type": "annular", "t0_jd": 2466817.583333, "delta_t": 86.1,
@@ -511,7 +470,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 213.1, "central_duration_s": 367,
         "greatest_jd": 2466817.565925, "greatest_latitude": 9.9,
         "greatest_longitude": 162.9, "greatest_altitude": 65.5,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2041Oct25A.GIF',
     },
     {
         "date": (2042, 4, 20), "type": "total", "t0_jd": 2466994.583333, "delta_t": 86.5,
@@ -522,7 +480,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 210.4, "central_duration_s": 291,
         "greatest_jd": 2466994.594485, "greatest_latitude": 27.0,
         "greatest_longitude": 137.3, "greatest_altitude": 72.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2042Apr20T.GIF',
     },
     {
         "date": (2042, 10, 14), "type": "annular", "t0_jd": 2467171.583333, "delta_t": 86.8,
@@ -533,7 +490,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 273.3, "central_duration_s": 464,
         "greatest_jd": 2467171.582815, "greatest_latitude": -23.7,
         "greatest_longitude": 137.8, "greatest_altitude": 72.2,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2042Oct14A.GIF',
     },
     {
         "date": (2043, 4, 9), "type": "total", "t0_jd": 2467349.291667, "delta_t": 87.2,
@@ -544,7 +500,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2467349.289141, "greatest_latitude": 61.3,
         "greatest_longitude": 152.0, "greatest_altitude": 0.0,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2043Apr09T.GIF',
     },
     {
         "date": (2043, 10, 3), "type": "annular", "t0_jd": 2467525.625, "delta_t": 87.6,
@@ -555,7 +510,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2467525.625248, "greatest_latitude": -61.0,
         "greatest_longitude": 35.3, "greatest_altitude": 0.0,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2043Oct03A.GIF',
     },
     {
         "date": (2044, 2, 28), "type": "annular", "t0_jd": 2467674.333333, "delta_t": 87.9,
@@ -566,7 +520,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 147,
         "greatest_jd": 2467674.349434, "greatest_latitude": -62.2,
         "greatest_longitude": -25.6, "greatest_altitude": 3.7,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2044Feb28A.GIF',
     },
     {
         "date": (2044, 8, 23), "type": "total", "t0_jd": 2467850.541667, "delta_t": 88.3,
@@ -577,7 +530,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 452.7, "central_duration_s": 124,
         "greatest_jd": 2467850.552473, "greatest_latitude": 64.3,
         "greatest_longitude": -120.4, "greatest_altitude": 15.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2044Aug23T.GIF',
     },
     {
         "date": (2045, 2, 16), "type": "annular", "t0_jd": 2468028.5, "delta_t": 88.7,
@@ -588,7 +540,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 281.2, "central_duration_s": 467,
         "greatest_jd": 2468028.496277, "greatest_latitude": -28.3,
         "greatest_longitude": -166.2, "greatest_altitude": 71.6,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2045Feb16A.GIF',
     },
     {
         "date": (2045, 8, 12), "type": "total", "t0_jd": 2468205.25, "delta_t": 89.1,
@@ -599,7 +550,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 255.6, "central_duration_s": 366,
         "greatest_jd": 2468205.23692, "greatest_latitude": 25.9,
         "greatest_longitude": -78.5, "greatest_altitude": 77.6,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2045Aug12T.GIF',
     },
     {
         "date": (2046, 2, 5), "type": "annular", "t0_jd": 2468382.458333, "delta_t": 89.5,
@@ -610,7 +560,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 310.1, "central_duration_s": 582,
         "greatest_jd": 2468382.461765, "greatest_latitude": 4.8,
         "greatest_longitude": -171.4, "greatest_altitude": 67.9,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2046Feb05A.GIF',
     },
     {
         "date": (2046, 8, 2), "type": "total", "t0_jd": 2468559.916667, "delta_t": 89.9,
@@ -621,7 +570,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 206.0, "central_duration_s": 291,
         "greatest_jd": 2468559.93036, "greatest_latitude": -12.7,
         "greatest_longitude": 15.2, "greatest_altitude": 57.6,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2046Aug02T.GIF',
     },
     {
         "date": (2047, 1, 26), "type": "partial", "t0_jd": 2468736.583333, "delta_t": 90.4,
@@ -632,7 +580,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2468736.563745, "greatest_latitude": 62.9,
         "greatest_longitude": 111.7, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2047, 6, 23), "type": "partial", "t0_jd": 2468884.958333, "delta_t": 90.7,
@@ -643,7 +590,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2468884.952087, "greatest_latitude": 65.8,
         "greatest_longitude": -178.0, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2047, 7, 22), "type": "partial", "t0_jd": 2468914.458333, "delta_t": 90.8,
@@ -654,7 +600,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2468914.440813, "greatest_latitude": -63.4,
         "greatest_longitude": 160.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2047, 12, 16), "type": "partial", "t0_jd": 2469061.5, "delta_t": 91.1,
@@ -665,7 +610,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2469061.49214, "greatest_latitude": -66.4,
         "greatest_longitude": -6.6, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2048, 6, 11), "type": "annular", "t0_jd": 2469239.041667, "delta_t": 91.5,
@@ -676,7 +620,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 271.5, "central_duration_s": 298,
         "greatest_jd": 2469239.039832, "greatest_latitude": 63.7,
         "greatest_longitude": -11.5, "greatest_altitude": 49.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2048Jun11A.GIF',
     },
     {
         "date": (2048, 12, 5), "type": "total", "t0_jd": 2469416.166667, "delta_t": 92.0,
@@ -687,7 +630,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 160.3, "central_duration_s": 208,
         "greatest_jd": 2469416.148553, "greatest_latitude": -46.1,
         "greatest_longitude": -56.4, "greatest_altitude": 66.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2048Dec05T.GIF',
     },
     {
         "date": (2049, 5, 31), "type": "annular", "t0_jd": 2469593.083333, "delta_t": 92.4,
@@ -698,7 +640,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 134.4, "central_duration_s": 285,
         "greatest_jd": 2469593.082252, "greatest_latitude": 15.3,
         "greatest_longitude": -29.9, "greatest_altitude": 83.3,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2049May31A.GIF',
     },
     {
         "date": (2049, 11, 25), "type": "hybrid", "t0_jd": 2469770.75, "delta_t": 92.8,
@@ -709,7 +650,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 20.7, "central_duration_s": 38,
         "greatest_jd": 2469770.730731, "greatest_latitude": -3.8,
         "greatest_longitude": 95.2, "greatest_altitude": 72.9,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2049Nov25H.GIF',
     },
     {
         "date": (2050, 5, 20), "type": "hybrid", "t0_jd": 2469947.375, "delta_t": 93.7,
@@ -720,7 +660,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 26.6, "central_duration_s": 21,
         "greatest_jd": 2469947.361994, "greatest_latitude": -40.1,
         "greatest_longitude": -123.7, "greatest_altitude": 29.4,
-        "map_url": 'https://eclipse.gsfc.nasa.gov/SEplot/SEplot2001/SE2050May20H.GIF',
     },
     {
         "date": (2050, 11, 14), "type": "partial", "t0_jd": 2470125.083333, "delta_t": 94.7,
@@ -731,7 +670,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2470125.062017, "greatest_latitude": 69.5,
         "greatest_longitude": 1.0, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2051, 4, 11), "type": "partial", "t0_jd": 2470272.583333, "delta_t": 95.5,
@@ -742,7 +680,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2470272.589624, "greatest_latitude": 71.6,
         "greatest_longitude": 32.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2051, 10, 4), "type": "partial", "t0_jd": 2470449.375, "delta_t": 96.5,
@@ -753,7 +690,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2470449.375434, "greatest_latitude": -72.0,
         "greatest_longitude": 117.7, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2052, 3, 30), "type": "total", "t0_jd": 2470627.291667, "delta_t": 97.5,
@@ -764,7 +700,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 163.7, "central_duration_s": 248,
         "greatest_jd": 2470627.271013, "greatest_latitude": 22.4,
         "greatest_longitude": -102.5, "greatest_altitude": 71.0,
-        "map_url": None,
     },
     {
         "date": (2052, 9, 22), "type": "annular", "t0_jd": 2470803.5, "delta_t": 98.5,
@@ -775,7 +710,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 106.0, "central_duration_s": 171,
         "greatest_jd": 2470803.484392, "greatest_latitude": -25.7,
         "greatest_longitude": 175.0, "greatest_altitude": 63.2,
-        "map_url": None,
     },
     {
         "date": (2053, 3, 20), "type": "annular", "t0_jd": 2470981.791667, "delta_t": 99.5,
@@ -786,7 +720,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 31.1, "central_duration_s": 50,
         "greatest_jd": 2470981.796291, "greatest_latitude": -23.0,
         "greatest_longitude": 83.0, "greatest_altitude": 65.7,
-        "map_url": None,
     },
     {
         "date": (2053, 9, 12), "type": "total", "t0_jd": 2471157.916667, "delta_t": 100.4,
@@ -797,7 +730,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 116.4, "central_duration_s": 184,
         "greatest_jd": 2471157.897553, "greatest_latitude": 21.5,
         "greatest_longitude": 41.7, "greatest_altitude": 71.6,
-        "map_url": None,
     },
     {
         "date": (2054, 3, 9), "type": "partial", "t0_jd": 2471336.041667, "delta_t": 101.4,
@@ -808,7 +740,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2471336.022206, "greatest_latitude": -72.0,
         "greatest_longitude": 97.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2054, 8, 3), "type": "partial", "t0_jd": 2471483.25, "delta_t": 102.3,
@@ -819,7 +750,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2471483.251617, "greatest_latitude": -69.8,
         "greatest_longitude": -121.3, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2054, 9, 2), "type": "partial", "t0_jd": 2471512.541667, "delta_t": 102.4,
@@ -830,7 +760,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2471512.547125, "greatest_latitude": 71.7,
         "greatest_longitude": -82.3, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2055, 1, 27), "type": "partial", "t0_jd": 2471660.25, "delta_t": 103.3,
@@ -841,7 +770,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2471660.244696, "greatest_latitude": 69.5,
         "greatest_longitude": -112.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2055, 7, 24), "type": "total", "t0_jd": 2471837.916667, "delta_t": 104.3,
@@ -852,7 +780,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 201.8, "central_duration_s": 197,
         "greatest_jd": 2471837.913955, "greatest_latitude": -33.3,
         "greatest_longitude": 25.8, "greatest_altitude": 36.5,
-        "map_url": None,
     },
     {
         "date": (2056, 1, 16), "type": "annular", "t0_jd": 2472014.416667, "delta_t": 105.3,
@@ -863,7 +790,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 94.5, "central_duration_s": 172,
         "greatest_jd": 2472014.42708, "greatest_latitude": 3.9,
         "greatest_longitude": -153.5, "greatest_altitude": 65.1,
-        "map_url": None,
     },
     {
         "date": (2056, 7, 12), "type": "annular", "t0_jd": 2472192.333333, "delta_t": 106.3,
@@ -874,7 +800,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 43.2, "central_duration_s": 86,
         "greatest_jd": 2472192.347369, "greatest_latitude": 19.4,
         "greatest_longitude": -123.7, "greatest_altitude": 87.7,
-        "map_url": None,
     },
     {
         "date": (2057, 1, 5), "type": "total", "t0_jd": 2472368.916667, "delta_t": 107.3,
@@ -885,7 +810,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 101.6, "central_duration_s": 149,
         "greatest_jd": 2472368.906999, "greatest_latitude": -39.2,
         "greatest_longitude": 35.2, "greatest_altitude": 73.3,
-        "map_url": None,
     },
     {
         "date": (2057, 7, 1), "type": "annular", "t0_jd": 2472546.5, "delta_t": 108.3,
@@ -896,7 +820,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 298.2, "central_duration_s": 262,
         "greatest_jd": 2472546.485031, "greatest_latitude": 71.5,
         "greatest_longitude": -176.2, "greatest_altitude": 41.5,
-        "map_url": None,
     },
     {
         "date": (2057, 12, 26), "type": "total", "t0_jd": 2472723.541667, "delta_t": 109.3,
@@ -907,7 +830,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 354.8, "central_duration_s": 110,
         "greatest_jd": 2472723.550529, "greatest_latitude": -84.9,
         "greatest_longitude": 21.8, "greatest_altitude": 19.4,
-        "map_url": None,
     },
     {
         "date": (2058, 5, 22), "type": "partial", "t0_jd": 2472870.958333, "delta_t": 110.2,
@@ -918,7 +840,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2472870.942764, "greatest_latitude": -63.5,
         "greatest_longitude": 61.1, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2058, 6, 21), "type": "partial", "t0_jd": 2472900.5, "delta_t": 110.3,
@@ -929,7 +850,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2472900.512323, "greatest_latitude": 65.9,
         "greatest_longitude": 9.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2058, 11, 16), "type": "partial", "t0_jd": 2473048.625, "delta_t": 111.2,
@@ -940,7 +860,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2473048.639766, "greatest_latitude": 62.9,
         "greatest_longitude": 174.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2059, 5, 11), "type": "total", "t0_jd": 2473225.291667, "delta_t": 112.2,
@@ -951,7 +870,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 94.6, "central_duration_s": 143,
         "greatest_jd": 2473225.305831, "greatest_latitude": -10.7,
         "greatest_longitude": -100.4, "greatest_altitude": 59.4,
-        "map_url": None,
     },
     {
         "date": (2059, 11, 5), "type": "annular", "t0_jd": 2473402.875, "delta_t": 113.2,
@@ -962,7 +880,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 238.3, "central_duration_s": 420,
         "greatest_jd": 2473402.886363, "greatest_latitude": 8.7,
         "greatest_longitude": 47.1, "greatest_altitude": 63.5,
-        "map_url": None,
     },
     {
         "date": (2060, 4, 30), "type": "total", "t0_jd": 2473579.916667, "delta_t": 114.2,
@@ -973,7 +890,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 222.0, "central_duration_s": 315,
         "greatest_jd": 2473579.922289, "greatest_latitude": 28.0,
         "greatest_longitude": 20.9, "greatest_altitude": 75.8,
-        "map_url": None,
     },
     {
         "date": (2060, 10, 24), "type": "annular", "t0_jd": 2473756.875, "delta_t": 115.2,
@@ -984,7 +900,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 280.6, "central_duration_s": 486,
         "greatest_jd": 2473756.890449, "greatest_latitude": -25.8,
         "greatest_longitude": 28.1, "greatest_altitude": 74.6,
-        "map_url": None,
     },
     {
         "date": (2061, 4, 20), "type": "total", "t0_jd": 2473934.625, "delta_t": 116.3,
@@ -995,7 +910,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 558.8, "central_duration_s": 157,
         "greatest_jd": 2473934.621443, "greatest_latitude": 64.5,
         "greatest_longitude": 59.2, "greatest_altitude": 16.2,
-        "map_url": None,
     },
     {
         "date": (2061, 10, 13), "type": "annular", "t0_jd": 2474110.958333, "delta_t": 117.3,
@@ -1006,7 +920,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 742.7, "central_duration_s": 221,
         "greatest_jd": 2474110.937647, "greatest_latitude": -62.1,
         "greatest_longitude": -54.4, "greatest_altitude": 14.8,
-        "map_url": None,
     },
     {
         "date": (2062, 3, 11), "type": "partial", "t0_jd": 2474259.666667, "delta_t": 118.1,
@@ -1017,7 +930,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2474259.683541, "greatest_latitude": -61.0,
         "greatest_longitude": -147.1, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2062, 9, 3), "type": "partial", "t0_jd": 2474435.875, "delta_t": 119.2,
@@ -1028,7 +940,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2474435.869766, "greatest_latitude": 61.3,
         "greatest_longitude": 150.3, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2063, 2, 28), "type": "annular", "t0_jd": 2474613.833333, "delta_t": 120.2,
@@ -1039,7 +950,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 279.6, "central_duration_s": 461,
         "greatest_jd": 2474613.820484, "greatest_latitude": -25.2,
         "greatest_longitude": 77.7, "greatest_altitude": 70.2,
-        "map_url": None,
     },
     {
         "date": (2063, 8, 24), "type": "total", "t0_jd": 2474790.541667, "delta_t": 121.2,
@@ -1050,7 +960,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 252.2, "central_duration_s": 349,
         "greatest_jd": 2474790.555669, "greatest_latitude": 25.6,
         "greatest_longitude": 168.4, "greatest_altitude": 73.8,
-        "map_url": None,
     },
     {
         "date": (2064, 2, 17), "type": "annular", "t0_jd": 2474967.791667, "delta_t": 122.2,
@@ -1061,7 +970,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 294.6, "central_duration_s": 536,
         "greatest_jd": 2474967.790519, "greatest_latitude": 7.0,
         "greatest_longitude": 69.7, "greatest_altitude": 68.9,
-        "map_url": None,
     },
     {
         "date": (2064, 8, 12), "type": "total", "t0_jd": 2475145.25, "delta_t": 123.3,
@@ -1072,7 +980,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 183.7, "central_duration_s": 268,
         "greatest_jd": 2475145.23892, "greatest_latitude": -10.9,
         "greatest_longitude": -96.0, "greatest_altitude": 62.2,
-        "map_url": None,
     },
     {
         "date": (2065, 2, 5), "type": "partial", "t0_jd": 2475321.916667, "delta_t": 124.3,
@@ -1083,7 +990,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2475321.909973, "greatest_latitude": 62.2,
         "greatest_longitude": -21.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2065, 7, 3), "type": "partial", "t0_jd": 2475470.25, "delta_t": 125.2,
@@ -1094,7 +1000,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2475470.230403, "greatest_latitude": 64.8,
         "greatest_longitude": 71.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2065, 8, 2), "type": "partial", "t0_jd": 2475499.75, "delta_t": 125.3,
@@ -1105,7 +1010,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2475499.730691, "greatest_latitude": -62.7,
         "greatest_longitude": 46.5, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2065, 12, 27), "type": "partial", "t0_jd": 2475646.875, "delta_t": 126.2,
@@ -1116,7 +1020,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2475646.859604, "greatest_latitude": -65.4,
         "greatest_longitude": -149.2, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2066, 6, 22), "type": "annular", "t0_jd": 2475824.291667, "delta_t": 127.2,
@@ -1127,7 +1030,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 308.6, "central_duration_s": 280,
         "greatest_jd": 2475824.308111, "greatest_latitude": 70.1,
         "greatest_longitude": -96.4, "greatest_altitude": 42.6,
-        "map_url": None,
     },
     {
         "date": (2066, 12, 17), "type": "total", "t0_jd": 2476001.5, "delta_t": 128.3,
@@ -1138,7 +1040,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 152.2, "central_duration_s": 194,
         "greatest_jd": 2476001.51495, "greatest_latitude": -47.4,
         "greatest_longitude": 175.8, "greatest_altitude": 65.9,
-        "map_url": None,
     },
     {
         "date": (2067, 6, 11), "type": "annular", "t0_jd": 2476178.375, "delta_t": 129.3,
@@ -1149,7 +1050,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 119.0, "central_duration_s": 245,
         "greatest_jd": 2476178.361304, "greatest_latitude": 21.0,
         "greatest_longitude": -130.2, "greatest_altitude": 87.9,
-        "map_url": None,
     },
     {
         "date": (2067, 12, 6), "type": "hybrid", "t0_jd": 2476356.083333, "delta_t": 130.3,
@@ -1160,7 +1060,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 4.1, "central_duration_s": 8,
         "greatest_jd": 2476356.084406, "greatest_latitude": -6.0,
         "greatest_longitude": -32.4, "greatest_altitude": 73.5,
-        "map_url": None,
     },
     {
         "date": (2068, 5, 31), "type": "total", "t0_jd": 2476532.666667, "delta_t": 131.4,
@@ -1171,7 +1070,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 62.8, "central_duration_s": 66,
         "greatest_jd": 2476532.662819, "greatest_latitude": -31.0,
         "greatest_longitude": 123.2, "greatest_altitude": 36.9,
-        "map_url": None,
     },
     {
         "date": (2068, 11, 24), "type": "partial", "t0_jd": 2476710.416667, "delta_t": 132.4,
@@ -1182,7 +1080,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2476710.396037, "greatest_latitude": 68.5,
         "greatest_longitude": -131.1, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2069, 4, 21), "type": "partial", "t0_jd": 2476857.916667, "delta_t": 133.3,
@@ -1193,7 +1090,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2476857.922867, "greatest_latitude": 71.0,
         "greatest_longitude": -101.3, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2069, 5, 20), "type": "partial", "t0_jd": 2476887.25, "delta_t": 133.5,
@@ -1204,7 +1100,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2476887.243802, "greatest_latitude": -68.8,
         "greatest_longitude": -69.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2069, 10, 15), "type": "partial", "t0_jd": 2477034.666667, "delta_t": 134.3,
@@ -1215,7 +1110,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2477034.678955, "greatest_latitude": -71.6,
         "greatest_longitude": -5.5, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2070, 4, 11), "type": "total", "t0_jd": 2477212.625, "delta_t": 135.4,
@@ -1226,7 +1120,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 168.2, "central_duration_s": 244,
         "greatest_jd": 2477212.60687, "greatest_latitude": 29.1,
         "greatest_longitude": 135.1, "greatest_altitude": 68.4,
-        "map_url": None,
     },
     {
         "date": (2070, 10, 4), "type": "annular", "t0_jd": 2477388.791667, "delta_t": 136.4,
@@ -1237,7 +1130,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 110.2, "central_duration_s": 164,
         "greatest_jd": 2477388.796303, "greatest_latitude": -32.8,
         "greatest_longitude": 60.4, "greatest_altitude": 60.1,
-        "map_url": None,
     },
     {
         "date": (2071, 3, 31), "type": "annular", "t0_jd": 2477567.125, "delta_t": 137.5,
@@ -1248,7 +1140,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 30.7, "central_duration_s": 52,
         "greatest_jd": 2477567.124172, "greatest_latitude": -16.7,
         "greatest_longitude": -37.0, "greatest_altitude": 67.9,
-        "map_url": None,
     },
     {
         "date": (2071, 9, 23), "type": "total", "t0_jd": 2477743.208333, "delta_t": 138.5,
@@ -1259,7 +1150,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 116.1, "central_duration_s": 191,
         "greatest_jd": 2477743.220943, "greatest_latitude": 14.2,
         "greatest_longitude": -76.7, "greatest_altitude": 74.7,
-        "map_url": None,
     },
     {
         "date": (2072, 3, 19), "type": "partial", "t0_jd": 2477921.333333, "delta_t": 139.6,
@@ -1270,7 +1160,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2477921.339021, "greatest_latitude": -72.2,
         "greatest_longitude": -30.4, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2072, 9, 12), "type": "total", "t0_jd": 2478097.875, "delta_t": 140.7,
@@ -1281,7 +1170,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 732.5, "central_duration_s": 193,
         "greatest_jd": 2478097.872909, "greatest_latitude": 69.8,
         "greatest_longitude": 102.0, "greatest_altitude": 14.4,
-        "map_url": None,
     },
     {
         "date": (2073, 2, 7), "type": "partial", "t0_jd": 2478245.583333, "delta_t": 141.5,
@@ -1292,7 +1180,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 0.0, "central_duration_s": 0,
         "greatest_jd": 2478245.578906, "greatest_latitude": 70.5,
         "greatest_longitude": 114.9, "greatest_altitude": 0.0,
-        "map_url": None,
     },
     {
         "date": (2073, 8, 3), "type": "total", "t0_jd": 2478423.208333, "delta_t": 142.6,
@@ -1303,7 +1190,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 206.4, "central_duration_s": 149,
         "greatest_jd": 2478423.217366, "greatest_latitude": -43.2,
         "greatest_longitude": -89.4, "greatest_altitude": 28.5,
-        "map_url": None,
     },
     {
         "date": (2074, 1, 27), "type": "annular", "t0_jd": 2478599.791667, "delta_t": 143.7,
@@ -1314,7 +1200,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 79.3, "central_duration_s": 141,
         "greatest_jd": 2478599.779066, "greatest_latitude": 6.6,
         "greatest_longitude": 78.8, "greatest_altitude": 64.8,
-        "map_url": None,
     },
     {
         "date": (2074, 7, 24), "type": "annular", "t0_jd": 2478777.625, "delta_t": 144.7,
@@ -1325,7 +1210,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 57.8, "central_duration_s": 117,
         "greatest_jd": 2478777.63064, "greatest_latitude": 12.8,
         "greatest_longitude": 133.7, "greatest_altitude": 82.9,
-        "map_url": None,
     },
     {
         "date": (2075, 1, 16), "type": "total", "t0_jd": 2478954.291667, "delta_t": 145.8,
@@ -1336,7 +1220,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 109.7, "central_duration_s": 162,
         "greatest_jd": 2478954.273359, "greatest_latitude": -37.2,
         "greatest_longitude": -94.1, "greatest_altitude": 73.5,
-        "map_url": None,
     },
     {
         "date": (2075, 7, 13), "type": "annular", "t0_jd": 2479131.75, "delta_t": 146.8,
@@ -1347,7 +1230,6 @@ SOLAR_ECLIPSES: List[Dict[str, Any]] = [
         "path_width_km": 261.9, "central_duration_s": 285,
         "greatest_jd": 2479131.752282, "greatest_latitude": 63.1,
         "greatest_longitude": 95.2, "greatest_altitude": 48.5,
-        "map_url": None,
     },
 ]
 

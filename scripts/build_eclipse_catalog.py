@@ -68,23 +68,6 @@ def eclipse_type(raw: str) -> str:
     return _TYPES[letter]
 
 
-def map_url(year: int, month: int, day: int, raw_type: str) -> str | None:
-    """Return NASA's published path-map URL, or ``None`` where no map exists.
-
-    NASA plots the shadow path only for *central* eclipses -- total, annular and hybrid -- and
-    its index runs to 2050. A purely partial eclipse has no path to draw, and nothing is
-    published past the index, so both cases return ``None`` rather than a URL that 404s. The
-    image entity treats a missing map as "no picture", which is honest, where a dead link would
-    show a broken frame forever.
-    """
-    letter = (raw_type or "").strip()[:1].upper()
-    if letter == "P" or year > 2050:
-        return None
-    century = (year // 100) * 100 + 1
-    stamp = f"{year:04d}{_MONTHS[month - 1]}{day:02d}{letter}"
-    return f"https://eclipse.gsfc.nasa.gov/SEplot/SEplot{century}/SE{stamp}.GIF"
-
-
 def coefficients(entry: dict, prefix: str, count: int = 4) -> tuple:
     """Return the polynomial coefficients ``prefix1..prefixN`` as a tuple of floats.
 
@@ -168,7 +151,6 @@ def convert(entry: dict) -> dict:
         "greatest_latitude": float(entry["greatestlatitude"]),
         "greatest_longitude": float(entry["greatestlongitude"]),
         "greatest_altitude": float(entry["greatestalt"]),
-        "map_url": map_url(year, month, day, entry["eclipse_type"]),
     }
 
 
@@ -180,7 +162,7 @@ def format_tuple(values: tuple) -> str:
 def format_record(record: dict) -> str:
     """Return one catalog entry as source text.
 
-    Ten lines per entry, pairing the polynomials up rather than giving each field a line of
+    Nine lines per entry, pairing the polynomials up rather than giving each field a line of
     its own the way ``meteor_catalog.py`` does. At 114 entries the airier style would run to
     two thousand lines, and unlike the meteor catalog nobody reads or edits this one by hand
     -- it is regenerated wholesale -- so the density costs nothing that matters.
@@ -201,7 +183,6 @@ def format_record(record: dict) -> str:
         f' "greatest_latitude": {record["greatest_latitude"]!r},',
         f'        "greatest_longitude": {record["greatest_longitude"]!r},'
         f' "greatest_altitude": {record["greatest_altitude"]!r},',
-        f'        "map_url": {record["map_url"]!r},',
         "    },",
     ])
 
@@ -255,7 +236,6 @@ Field reference:
 ``path_width_km``       Width of the central path at greatest eclipse, 0 if partial
 ``central_duration_s``  Duration of totality/annularity at greatest eclipse
 ``greatest_*``          NASA's own circumstances at greatest eclipse -- see below
-``map_url``             NASA path map, or ``None`` -- see below
 ======================  =========================================================
 
 The ``greatest_jd`` / ``greatest_latitude`` / ``greatest_longitude`` / ``greatest_altitude``
@@ -268,8 +248,6 @@ nothing that goes stale with the passage of time.
 ``l2`` is negative for a total eclipse. That sign is not a quirk to be normalised away: it is
 what says the Moon's disc is the larger of the two, and ``eclipse.py`` depends on it.
 
-``map_url`` is ``None`` for every purely partial eclipse -- there is no path to plot -- and for
-everything after 2050, where NASA's own index stops. Consumers must handle a missing map.
 """
 
 from __future__ import annotations
@@ -294,7 +272,6 @@ REQUIRED_FIELDS: Tuple[str, ...] = (
     "x", "y", "d", "mu", "l1", "l2", "tanf1", "tanf2",
     "path_width_km", "central_duration_s",
     "greatest_jd", "greatest_latitude", "greatest_longitude", "greatest_altitude",
-    "map_url",
 )
 
 #: Eclipse types that may appear in ``type``.

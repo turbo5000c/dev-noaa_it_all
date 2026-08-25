@@ -73,7 +73,6 @@ ECLIPSE_2024_04_08 = {
     "path_width_km": 197.5, "central_duration_s": 268,
     "greatest_jd": 2460409.278, "greatest_latitude": 25.3,
     "greatest_longitude": -104.1, "greatest_altitude": 70.2,
-    "map_url": None,
 }
 
 NOW = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
