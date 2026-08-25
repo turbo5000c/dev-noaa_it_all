@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     predictions do not. The numbers are the product here.
 
 ### Changed
+- The eclipse forecast is computed in an executor rather than on the event loop. A refresh
+  measures 75-100 ms, an order of magnitude more than the meteor forecast whose docstring gives
+  "well under 10 ms" as its reason for running inline — and this one polls every minute while an
+  eclipse is under way, which is exactly when it matters.
 - The watchable window is now reported in UTC as well as local time, and its edges are exact:
   where the Sun or Moon is above the horizon when the eclipse begins the window starts with the
   eclipse itself rather than with the next sample of the internal scan grid, which was up to a

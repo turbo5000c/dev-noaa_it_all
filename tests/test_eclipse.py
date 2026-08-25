@@ -871,3 +871,106 @@ class TestWatchableWindowPrecision(unittest.TestCase):
         # one it can actually see -- the point being that an invisible eclipse is never offered.
         self.assertTrue(entry["visible"])
         self.assertIsNotNone(entry["visible_start_utc"])
+
+
+class TestTheTypeIsAlsoWhatYouCanSee(unittest.TestCase):
+    """Second round of review regressions, same seam as the first.
+
+    Coverage and altitude had been made to follow the watchable window; the *type*, the lunar
+    score and the in-progress flag had not. Each produced a payload that contradicted itself.
+    """
+
+    def _lunar_2025_09_07(self):
+        return lunar_eclipses_between(
+            datetime(2025, 8, 1, tzinfo=UTC), datetime(2025, 10, 1, tzinfo=UTC),
+        )[0]
+
+    def test_a_moon_that_rises_after_totality_saw_a_penumbral_eclipse(self):
+        # The almanac calls 2025-09-07 total. An observer whose Moon clears the horizon after the
+        # last umbral contact watched a faint grey smudge, and was being told "Total Lunar
+        # Eclipse", nought per cent covered, score 49 "Good" -- all at once.
+        found = self._lunar_2025_09_07()
+        self.assertEqual(found["type"], TYPE_TOTAL)
+        circumstances = lunar_local_circumstances(found, 30.0, -30.0)
+        entry = eclipse._build_entry(
+            KIND_LUNAR, circumstances, datetime(2025, 9, 1, tzinfo=UTC), UTC, "2025-09-07",
+        )
+        self.assertTrue(entry["visible"])
+        self.assertEqual(entry["type"], TYPE_PENUMBRAL)
+        self.assertEqual(entry["global_type"], TYPE_TOTAL)
+        self.assertEqual(entry["disc_covered"], 0.0)
+        self.assertEqual(entry["viewing_score"], 0)
+
+    def test_a_site_that_sees_the_whole_thing_still_gets_the_real_type(self):
+        circumstances = lunar_local_circumstances(self._lunar_2025_09_07(), *TOKYO)
+        entry = eclipse._build_entry(
+            KIND_LUNAR, circumstances, datetime(2025, 9, 1, tzinfo=UTC), UTC, "2025-09-07",
+        )
+        self.assertEqual(entry["type"], TYPE_TOTAL)
+        self.assertEqual(entry["disc_covered"], 100.0)
+
+    def test_the_penumbral_tiebreak_does_not_disturb_a_setting_total_eclipse(self):
+        """The rung that ranks penumbral depth must not outrank altitude during totality.
+
+        Through totality every sample is fully covered while the penumbral magnitude still peaks
+        at greatest eclipse, so letting it rank alongside coverage pins a setting Moon to its
+        lowest total moment instead of its highest -- which is the very bug the first review
+        round fixed, reintroduced from the other end.
+        """
+        entry = build_eclipse_forecast(
+            datetime(2026, 2, 20, tzinfo=UTC), NEW_YORK[0], NEW_YORK[1], UTC, SOLAR_ECLIPSES,
+        )["next_lunar"]
+        self.assertEqual(entry["disc_covered"], 100.0)
+        self.assertGreater(entry["altitude_when_visible"], 2.0)
+
+    def test_a_totality_shorter_than_the_scan_step_is_still_a_total_eclipse(self):
+        # 37 seconds of totality falls between two samples of the one-minute grid, so the type
+        # read off the nearest sample said "partial" while the same entry published a totality
+        # window and a totality duration.
+        from eclipse_catalog import find_eclipse
+        circumstances = solar_local_circumstances(find_eclipse(2026, 8, 12), 42.52, -1.5)
+        entry = eclipse._build_entry(
+            KIND_SOLAR, circumstances, datetime(2026, 8, 1, tzinfo=UTC), UTC, "2026-08-12",
+        )
+        self.assertGreater(entry["central_duration_s"], 0)
+        self.assertLess(entry["central_duration_s"], 60)
+        self.assertEqual(entry["type"], TYPE_TOTAL)
+        self.assertTrue(entry["safe_unfiltered"])
+        self.assertIsNotNone(entry["central_start_local"])
+
+    def test_publishing_a_totality_window_and_a_partial_type_is_impossible(self):
+        # The invariant behind the previous test, asserted across a spread of sites and both
+        # kinds: a central duration and a non-central type cannot both be true of one observer.
+        for now, sites in (
+            (datetime(2026, 8, 1, tzinfo=UTC),
+             (REYKJAVIK, (42.34, -3.70), (42.52, -1.5), (39.47, -0.38), ILM)),
+            (datetime(2026, 2, 20, tzinfo=UTC), (TOKYO, NEW_YORK, SYDNEY, ILM)),
+        ):
+            for site in sites:
+                forecast = build_eclipse_forecast(now, site[0], site[1], UTC, SOLAR_ECLIPSES)
+                for key in ("current", "next", "next_solar", "next_lunar"):
+                    entry = forecast.get(key)
+                    if entry and entry["central_duration_s"] > 0:
+                        self.assertIn(
+                            entry["type"], (TYPE_TOTAL, TYPE_ANNULAR),
+                            f"{site} {key}: {entry['central_duration_s']}s of central phase "
+                            f"reported as {entry['type']}",
+                        )
+
+    def test_in_progress_ends_when_the_body_sets_not_at_last_contact(self):
+        # It ran on for nearly three hours past moonset for New York, and the alert keyed to it
+        # spent all of that saying go outside -- with the coordinator on one-minute polling.
+        circumstances = lunar_local_circumstances(self._lunar_2026_03_03(), *NEW_YORK)
+        moonset = circumstances["visible_end_utc"]
+        self.assertLess(moonset, circumstances["end_utc"])
+        for offset, expected in ((-30, True), (-1, True), (5, False), (150, False)):
+            entry = eclipse._build_entry(
+                KIND_LUNAR, circumstances, moonset + timedelta(minutes=offset),
+                UTC, "2026-03-03",
+            )
+            self.assertEqual(entry["in_progress"], expected, f"{offset:+d} min from moonset")
+
+    def _lunar_2026_03_03(self):
+        return lunar_eclipses_between(
+            datetime(2026, 2, 20, tzinfo=UTC), datetime(2026, 3, 20, tzinfo=UTC),
+        )[0]

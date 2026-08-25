@@ -703,7 +703,14 @@ def solar_local_circumstances(
         # mid-eclipse falls back to the sampled crossing.
         result.update({
             "visible_obscuration": best.obscuration,
-            "visible_type": local_solar_type(best.geometry),
+            # Classified from the refined peak whenever the peak is itself above the horizon,
+            # because the central phase is centred on it. Reading the type off the nearest
+            # one-minute sample instead loses any totality shorter than the sampling step -- the
+            # 2049 hybrid is total for 38 seconds, the 2067 one for 8 -- and reports a partial
+            # eclipse while still publishing the totality window as an attribute.
+            "visible_type": local_solar_type(
+                peak.geometry if peak.above_horizon else best.geometry
+            ),
             "visible_start_utc": (
                 watchable[0].when if during[0] is not watchable[0]
                 else _entry_time(entry, start_t)
@@ -834,6 +841,7 @@ def lunar_eclipse_at_lunation(k: int) -> Optional[Dict[str, Any]]:
         "umbral_magnitude": umbral_magnitude,
         "penumbral_magnitude": penumbral_magnitude,
         "umbral_radius": 0.7403 - u,
+        "penumbral_radius": 1.2848 + u,
         "penumbral_semi_duration_min": semi_duration(1.5573 + u),
         "partial_semi_duration_min": semi_duration(1.0128 - u) if umbral_magnitude > 0.0 else 0.0,
         "total_semi_duration_min": semi_duration(0.4678 - u) if umbral_magnitude >= 1.0 else 0.0,
@@ -868,11 +876,39 @@ def lunar_shadow_separation(eclipse_: Dict[str, Any], minutes_from_greatest: flo
     encode, used forwards instead of backwards.
     """
     rate = eclipse_["penumbral_semi_duration_min"]
-    span = 1.5573 + (0.7403 - eclipse_["umbral_radius"])   # penumbral radius, recovered from u
+    span = eclipse_["penumbral_radius"] + _LUNAR_RADIUS
     if rate <= 0.0:
         return abs(eclipse_["gamma"])
     along = math.sqrt(max(0.0, span ** 2 - eclipse_["gamma"] ** 2)) * (minutes_from_greatest / rate)
     return math.hypot(eclipse_["gamma"], along)
+
+
+def lunar_magnitudes_at(eclipse_: Dict[str, Any],
+                        minutes_from_greatest: float = 0.0) -> Tuple[float, float]:
+    """Return the ``(umbral, penumbral)`` magnitudes at an offset from greatest eclipse.
+
+    Both are diameter fractions of the Moon, on the same footing as the values Meeus gives for
+    greatest eclipse -- at an offset of zero these reproduce them exactly. They exist so that what
+    an observer sees can be classified from the part of the eclipse that happens above their
+    horizon, rather than from the eclipse as a whole: a Moon that rises after the last umbral
+    contact witnesses a penumbral smudge, whatever the almanac calls the event.
+    """
+    separation = lunar_shadow_separation(eclipse_, minutes_from_greatest)
+    return (
+        (eclipse_["umbral_radius"] + _LUNAR_RADIUS - separation) / (2.0 * _LUNAR_RADIUS),
+        (eclipse_["penumbral_radius"] + _LUNAR_RADIUS - separation) / (2.0 * _LUNAR_RADIUS),
+    )
+
+
+def lunar_type_for(umbral_magnitude: float, penumbral_magnitude: float) -> str:
+    """Return the eclipse type implied by a pair of magnitudes."""
+    if umbral_magnitude >= 1.0:
+        return TYPE_TOTAL
+    if umbral_magnitude > 0.0:
+        return TYPE_PARTIAL
+    if penumbral_magnitude > 0.0:
+        return TYPE_PENUMBRAL
+    return TYPE_NONE
 
 
 def lunar_coverage(eclipse_: Dict[str, Any], minutes_from_greatest: float = 0.0) -> float:
@@ -921,7 +957,9 @@ def lunar_local_circumstances(
         )
         total += 1
         if altitude > _MOON_HORIZON_DEG:
-            above.append((offset, when, altitude, azimuth, lunar_coverage(eclipse_, offset)))
+            _, penumbral = lunar_magnitudes_at(eclipse_, offset)
+            above.append((offset, when, altitude, azimuth,
+                          lunar_coverage(eclipse_, offset), penumbral))
 
     jd_greatest = astro.julian_day(greatest)
     right_ascension, declination = astro.moon_equatorial(jd_greatest)
@@ -945,10 +983,32 @@ def lunar_local_circumstances(
     partial_start, partial_end = phase_bounds(eclipse_["partial_semi_duration_min"])
     total_start, total_end = phase_bounds(eclipse_["total_semi_duration_min"])
 
-    # Coverage first, then altitude. Totality holds at 100% for the best part of an hour, so
-    # coverage alone leaves the choice on that plateau to list order; of two equally total
-    # moments the observer wants the one with the Moon highest.
-    best = max(above, key=lambda item: (round(item[4], 4), item[2])) if above else None
+    def _merit(sample):
+        """Rank one watchable moment: umbral coverage, then penumbral depth, then altitude.
+
+        The penumbral rung applies *only* where no umbral phase is visible at all. It is there
+        for the site that catches nothing but the penumbral tail, which has zero coverage
+        throughout and would otherwise rank straight to altitude and pick the last sample of the
+        night, by which point the penumbra has all but gone. Letting it rank alongside coverage
+        instead breaks the case it was meant to leave alone: through totality every sample is
+        100% covered but the penumbral magnitude still peaks at greatest eclipse, so a setting
+        Moon would be pinned to its lowest total moment rather than its highest.
+        """
+        _, _, altitude, _, coverage, penumbral = sample
+        return (
+            round(coverage, 4),
+            round(penumbral, 4) if coverage <= 0.0 else 0.0,
+            altitude,
+        )
+
+    best = max(above, key=_merit) if above else None
+    # What is seen, classified from the moment it is seen. Without this a site whose Moon rises
+    # after the last umbral contact is told it watched a total lunar eclipse while being shown
+    # nought per cent covered -- the same eclipse-versus-your-eclipse split the solar side makes.
+    if best is None:
+        visible_umbral, visible_penumbral = 0.0, 0.0
+    else:
+        visible_umbral, visible_penumbral = lunar_magnitudes_at(eclipse_, best[0])
 
     return {
         "visible": best is not None,
@@ -978,7 +1038,11 @@ def lunar_local_circumstances(
         "visible_fraction": (len(above) / total) if total else 0.0,
         "gamma": eclipse_["gamma"],
         "visible_obscuration": best[4] if best else 0.0,
-        "visible_type": eclipse_["type"] if best else TYPE_NONE,
+        "visible_type": (
+            lunar_type_for(visible_umbral, visible_penumbral) if best else TYPE_NONE
+        ),
+        "visible_umbral_magnitude": visible_umbral,
+        "visible_penumbral_magnitude": visible_penumbral,
         # The geometry at the moment worth watching, which is not the geometry at greatest
         # eclipse whenever the Moon sets partway through. Scoring and "where do I look" both
         # need this one; reporting the other sends people to a horizon the Moon set behind.
@@ -1184,8 +1248,10 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
         score = solar_viewing_score(covered, local_type, altitude)
     else:
         score = lunar_viewing_score(
-            circumstances.get("umbral_magnitude", 0.0),
-            circumstances.get("penumbral_magnitude", 0.0),
+            circumstances.get("visible_umbral_magnitude",
+                              circumstances.get("umbral_magnitude", 0.0)),
+            circumstances.get("visible_penumbral_magnitude",
+                              circumstances.get("penumbral_magnitude", 0.0)),
             altitude,
             circumstances.get("visible_sun_altitude",
                               circumstances.get("sun_altitude_at_max", -90.0)),
@@ -1197,6 +1263,13 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
     maximum = circumstances["max_utc"]
     start = circumstances.get("start_utc") or maximum
     end = circumstances.get("end_utc") or maximum
+    # "In progress" has to mean *watchable* now, not merely between first and last contact. The
+    # geometric window runs on regardless of whether the body has set: for New York's 2026-03-03
+    # lunar eclipse it continues for nearly three hours after moonset, and an alert keyed to it
+    # spends all of that telling somebody to go outside and look at a Moon that is not there --
+    # while the coordinator holds its one-minute polling to do it.
+    watch_from = circumstances.get("visible_start_utc") or start
+    watch_until = circumstances.get("visible_end_utc") or end
     safety = _eye_safety(kind, local_type)
 
     entry = {
@@ -1207,7 +1280,7 @@ def _build_entry(kind: str, circumstances: Dict[str, Any], now: datetime, tz: tz
         "date": date_label,
         "visible": bool(circumstances.get("visible")),
         "not_visible_reason": circumstances.get("reason"),
-        "in_progress": start <= now <= end,
+        "in_progress": watch_from <= now <= watch_until,
 
         "disc_covered": round(_clamp(covered) * 100.0, 1),
         "peak_disc_covered": round(_clamp(circumstances.get("obscuration", 0.0)) * 100.0, 1),

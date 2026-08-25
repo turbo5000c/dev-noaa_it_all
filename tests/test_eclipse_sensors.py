@@ -587,3 +587,28 @@ class TestNextEclipseTimeSensor(unittest.TestCase):
         # first contact but must never precede it.
         entry = _forecast()["next"]
         self.assertGreaterEqual(entry["visible_start_utc"], entry["start_utc"])
+
+
+class TestTheAlertStopsWhenThereIsNothingToSee(unittest.TestCase):
+    """Regression: the alert is keyed to the watchable window, not the geometric one.
+
+    An eclipse continues between first and last contact whether or not the body is above your
+    horizon. Keying "go outside now" to that meant New York spent nearly three hours of the
+    2026-03-03 lunar eclipse being told to look at a Moon that had set.
+    """
+
+    def _sensor(self, data):
+        from noaa_it_all.binary_sensor import EclipseVisibleNowBinarySensor
+        return EclipseVisibleNowBinarySensor(_make_coordinator(data), OFFICE)
+
+    def test_on_while_the_eclipse_is_watchable(self):
+        self.assertTrue(self._sensor(_in_progress_forecast()).is_on)
+
+    def test_off_once_the_body_has_set_even_though_the_eclipse_continues(self):
+        # in_progress False is what the model now reports after the body sets; the eclipse entry
+        # is still present and still "visible" in the sense that it *was* watchable.
+        data = _forecast()
+        data["current"] = None
+        data["next"] = dict(data["next"], in_progress=False, hours_until_start=-2.0,
+                            hours_until=-1.0)
+        self.assertFalse(self._sensor(data).is_on)

@@ -360,6 +360,12 @@ class TestEclipseCoordinator(unittest.TestCase):
         hass = MagicMock()
         hass.config.time_zone = timezone_name
         hass.config.elevation = elevation
+
+        async def _executor(func, *args):
+            """Stand in for hass.async_add_executor_job, running inline."""
+            return func(*args)
+
+        hass.async_add_executor_job = _executor
         return hass
 
     def _coordinator(self, **kwargs):
@@ -383,6 +389,33 @@ class TestEclipseCoordinator(unittest.TestCase):
         coordinator = EclipseCoordinator(self._hass(), "ILM", None, None)
         with self.assertRaises(_UpdateFailed):
             _run(coordinator._async_update_data())
+
+    def test_the_forecast_runs_off_the_event_loop(self):
+        """A 75-100 ms computation belongs in an executor, and the repo says so itself.
+
+        MeteorShowerCoordinator documents "well under 10 ms" as its reason for running inline;
+        this one is an order of magnitude heavier and polls every minute while an eclipse is
+        under way, so it takes the other branch of that same rule.
+        """
+        coordinator = self._coordinator()
+        calls = []
+        original = coordinator.hass.async_add_executor_job
+
+        async def _record(func, *args):
+            calls.append(func)
+            return await original(func, *args)
+
+        coordinator.hass.async_add_executor_job = _record
+        _run(coordinator._async_update_data())
+        self.assertEqual(len(calls), 1)
+
+    def test_the_timezone_is_resolved_before_the_handoff(self):
+        # ZoneInfo reads the tz database from disk and the resolver reads hass.config, so it has
+        # to happen on the loop rather than inside the executor call.
+        coordinator = self._coordinator()
+        data = _run(coordinator._async_update_data())
+        self.assertIn("upcoming", data)
+        self.assertIsNotNone(coordinator._timezone.resolve(coordinator.hass))
 
     def test_the_default_interval_is_the_slow_one(self):
         from noaa_it_all.const import ECLIPSE_SCAN_INTERVAL

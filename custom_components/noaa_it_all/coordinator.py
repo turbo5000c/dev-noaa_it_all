@@ -11,6 +11,7 @@ See https://developers.home-assistant.io/docs/integration_fetching_data/
 import logging
 import re
 import aiohttp
+from functools import partial
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
@@ -843,8 +844,12 @@ class EclipseCoordinator(DataUpdateCoordinator):
     use -- Home Assistant re-reads entity state when a coordinator publishes, so an entity that
     consulted the clock itself would simply never change.
 
-    A full refresh costs roughly 40 ms, which is why the interval tightens rather than sitting at
-    one minute permanently.
+    A full refresh measures 75-100 ms depending on the observer -- solving local circumstances
+    for up to two dozen catalogued eclipses, most of which turn out to miss. That is an order of
+    magnitude more than the meteor forecast next door, whose docstring gives "well under 10 ms"
+    as its reason for running inline, so this one takes the other branch of the same rule and
+    hands the work to an executor. It matters most in exactly the situation the tightened
+    interval creates: a minute-by-minute poll while an eclipse is under way.
     """
 
     def __init__(
@@ -891,17 +896,25 @@ class EclipseCoordinator(DataUpdateCoordinator):
         if self.latitude is None or self.longitude is None:
             raise UpdateFailed("Eclipse forecast requires a latitude and longitude")
 
+        # Resolved on the event loop, before handing off: the timezone cache exists precisely
+        # because building a ZoneInfo reads the tz database from disk, and it reads hass.config.
+        local_timezone = self._timezone.resolve(self.hass)
+        elevation = self._elevation()
+
         try:
-            forecast = build_eclipse_forecast(
-                datetime.now(timezone.utc),
-                self.latitude,
-                self.longitude,
-                self._timezone.resolve(self.hass),
-                SOLAR_ECLIPSES,
-                upcoming_count=ECLIPSE_UPCOMING_COUNT,
-                elevation_m=self._elevation(),
-                include_penumbral=ECLIPSE_INCLUDE_PENUMBRAL,
-                max_catalog_scan=ECLIPSE_MAX_CATALOG_SCAN,
+            forecast = await self.hass.async_add_executor_job(
+                partial(
+                    build_eclipse_forecast,
+                    datetime.now(timezone.utc),
+                    self.latitude,
+                    self.longitude,
+                    local_timezone,
+                    SOLAR_ECLIPSES,
+                    upcoming_count=ECLIPSE_UPCOMING_COUNT,
+                    elevation_m=elevation,
+                    include_penumbral=ECLIPSE_INCLUDE_PENUMBRAL,
+                    max_catalog_scan=ECLIPSE_MAX_CATALOG_SCAN,
+                )
             )
         except Exception as err:
             raise UpdateFailed(f"Error computing eclipse forecast: {err}") from err
