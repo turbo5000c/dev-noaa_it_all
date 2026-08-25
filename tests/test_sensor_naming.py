@@ -370,6 +370,9 @@ class TestNamingConventionFormat(unittest.TestCase):
             AuroraNextTimeSensor, AuroraDurationSensor,
             AuroraVisibilityProbabilitySensor, SolarRadiationStormAlertsSensor,
         )
+        from noaa_it_all.sensors.eclipses import (
+            NextEclipseSensor, EclipseCoverageSensor, EclipseViewingScoreSensor,
+        )
         from noaa_it_all.sensors.surf import (
             RipCurrentRiskSensor, SurfHeightSensor, WaterTemperatureSensor,
         )
@@ -387,7 +390,9 @@ class TestNamingConventionFormat(unittest.TestCase):
         space = [cls(COORD, OFFICE)
                  for cls in (AuroraNextTimeSensor, AuroraDurationSensor,
                              AuroraVisibilityProbabilitySensor,
-                             SolarRadiationStormAlertsSensor)]
+                             SolarRadiationStormAlertsSensor,
+                             NextEclipseSensor, EclipseCoverageSensor,
+                             EclipseViewingScoreSensor)]
         surf = [cls(COORD, OFFICE)
                 for cls in (RipCurrentRiskSensor, SurfHeightSensor,
                             WaterTemperatureSensor)]
@@ -600,12 +605,18 @@ class TestDeviceInfoGrouping(unittest.TestCase):
         from noaa_it_all.sensors.meteor_showers import (
             MeteorShowerActivitySensor, NextMeteorShowerSensor, MeteorViewingScoreSensor,
         )
+        from noaa_it_all.sensors.eclipses import (
+            NextEclipseSensor, EclipseCoverageSensor, EclipseViewingScoreSensor,
+        )
         sensors = [
             GeomagneticSensor(COORD, OFFICE),
             AuroraNextTimeSensor(COORD, OFFICE),
             MeteorShowerActivitySensor(COORD, OFFICE),
             NextMeteorShowerSensor(COORD, OFFICE),
             MeteorViewingScoreSensor(COORD, OFFICE),
+            NextEclipseSensor(COORD, OFFICE),
+            EclipseCoverageSensor(COORD, OFFICE),
+            EclipseViewingScoreSensor(COORD, OFFICE),
         ]
         expected = self._expected_space()
         for sensor in sensors:
@@ -865,6 +876,8 @@ class TestBinarySensorNaming(unittest.TestCase):
     def _all_binary_sensors(self):
         from noaa_it_all.binary_sensor import (
             ActiveAlertsGeneralBinarySensor,
+            EclipseComingUpBinarySensor,
+            EclipseVisibleNowBinarySensor,
             FloodWinterAlertBinarySensor,
             HeatAirQualityAlertBinarySensor,
             MeteorShowerActiveBinarySensor,
@@ -878,6 +891,8 @@ class TestBinarySensorNaming(unittest.TestCase):
             HeatAirQualityAlertBinarySensor(COORD, OFFICE, LAT, LON),
             ActiveAlertsGeneralBinarySensor(COORD, OFFICE, LAT, LON),
             MeteorShowerActiveBinarySensor(COORD, OFFICE),
+            EclipseVisibleNowBinarySensor(COORD, OFFICE),
+            EclipseComingUpBinarySensor(COORD, OFFICE),
         ]
 
     def test_all_binary_sensors_use_has_entity_name(self):
@@ -922,6 +937,8 @@ class TestBinarySensorNaming(unittest.TestCase):
                 f"noaa_{OFFICE.lower()}_weather_heat_air_quality_alert",
             "ActiveAlertsGeneralBinarySensor": f"noaa_{OFFICE.lower()}_weather_active_alerts",
             "MeteorShowerActiveBinarySensor": f"noaa_{OFFICE.lower()}_space_meteor_shower_active",
+            "EclipseVisibleNowBinarySensor": f"noaa_{OFFICE.lower()}_space_eclipse_visible_now",
+            "EclipseComingUpBinarySensor": f"noaa_{OFFICE.lower()}_space_eclipse_coming_up",
         }
         for sensor in self._all_binary_sensors():
             name = type(sensor).__name__
@@ -936,6 +953,8 @@ class TestBinarySensorNaming(unittest.TestCase):
             "HeatAirQualityAlertBinarySensor": f"noaa_{OFFICE}_heat_air_quality_alert",
             "ActiveAlertsGeneralBinarySensor": f"noaa_{OFFICE}_active_alerts",
             "MeteorShowerActiveBinarySensor": f"noaa_{OFFICE}_meteor_shower_active",
+            "EclipseVisibleNowBinarySensor": f"noaa_{OFFICE}_eclipse_visible_now",
+            "EclipseComingUpBinarySensor": f"noaa_{OFFICE}_eclipse_coming_up",
         }
         for sensor in self._all_binary_sensors():
             name = type(sensor).__name__

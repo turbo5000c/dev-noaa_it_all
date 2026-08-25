@@ -28,9 +28,14 @@ from .const import (
     COOPS_WATER_TEMP_URL, NDBC_REALTIME_URL,
     OFFICE_STATION_IDS,
     METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
+    ECLIPSE_SCAN_INTERVAL, ECLIPSE_APPROACH_SCAN_INTERVAL, ECLIPSE_ACTIVE_SCAN_INTERVAL,
+    ECLIPSE_APPROACH_WINDOW_HOURS, ECLIPSE_UPCOMING_COUNT, ECLIPSE_MAX_CATALOG_SCAN,
+    ECLIPSE_INCLUDE_PENUMBRAL,
 )
 from .meteor import build_meteor_forecast
 from .meteor_catalog import METEOR_SHOWERS
+from .eclipse import build_eclipse_forecast
+from .eclipse_catalog import SOLAR_ECLIPSES
 from .parsers import parse_coops_water_temperature, parse_ndbc_wave_height
 
 _LOGGER = logging.getLogger(__name__)
@@ -718,6 +723,52 @@ class ForecastDiscussionCoordinator(DataUpdateCoordinator):
 
 
 # -------------------------------------------------------------------
+# Locally computed forecasts (no network)
+# -------------------------------------------------------------------
+
+class _ObserverTimezone:
+    """Resolves and caches the observer's timezone for a locally computed forecast.
+
+    Held by composition rather than inherited. The two coordinators that compute rather than
+    fetch both need to hand a ``tzinfo`` to a pure model that pre-formats local time strings, and
+    both need the same two precautions -- but the test-suite substitutes a ``MagicMock`` for
+    ``DataUpdateCoordinator``, and mixing a plain class into that raises a metaclass conflict at
+    import time. A collaborator sidesteps the question entirely.
+
+    The zone is read from ``hass.config.time_zone`` rather than through
+    ``homeassistant.util.dt`` so this module keeps working under those same mocks, which stub
+    ``homeassistant`` but not ``homeassistant.util``.
+
+    The result is cached against the name it came from, because building a ``ZoneInfo`` reads the
+    tz database from disk the first time a given key is used -- which without the cache happens
+    on the event loop on every single refresh -- and because an unresolvable name would otherwise
+    log the same warning every refresh, forever.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty cache."""
+        self._name: Optional[str] = None
+        self._zone = timezone.utc
+
+    def resolve(self, hass) -> object:
+        """Return the observer's timezone, falling back to UTC."""
+        name = getattr(hass.config, "time_zone", None)
+        if not isinstance(name, str):
+            return timezone.utc
+        if name == self._name:
+            return self._zone
+
+        try:
+            resolved = ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            _LOGGER.warning("Unknown Home Assistant time zone %r; using UTC", name)
+            resolved = timezone.utc
+
+        self._name, self._zone = name, resolved
+        return resolved
+
+
+# -------------------------------------------------------------------
 # Meteor Showers (location-specific)
 # -------------------------------------------------------------------
 
@@ -751,35 +802,7 @@ class MeteorShowerCoordinator(DataUpdateCoordinator):
         self.office_code = office_code
         self.latitude = latitude
         self.longitude = longitude
-        self._tz_name: Optional[str] = None
-        self._tz = timezone.utc
-
-    def _local_timezone(self):
-        """Return the observer's timezone, falling back to UTC.
-
-        Read from ``hass.config.time_zone`` rather than ``homeassistant.util.dt`` so this module
-        keeps working under the test-suite's Home Assistant mocks, which stub ``homeassistant``
-        but not ``homeassistant.util``.
-
-        The resolved zone is cached against the name it came from. Building a ``ZoneInfo`` reads
-        the tz database from disk the first time a given key is used, so without the cache that
-        happens on the event loop on every refresh — and an unresolvable name would log the same
-        warning forty-eight times a day, forever.
-        """
-        name = getattr(self.hass.config, "time_zone", None)
-        if not isinstance(name, str):
-            return timezone.utc
-        if name == self._tz_name:
-            return self._tz
-
-        try:
-            resolved = ZoneInfo(name)
-        except (ZoneInfoNotFoundError, ValueError):
-            _LOGGER.warning("Unknown Home Assistant time zone %r; using UTC", name)
-            resolved = timezone.utc
-
-        self._tz_name, self._tz = name, resolved
-        return resolved
+        self._timezone = _ObserverTimezone()
 
     async def _async_update_data(self) -> dict:
         if self.latitude is None or self.longitude is None:
@@ -790,7 +813,7 @@ class MeteorShowerCoordinator(DataUpdateCoordinator):
                 datetime.now(timezone.utc),
                 self.latitude,
                 self.longitude,
-                self._local_timezone(),
+                self._timezone.resolve(self.hass),
                 METEOR_SHOWERS,
                 upcoming_count=METEOR_UPCOMING_COUNT,
             )
@@ -798,3 +821,98 @@ class MeteorShowerCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Error computing meteor shower forecast: {err}"
             ) from err
+
+
+# -------------------------------------------------------------------
+# Eclipses (location-specific)
+# -------------------------------------------------------------------
+
+class EclipseCoordinator(DataUpdateCoordinator):
+    """Compute the solar and lunar eclipse forecast for one observer.
+
+    Like ``MeteorShowerCoordinator`` this performs **no network I/O**: lunar eclipses are derived
+    from first principles and solar ones from the bundled Besselian elements in
+    ``eclipse_catalog.py``. NASA publishes eclipse predictions as documents rather than as a feed,
+    and there is nothing to observe in real time anyway -- the geometry was settled centuries ago.
+
+    Unlike every other coordinator here, this one **changes its own update interval**. The others
+    watch conditions that drift over hours; this one watches an event whose interesting part can
+    last two minutes. Polling hourly is right when the next eclipse is three years away and
+    hopeless when first contact is in ten. So the interval is re-derived on every refresh from
+    how close the next eclipse is, which is the only way for a "go outside now" flag to be any
+    use -- Home Assistant re-reads entity state when a coordinator publishes, so an entity that
+    consulted the clock itself would simply never change.
+
+    A full refresh costs roughly 40 ms, which is why the interval tightens rather than sitting at
+    one minute permanently.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        office_code: str,
+        latitude: float,
+        longitude: float,
+    ) -> None:
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="NOAA Eclipses",
+            update_interval=timedelta(minutes=ECLIPSE_SCAN_INTERVAL),
+        )
+        self.office_code = office_code
+        self.latitude = latitude
+        self.longitude = longitude
+        self._timezone = _ObserverTimezone()
+
+    def _elevation(self) -> float:
+        """Return the configured elevation in metres, or sea level if it is not usable.
+
+        Worth about a second of contact time, so a missing or nonsensical value is not worth
+        failing over -- but it is free to use when Home Assistant has one.
+        """
+        elevation = getattr(self.hass.config, "elevation", None)
+        if isinstance(elevation, (int, float)) and not isinstance(elevation, bool):
+            return float(elevation)
+        return 0.0
+
+    @staticmethod
+    def _interval_for(forecast: dict) -> timedelta:
+        """Return how soon to recompute, given what the forecast says is coming."""
+        if forecast.get("current"):
+            return timedelta(minutes=ECLIPSE_ACTIVE_SCAN_INTERVAL)
+        upcoming = forecast.get("next")
+        if upcoming and 0.0 <= upcoming.get("hours_until", 1e9) <= ECLIPSE_APPROACH_WINDOW_HOURS:
+            return timedelta(minutes=ECLIPSE_APPROACH_SCAN_INTERVAL)
+        return timedelta(minutes=ECLIPSE_SCAN_INTERVAL)
+
+    async def _async_update_data(self) -> dict:
+        if self.latitude is None or self.longitude is None:
+            raise UpdateFailed("Eclipse forecast requires a latitude and longitude")
+
+        try:
+            forecast = build_eclipse_forecast(
+                datetime.now(timezone.utc),
+                self.latitude,
+                self.longitude,
+                self._timezone.resolve(self.hass),
+                SOLAR_ECLIPSES,
+                upcoming_count=ECLIPSE_UPCOMING_COUNT,
+                elevation_m=self._elevation(),
+                include_penumbral=ECLIPSE_INCLUDE_PENUMBRAL,
+                max_catalog_scan=ECLIPSE_MAX_CATALOG_SCAN,
+            )
+        except Exception as err:
+            raise UpdateFailed(f"Error computing eclipse forecast: {err}") from err
+
+        if forecast.get("catalog_exhausted"):
+            # Lunar eclipses keep working forever; only the solar half has a horizon. Saying so
+            # once is more useful than silently becoming a lunar-only sensor.
+            _LOGGER.warning(
+                "The bundled solar eclipse catalog ends in %s and is now exhausted; lunar "
+                "eclipses are unaffected. Regenerate it with scripts/build_eclipse_catalog.py",
+                forecast.get("catalog_last_year"),
+            )
+
+        self.update_interval = self._interval_for(forecast)
+        return forecast

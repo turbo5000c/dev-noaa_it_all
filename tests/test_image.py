@@ -840,6 +840,21 @@ class TestRefreshScheduling(unittest.TestCase):
         )
 
 
+def _eclipse_coordinator(days_until=30.0, map_url="https://example.invalid/SE2026Aug12T.GIF"):
+    """Return a stub eclipse coordinator carrying just what the map entity reads.
+
+    The map entity is the only image here whose URL comes from a coordinator rather than a
+    constant, so the shared enumerating tests below have to hand it something to point at.
+    """
+    payload = None
+    if map_url is not None:
+        payload = {
+            "current": None,
+            "next_solar": {"map_url": map_url, "days_until": days_until, "date": "2026-08-12"},
+        }
+    return MagicMock(data=payload)
+
+
 class TestNoStateWriteBeforeAdd(unittest.TestCase):
     """Regression tests for the startup ``NoEntitySpecifiedError`` errors.
 
@@ -858,6 +873,7 @@ class TestNoStateWriteBeforeAdd(unittest.TestCase):
             GOESGeoColorImageEntity,
             GeoelectricFieldImageEntity,
             HurricaneOutlookImageEntity,
+            EclipseMapImageEntity,
             RadarBaseReflectivityImageEntity,
             RadarLoopImageEntity,
         )
@@ -869,6 +885,7 @@ class TestNoStateWriteBeforeAdd(unittest.TestCase):
             RadarLoopImageEntity(HASS, OFFICE, "KNKX"),
             GOESAirMassImageEntity(HASS),
             GOESGeoColorImageEntity(HASS),
+            EclipseMapImageEntity(HASS, OFFICE, _eclipse_coordinator()),
         ]
 
     def test_constructing_an_entity_never_writes_state(self):
@@ -930,6 +947,88 @@ class TestNoStateWriteBeforeAdd(unittest.TestCase):
                 self.assertIn("?t=", entity._image_url)
 
 
+class TestEclipseMapImageEntity(unittest.TestCase):
+    """The one image entity whose URL depends on what the coordinator says is next.
+
+    Most of these are about *not* fetching. A per-eclipse NASA page is nothing like the live NOAA
+    products the other entities poll: a 404 on one of those is news, while a 404 here would warn
+    every refresh for as long as that eclipse stayed next -- which can be years.
+    """
+
+    def _entity(self, coordinator):
+        from noaa_it_all.image import EclipseMapImageEntity
+        return EclipseMapImageEntity(HASS, OFFICE, coordinator)
+
+    def test_url_comes_from_the_coordinator(self):
+        entity = self._entity(_eclipse_coordinator())
+        self.assertEqual(entity._base_url(), "https://example.invalid/SE2026Aug12T.GIF")
+
+    def test_no_url_before_the_first_refresh(self):
+        self.assertEqual(self._entity(MagicMock(data=None))._base_url(), "")
+
+    def test_no_url_when_the_eclipse_has_no_published_map(self):
+        # NASA plots only central eclipses, and its index stops in 2050, so the catalog stores
+        # None for the rest.
+        self.assertEqual(self._entity(_eclipse_coordinator(map_url=None))._base_url(), "")
+
+    def test_no_url_when_the_eclipse_is_still_years_away(self):
+        from noaa_it_all.const import ECLIPSE_MAP_DAYS
+        entity = self._entity(_eclipse_coordinator(days_until=ECLIPSE_MAP_DAYS + 1))
+        self.assertEqual(entity._base_url(), "")
+
+    def test_a_url_appears_once_the_eclipse_is_close_enough(self):
+        from noaa_it_all.const import ECLIPSE_MAP_DAYS
+        entity = self._entity(_eclipse_coordinator(days_until=ECLIPSE_MAP_DAYS - 1))
+        self.assertTrue(entity._base_url())
+
+    def test_refresh_is_skipped_entirely_when_there_is_nothing_to_show(self):
+        # Not "fetches and fails" -- does not fetch at all. That is what keeps a year with no
+        # eclipse map from producing a warning every ten minutes for a year.
+        entity = self._entity(_eclipse_coordinator(map_url=None))
+        session = _refresh(entity, _FakeResponse(content_type="image/gif"))
+        self.assertEqual(session.calls, [])
+        self.assertIsNone(entity._last_image_bytes)
+
+    def test_changing_eclipse_drops_the_previous_picture(self):
+        # Whatever is cached is a map of a different eclipse, so keeping it on the card would be
+        # actively misleading rather than merely stale.
+        coordinator = _eclipse_coordinator()
+        entity = self._entity(coordinator)
+        _refresh(entity, _FakeResponse(content_type="image/gif"))
+        self.assertIsNotNone(entity._last_image_bytes)
+
+        coordinator.data = {
+            "current": None,
+            "next_solar": {"map_url": "https://example.invalid/SE2027Aug02T.GIF",
+                           "days_until": 12.0, "date": "2027-08-02"},
+        }
+        # A failing fetch, so nothing can repopulate the cache and the drop is observable.
+        _refresh(entity, _FakeResponse(status=404))
+        self.assertIsNone(entity._last_image_bytes)
+
+    def test_the_same_eclipse_keeps_its_picture_through_a_failure(self):
+        coordinator = _eclipse_coordinator()
+        entity = self._entity(coordinator)
+        _refresh(entity, _FakeResponse(content_type="image/gif"))
+        cached = entity._last_image_bytes
+        self.assertIsNotNone(cached)
+        _refresh(entity, _FakeResponse(status=500))
+        self.assertEqual(entity._last_image_bytes, cached)
+
+    def test_attribution_is_published(self):
+        # Required by NASA's terms of use for this data.
+        attrs = self._entity(_eclipse_coordinator()).extra_state_attributes
+        self.assertIn("Espenak", attrs["attribution"])
+        self.assertEqual(attrs["eclipse_date"], "2026-08-12")
+
+    def test_naming_and_device(self):
+        from noaa_it_all.const import DOMAIN
+        entity = self._entity(_eclipse_coordinator())
+        self.assertEqual(entity.name, "Eclipse Map")
+        self.assertEqual(entity.unique_id, f"noaa_{OFFICE}_eclipse_map")
+        self.assertEqual(entity.device_info["identifiers"], {(DOMAIN, f"noaa_{OFFICE}_space")})
+
+
 class TestContentTypes(unittest.TestCase):
     """Home Assistant defaults every image to JPEG; five of seven are not."""
 
@@ -940,6 +1039,7 @@ class TestContentTypes(unittest.TestCase):
             GOESGeoColorImageEntity,
             GeoelectricFieldImageEntity,
             HurricaneOutlookImageEntity,
+            EclipseMapImageEntity,
             RadarBaseReflectivityImageEntity,
             RadarLoopImageEntity,
         )
@@ -951,6 +1051,7 @@ class TestContentTypes(unittest.TestCase):
             (RadarLoopImageEntity(HASS, OFFICE, "KNKX"), "image/gif"),
             (GOESAirMassImageEntity(HASS), "image/jpeg"),
             (GOESGeoColorImageEntity(HASS), "image/jpeg"),
+            (EclipseMapImageEntity(HASS, OFFICE, _eclipse_coordinator()), "image/gif"),
         ]
         for entity, content_type in expected:
             with self.subTest(entity=entity.__class__.__name__):
@@ -963,6 +1064,7 @@ class TestContentTypes(unittest.TestCase):
             GOESGeoColorImageEntity,
             GeoelectricFieldImageEntity,
             HurricaneOutlookImageEntity,
+            EclipseMapImageEntity,
             RadarBaseReflectivityImageEntity,
             RadarLoopImageEntity,
         )
@@ -974,6 +1076,7 @@ class TestContentTypes(unittest.TestCase):
             RadarLoopImageEntity(HASS, OFFICE, "KNKX")._log_label,
             GOESAirMassImageEntity(HASS)._log_label,
             GOESGeoColorImageEntity(HASS)._log_label,
+            EclipseMapImageEntity(HASS, OFFICE, _eclipse_coordinator())._log_label,
         ]
         self.assertEqual(len(labels), len(set(labels)))
 

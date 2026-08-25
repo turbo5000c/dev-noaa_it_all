@@ -32,6 +32,7 @@ from .const import (
     HURRICANE_IMAGES_ADDED_KEY,
     IMAGE_FAILURE_ERROR_AFTER, IMAGE_FAILURE_WARN_AFTER,
     IMAGE_FETCH_TIMEOUT, IMAGE_MAX_BYTES,
+    ECLIPSE_MAP_DAYS,
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
     OFFICE_RADAR_SITES, RADAR_FRAME_DIR,
     RADAR_LOOP_MAX_FRAMES, RADAR_LOOP_MAX_HOURS, RADAR_LOOP_MIN_FRAMES,
@@ -182,6 +183,12 @@ async def async_setup_entry(
         geoelectric_image_entity,
         aurora_image_entity,
     ]
+
+    # The eclipse map is the one image here whose URL is not a constant: NASA publishes a
+    # separate plot per eclipse, so the entity has to ask the coordinator which one is next.
+    eclipse_coord = hass.data[DOMAIN][config_entry.entry_id].get("eclipse_coordinator")
+    if eclipse_coord:
+        entities.append(EclipseMapImageEntity(hass, office_code, eclipse_coord))
 
     # Hurricane image entities are global (NHC) and must only be added
     # once across all configured NWS offices, so they don't appear under
@@ -1053,3 +1060,105 @@ class GOESGeoColorImageEntity(NoaaImageEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return _hurricane_device_info()
+
+
+class EclipseMapImageEntity(NoaaImageEntity):
+    """NASA's published shadow-path map for the next solar eclipse.
+
+    The only image entity here whose URL is not fixed. NASA publishes one plot per eclipse, so
+    which one to show depends on what the eclipse coordinator says is coming, and
+    ``NoaaImageEntity`` supports exactly that through ``_base_url()``.
+
+    Three things make this entity quieter than the others, all of them because it points at a
+    per-eclipse URL rather than a live product:
+
+    * **Not every eclipse has a map.** NASA plots the path only for *central* eclipses -- a
+      purely partial one has no path to draw -- and its index stops in 2050. The catalog stores
+      ``map_url`` as ``None`` for those, and this entity simply does not fetch.
+    * **Nor does a lunar eclipse**, whose figures NASA publishes as PDFs. ``NoaaImageEntity``
+      rejects anything that is not an image, so only solar eclipses are considered.
+    * **Nor one that is years away.** A non-transient failure such as a 404 warns every refresh
+      by design, which is right for a live NOAA product and wrong for a static page that might
+      be years from being interesting. Advertising it only within ``ECLIPSE_MAP_DAYS`` bounds
+      how long a moved URL could complain for.
+
+    Fetching is skipped rather than failed when there is nothing to show, so the card keeps the
+    last map it had instead of blanking.
+    """
+
+    _attr_content_type = "image/gif"
+    _log_label = "eclipse map"
+
+    def __init__(self, hass, office_code, coordinator):
+        """Initialize the image entity.
+
+        Assigned before ``super().__init__``: the base constructor resolves the first URL
+        immediately, and ``_base_url`` reads both of these.
+        """
+        self._office_code = office_code
+        self._coordinator = coordinator
+        self._mapped_eclipse = None
+        super().__init__(hass)
+
+    def _next_map(self):
+        """Return ``(url, date)`` for the map worth showing, or ``(None, None)``."""
+        data = getattr(self._coordinator, "data", None) or {}
+        eclipse = data.get("current") or data.get("next_solar")
+        if not eclipse or not eclipse.get("map_url"):
+            return None, None
+        days = eclipse.get("days_until")
+        if days is None or days > ECLIPSE_MAP_DAYS:
+            return None, None
+        return eclipse["map_url"], eclipse.get("date")
+
+    def _base_url(self) -> str:
+        """Return the upstream URL, or an empty string when there is no map to show."""
+        return self._next_map()[0] or ""
+
+    async def _async_scheduled_refresh(self, now=None) -> None:
+        """Refresh, but only when there is actually a map to fetch.
+
+        Skipping is the whole point. Letting the base class fetch an empty or stale URL is what
+        would turn "no eclipse map this year" into a warning every ten minutes for a year.
+        """
+        url, date = self._next_map()
+        if url is None:
+            return
+        if date != self._mapped_eclipse:
+            # A different eclipse is next now, so whatever is cached is the wrong picture.
+            self._mapped_eclipse = date
+            self._last_image_bytes = None
+            self._last_fetched_bytes = None
+            self._resource_cache.clear()
+            self._failure_count = 0
+        await super()._async_scheduled_refresh(now)
+
+    @property
+    def name(self):
+        """Return the local name of the entity."""
+        return 'Eclipse Map'
+
+    @property
+    def unique_id(self):
+        """Return a unique ID for this entity."""
+        return f'noaa_{self._office_code}_eclipse_map'
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        url, date = self._next_map()
+        return {
+            'office_code': self._office_code,
+            'eclipse_date': date,
+            'source_url': url,
+            'attribution': "Eclipse Predictions by Fred Espenak, NASA's GSFC",
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"noaa_{self._office_code}_space")},
+            name=f"NOAA {self._office_code} Space",
+            manufacturer="NOAA"
+        )
