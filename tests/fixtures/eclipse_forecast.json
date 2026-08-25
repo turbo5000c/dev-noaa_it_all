@@ -47,7 +47,7 @@
     "start_utc": "2026-08-12T17:33:17+00:00",
     "type": "total",
     "umbral_magnitude": null,
-    "viewing_score": 84,
+    "viewing_score": 91,
     "visible": true,
     "visible_end_local": "2026-08-12T21:19+02:00",
     "visible_fraction": 99.1,
@@ -141,7 +141,7 @@
     "start_utc": "2026-08-12T17:33:17+00:00",
     "type": "total",
     "umbral_magnitude": null,
-    "viewing_score": 84,
+    "viewing_score": 91,
     "visible": true,
     "visible_end_local": "2026-08-12T21:19+02:00",
     "visible_fraction": 99.1,
@@ -160,7 +160,7 @@
       "kind": "solar",
       "max_local": "2026-08-12T20:29+02:00",
       "name": "Total Solar Eclipse",
-      "viewing_score": 84,
+      "viewing_score": 91,
       "visible": true
     },
     {
@@ -180,7 +180,7 @@
       "kind": "solar",
       "max_local": "2027-08-02T10:51+02:00",
       "name": "Partial Solar Eclipse",
-      "viewing_score": 37,
+      "viewing_score": 41,
       "visible": true
     },
     {
@@ -200,7 +200,7 @@
       "kind": "solar",
       "max_local": "2028-01-26T17:54+01:00",
       "name": "Partial Solar Eclipse",
-      "viewing_score": 8,
+      "viewing_score": 19,
       "visible": true
     }
   ]

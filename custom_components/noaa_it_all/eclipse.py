@@ -155,6 +155,11 @@ _GOOD_ALTITUDE_DEG = 15.0
 #: that is a property of where the observer is standing rather than of the eclipse.
 _CENTRAL_ALTITUDE_FLOOR = 0.65
 
+#: What the very deepest partial eclipse can score, as a fraction of totality. Even 99.8% is a
+#: different event: no corona, no darkness, and the filters stay on throughout. Madrid sits just
+#: outside the 2026 path and gets exactly that.
+_PARTIAL_CEILING = 0.85
+
 #: Coarse pre-filter on the Moon's argument of latitude; outside this no eclipse is possible
 #: (Meeus ch. 54). It is deliberately generous and lets through near-misses, which are then
 #: rejected on their computed penumbral magnitude.
@@ -958,8 +963,13 @@ def altitude_factor(altitude: float) -> float:
     """
     if altitude <= _HORIZON_DEG:
         return 0.0
-    return _clamp(math.sin(math.radians(max(0.0, altitude)))
-                  / math.sin(math.radians(_GOOD_ALTITUDE_DEG)))
+    ratio = (math.sin(math.radians(max(0.0, altitude)))
+             / math.sin(math.radians(_GOOD_ALTITUDE_DEG)))
+    # Square-rooted, so altitude matters without dominating. Straight sine is far too steep down
+    # here: it makes the difference between a Sun seven degrees up and one ten degrees up worth
+    # more than the difference between a 91% eclipse and a 99.8% one, which is nonsense. The same
+    # taper is used on the moonlight term in ``meteor.moon_penalty``, for the same reason.
+    return _clamp(math.sqrt(_clamp(ratio)))
 
 
 def darkness_factor(sun_altitude: float) -> float:
@@ -984,10 +994,11 @@ def solar_viewing_score(covered: float, local_type: str, altitude: float) -> int
     important thing about a solar eclipse, and a score that ignored it would rate a barely
     perceptible nibble under a perfect sky as highly as totality.
 
-    The partial term is quadratic, and that is the honest shape. Daylight falls off far more
-    slowly than covered area -- at 50% obscuration the light has dimmed by a percent or so, and
-    almost nobody notices without a filter -- so a linear score would badly oversell the
-    ordinary partial eclipse that most people most of the time will get.
+    The partial term is cubic, and that is the honest shape. Daylight falls off far more slowly
+    than covered area -- at 50% obscuration the light has dimmed by a percent or so, and almost
+    nobody notices without a filter -- while the last few percent are where everything happens.
+    A linear score would badly oversell the ordinary partial eclipse most people will get, and
+    equally undersell the near-miss.
 
     Altitude is treated very differently either side of that divide. A partial eclipse low in the
     sky is simply a poor one. A *total* eclipse low in the sky is still a total eclipse, so its
@@ -1002,7 +1013,7 @@ def solar_viewing_score(covered: float, local_type: str, altitude: float) -> int
         if altitude <= _HORIZON_DEG:
             sky = 0.0
     elif local_type == TYPE_PARTIAL:
-        base = 0.6 * _clamp(covered) ** 2
+        base = _PARTIAL_CEILING * _clamp(covered) ** 3
         sky = altitude_factor(altitude)
     else:
         return 0

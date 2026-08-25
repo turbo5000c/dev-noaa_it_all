@@ -5,7 +5,70 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] - Current
+## [0.7.0] - Current
+
+### Added
+- **Solar and lunar eclipses, worked out for where you actually are.** Three sensors, two binary
+  sensors and a map image on the existing **NOAA {OFFICE} Space** device, answering one question:
+  if you walk outside, what will you see?
+
+  - **Eclipse Visible Now** turns on an hour before first contact and off at last contact. This
+    is the one to trigger an announcement from. Expect it on for a few hours a year at most, and
+    in many years not at all.
+  - **Eclipse Coming Up** turns on two weeks ahead of an eclipse worth planning around — a
+    higher bar, because a partial eclipse worth glancing at is not one worth booking the day off.
+  - **Eclipse Coverage** is the "will I get 29% or the whole thing" number.
+  - **Eclipse Viewing Score** and **Next Eclipse** fill in the rest, and the **Eclipse Map**
+    entity shows NASA's published shadow path.
+
+  Things worth knowing:
+  - **It reports *your* eclipse, not the headline.** A total solar eclipse is total along a strip
+    a couple of hundred kilometres wide and merely partial across a continent either side of it.
+    Telling somebody who will see 43% that there is a Total Solar Eclipse tonight would be the
+    most misleading thing this could do, so the type is always re-derived from your own geometry,
+    with the global classification kept alongside as `global_type`.
+  - **The percentage is what you can actually watch.** Coverage is measured at the best moment
+    the Sun or Moon is above your horizon, not at the geometric maximum — which, for a site where
+    the Sun sets mid-eclipse, happens underground. `visible_fraction` says how much of the event
+    you get at all.
+  - **Two percentages, because there are two honest readings.** `disc_covered` is the fraction of
+    the disc's *area* hidden. Eclipse *magnitude*, the figure usually quoted, is the fraction of
+    its *diameter* — magnitude 0.5 is only 39% covered. Both are reported.
+  - **⚠️ Eye safety is part of the data.** Every solar eclipse carries `eye_protection_required`,
+    `safe_without_filter` and an ISO 12312-2 notice, on both binary sensors as well as the score
+    sensor — because the automation that fires from them is exactly the one that sends somebody
+    outside to look at the Sun. Only **totality** is ever safe unfiltered. An **annular** eclipse
+    never is: there is still a complete ring of photosphere at maximum.
+  - **Lunar eclipses need no data at all** and stay correct indefinitely. Solar eclipses need
+    Besselian elements from full planetary ephemerides, so NASA's are bundled for **2025–2075**
+    — 114 eclipses, about 70 KB. Still no API call, no API key and no extra dependency. Extend or
+    regenerate the span with `python3 scripts/build_eclipse_catalog.py`. Past the end of it the
+    solar half says so and the lunar half carries on. *Eclipse Predictions by Fred Espenak,
+    NASA's GSFC.*
+  - **Contact times land within 20 seconds** of NASA's published values, checked against all 114
+    catalogued eclipses. Each entry carries NASA's own answer at greatest eclipse purely so the
+    test-suite can check the solver reproduces it — 114 regression cases with no hand-typed
+    expected values and nothing that goes stale.
+  - **The eclipse coordinator re-paces itself**, which no other coordinator here does. The others
+    watch conditions that drift over hours; totality lasts two minutes. It recomputes hourly,
+    every five minutes within six hours of first contact, and every minute while one is under way.
+  - **Like the meteor score, it knows nothing about cloud** — deliberately, so the percentages
+    stay correct for an eclipse fifty years out. Pair it with
+    `sensor.noaa_{office}_weather_cloud_cover` in an automation; the README has an example.
+  - The **eclipse map** shows nothing rather than failing when there is nothing to show. NASA
+    plots only central eclipses and its index stops in 2050, so a purely partial eclipse has no
+    map, and the entity skips the fetch entirely instead of logging a 404 every ten minutes for
+    years.
+
+### Changed
+- `astro.py` gained `delta_t_seconds()`, and the module docstring no longer claims that modelling
+  the TT–UT offset would be false precision. It is, for meteors. It is not for eclipse contact
+  timing, where leaving it out costs up to two minutes — the whole point there being the instant a
+  shadow edge crosses one spot on a rotating Earth.
+- The observer-timezone cache is now shared between the two coordinators that compute rather than
+  fetch, instead of being copied.
+
+## [0.6.0]
 
 ### Added
 - **The radar loop can now cover up to 24 hours instead of NOAA's fixed 50 minutes.** NOAA

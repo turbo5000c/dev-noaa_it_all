@@ -137,6 +137,36 @@ def _shallow_forecast(covered):
 # Next Eclipse
 # ---------------------------------------------------------------------------
 
+class TestFixtureMatchesTheModel(unittest.TestCase):
+    """The fixture has to keep the shape the model actually produces.
+
+    Entity tests read a checked-in payload, which is what keeps them fast and independent of the
+    astronomy -- but it also means the payload can quietly drift out of step with the model until
+    the sensors are reading keys that no longer exist. This compares the shape, not the values, so
+    it catches a renamed or dropped key without breaking every time the scoring is tuned.
+    """
+
+    def _live(self):
+        import eclipse
+        from eclipse_catalog import SOLAR_ECLIPSES
+        from datetime import datetime, timezone
+        return eclipse.build_eclipse_forecast(
+            datetime(2026, 8, 10, 9, 0, tzinfo=timezone.utc),
+            42.34, -3.70, timezone.utc, SOLAR_ECLIPSES,
+        )
+
+    def test_top_level_keys_match(self):
+        self.assertEqual(set(_forecast()), set(self._live()))
+
+    def test_entry_keys_match(self):
+        self.assertEqual(set(_forecast()["next"]), set(self._live()["next"]))
+
+    def test_trimmed_entry_keys_match(self):
+        self.assertEqual(
+            set(_forecast()["upcoming"][0]), set(self._live()["upcoming"][0]),
+        )
+
+
 class TestNextEclipseSensor(unittest.TestCase):
     """What is coming, named the way this observer will experience it."""
 
@@ -260,7 +290,7 @@ class TestEclipseViewingScoreSensor(unittest.TestCase):
         return EclipseViewingScoreSensor(_make_coordinator(data), OFFICE)
 
     def test_state_is_the_score(self):
-        self.assertEqual(self._sensor(_forecast()).state, 84)
+        self.assertEqual(self._sensor(_forecast()).state, 91)
 
     def test_state_when_nothing_is_coming(self):
         self.assertEqual(self._sensor(_quiet_forecast()).state, 0)
