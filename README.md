@@ -1388,7 +1388,7 @@ content: |
 - Binary sensors require Config Flow setup with a valid office code and coordinates
 
 ### Integration Fails to Load
-- Confirm Home Assistant version is **2024.9.1 or newer**
+- Confirm Home Assistant version is **2026.3.0 or newer**
 - Check that required Python packages (`requests`, `aiohttp`) are available (they are bundled with HACS installations)
 - Review Home Assistant logs for specific import or configuration errors
 
