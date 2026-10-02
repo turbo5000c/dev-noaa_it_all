@@ -19,6 +19,10 @@ Entities are unchanged from 0.7.2.
   **Settings** → **Repairs** with a link to add the integration from the UI.
 
 ### Changed
+- The README no longer says YAML setup provides global sensors or keeps working without
+  coordinates. YAML setup was already removed and creates no entities. The FAQ now says setup
+  requires coordinates, and the stale YAML lines under Binary Sensors Always Off and Update
+  Frequency are gone.
 - The README no longer shows the GitHub downloads and Tracked Installs badges. Releases carry no
   download assets, so the downloads badge always read 0, and the Tracked Installs badge never
   showed a working count.
