@@ -28,10 +28,12 @@ When asked for a "release to public":
    report the reason.
 2. Check the release before opening anything:
    - `main` here has commits that `dawg-io/noaa_it_all:staging` does not.
-   - The version in `custom_components/noaa_it_all/manifest.json` is newer than the one on the
-     public `main`, and the top section of `CHANGELOG.md` is for that version and covers
-     everything being released. If either is off, stop and say what needs to change. Version
-     bumps go through a normal pull request into this repository's `main` first.
+   - The version in `custom_components/noaa_it_all/manifest.json` is newer than the latest
+     `vX.Y.Z` tag in the public repository. A version that is already on the public `main` but
+     not tagged is still open, so more changes can ship under it without a bump.
+   - The top section of `CHANGELOG.md` is for that version and covers everything being released.
+   - If either is off, stop and say what needs to change. Version bumps go through a normal pull
+     request into this repository's `main` first.
    - flake8 (`--max-line-length=120`) and pytest pass on `main`.
 3. Open a **draft** pull request in `dawg-io/noaa_it_all` with head `turbo5000c:main` and base
    `staging`. If one is already open, it already follows `main`, so update its description
