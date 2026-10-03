@@ -10,6 +10,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..location_tracker import location_attributes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,8 +73,7 @@ class CloudCoverSensor(CoordinatorEntity):
         """Return the state attributes."""
         attrs = {
             'office_code': self._office_code,
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
         }
         if not self.coordinator.data:
             return attrs

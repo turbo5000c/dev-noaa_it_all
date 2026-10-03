@@ -8,6 +8,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
+from ..location_tracker import location_source_attribute
 from ..parsers import format_forecast_text, format_forecast_periods, format_hourly_periods
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ class ExtendedForecastSensor(ForecastBaseSensor):
         forecast_text = format_forecast_text(periods, MAX_FORECAST_PERIODS)
         return {
             'office_code': self._office_code,
+            **location_source_attribute(self.coordinator),
             'forecast_text': forecast_text,
             'generated_at': properties.get('generatedAt', 'Unknown'),
             'update_time': properties.get('updateTime', 'Unknown'),
@@ -155,6 +157,7 @@ class HourlyForecastSensor(ForecastBaseSensor):
         current_period = periods[0]
         return {
             'office_code': self._office_code,
+            **location_source_attribute(self.coordinator),
             'current_hour': {
                 'temperature': current_period.get('temperature'),
                 'temperature_unit': current_period.get('temperatureUnit', 'F'),

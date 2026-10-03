@@ -16,6 +16,7 @@ from .const import (
     ECLIPSE_UPCOMING_DAYS, ECLIPSE_UPCOMING_MIN_COVERAGE,
 )
 from .entry_config import resolve_entry_config
+from .location_tracker import location_attributes
 from .sensors.meteor_showers import space_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -237,8 +238,7 @@ class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
             'office_code': self._office_code,
             'alert_count': len(active_alerts),
             'alerts': active_alerts[:5],
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
         }
 
     @property
@@ -331,8 +331,7 @@ class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
             'office_code': self._office_code,
             'alert_count': len(active_alerts),
             'alerts': active_alerts[:5],
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
         }
 
     @property
@@ -424,8 +423,7 @@ class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
             'office_code': self._office_code,
             'alert_count': len(active_alerts),
             'alerts': active_alerts[:5],
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
         }
 
     @property
@@ -509,8 +507,7 @@ class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
             'alert_count': len(active_alerts),
             'alert_types': alert_types,
             'alerts': active_alerts[:10],
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
         }
 
     @property

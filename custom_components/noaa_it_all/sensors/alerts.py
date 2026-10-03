@@ -6,6 +6,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from datetime import datetime, timezone
 
 from ..const import DOMAIN
+from ..location_tracker import location_attributes
 from ..parsers import parse_nws_alert_features
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,8 +56,7 @@ class NWSAlertsSensor(CoordinatorEntity):
         active_alerts, alert_summary = parse_nws_alert_features(features)
         return {
             'office_code': self._office_code,
-            'latitude': self._latitude,
-            'longitude': self._longitude,
+            **location_attributes(self.coordinator, self._latitude, self._longitude),
             'alert_count': len(active_alerts),
             'summary': alert_summary,
             'alerts': active_alerts[:10],
