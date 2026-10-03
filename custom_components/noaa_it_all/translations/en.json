@@ -31,7 +31,7 @@
     "step": {
       "init": {
         "title": "NOAA It All Options",
-        "description": "Detected Home Assistant Home location: {ha_location}.\n\nUpdate the latitude and longitude used for NOAA data. The closest NWS forecast office will be suggested in the next step.\n\nOptionally, pick a person or device tracker to follow. Once it is more than 10 miles from these coordinates and somewhere the NWS covers, observations, forecasts, cloud cover and NWS alerts are for its location instead; back within 5 miles, or with no GPS position, these coordinates are used again. Radar, surf and the forecast discussion stay on the office chosen in the next step.",
+        "description": "Detected Home Assistant Home location: {ha_location}.\n\nUpdate the latitude and longitude used for NOAA data. The closest NWS forecast office will be suggested in the next step.\n\nOptionally, pick a person or device tracker to follow. Once it is more than 10 miles from these coordinates and somewhere the NWS covers, observations, forecasts, cloud cover, NWS alerts, radar and the forecast discussion are for its location instead; back within 5 miles, or with no GPS position, these coordinates are used again. Surf stays on the office chosen in the next step.",
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude",
