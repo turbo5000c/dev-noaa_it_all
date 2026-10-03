@@ -55,6 +55,8 @@ Entities are unchanged from 0.7.2.
   still loads icons from the public brands site, which stopped accepting custom integrations in
   Home Assistant 2026.3. The section also gives an optional `customize` snippet that puts the
   icon on the Updates entry.
+- The README and `info.md` now give the minimum Home Assistant version as 2026.3.0, matching
+  `hacs.json`. They still said 2024.9.1.
 
 ## [0.7.2]
 

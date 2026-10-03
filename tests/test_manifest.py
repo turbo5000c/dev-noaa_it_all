@@ -193,6 +193,18 @@ class TestHacsJson(unittest.TestCase):
     def test_homeassistant_minimum_version(self):
         self.assertIn("homeassistant", self.hacs)
 
+    def test_docs_state_the_same_minimum_version(self):
+        """README.md and info.md must not promise an older Home Assistant than hacs.json allows."""
+        stated = re.compile(r"Home Assistant[^\n]*?\b(20\d{2}\.\d+(?:\.\d+)?)\**\s+or newer")
+        for name in ("README.md", "info.md"):
+            with open(os.path.join(_REPO, name), encoding="utf-8") as f:
+                versions = stated.findall(f.read())
+            self.assertTrue(versions, f"{name} no longer states a minimum Home Assistant version")
+            for version in versions:
+                self.assertEqual(version, self.hacs["homeassistant"],
+                                 f"{name} says Home Assistant {version} or newer, "
+                                 f"but hacs.json requires {self.hacs['homeassistant']}")
+
     def test_country(self):
         self.assertEqual(self.hacs.get("country"), "US")
 

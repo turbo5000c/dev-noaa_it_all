@@ -81,7 +81,7 @@ Entities are automatically grouped into logical devices:
 
 ## Requirements
 
-- Home Assistant 2024.9.1 or newer
+- Home Assistant 2026.3.0 or newer
 - Internet connection for NOAA API access
 - Latitude/Longitude coordinates for location-specific features
 
