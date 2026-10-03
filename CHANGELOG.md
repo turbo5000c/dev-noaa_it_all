@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **The weather card's forecast now updates.** New forecasts were never pushed to the card, so it
   kept showing the forecast it loaded with until the dashboard was reloaded.
+- **Errors from NWS alerts, cloud cover, the radar timestamp and the forecast discussion say why.**
+  A timeout used to be logged with no reason at all. (#43)
+- **NWS error messages no longer include coordinates.** Failed requests were logged with the
+  request URL, and failed lookups with the latitude and longitude, which for the alerts and
+  location lookups is where you are. The status and reason are still logged; the coordinates only
+  appear with debug logging.
 
 ## [0.7.3] - Current
 
