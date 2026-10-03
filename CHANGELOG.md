@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hurricane Activity is `unknown` unless the feed that worked already shows a `High` level, which
   the missing one can't change. The missing feed's counts in Activity's attributes have no value
   rather than `0`. (#33)
+- **"Partly Cloudy" no longer shows as cloudy.** The weather entity and its forecasts mapped the
+  NWS "Partly Cloudy" to `cloudy`; it is now `partlycloudy`. "Mostly Cloudy" stays `cloudy`, as in
+  Home Assistant's own NWS integration. (#33)
 
 ## [0.7.3] - Current
 
