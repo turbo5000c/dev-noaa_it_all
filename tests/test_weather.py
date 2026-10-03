@@ -134,6 +134,20 @@ class TestNOAAWeatherEntity(unittest.TestCase):
         attrs = entity.extra_state_attributes
         self.assertIsInstance(attrs, dict)
 
+    def test_location_source_shown_while_following(self):
+        entity = self._make(obs_data={
+            "properties": {}, "station_id": "KDEN", "location_source": "person.traveler",
+        })
+        attrs = entity.extra_state_attributes
+        self.assertEqual(attrs["station_id"], "KDEN")
+        self.assertEqual(attrs["location_source"], "person.traveler")
+
+    def test_no_location_source_when_not_following(self):
+        entity = self._make(obs_data={
+            "properties": {}, "station_id": "KILM", "location_source": None,
+        })
+        self.assertNotIn("location_source", entity.extra_state_attributes)
+
 
 class TestAsyncAddedToHass(unittest.TestCase):
     """Tests for async_added_to_hass lifecycle."""
@@ -187,10 +201,24 @@ class TestAsyncAddedToHass(unittest.TestCase):
     def test_forecast_update_calls_write_ha_state(self):
         """Forecast listener should call async_write_ha_state, not re-parse obs."""
         entity = self._make()
+        entity.hass = MagicMock()
+        entity.async_update_listeners = MagicMock()
         self._run(entity.async_added_to_hass())
         with patch.object(entity, "async_write_ha_state") as mock_write:
             entity._handle_forecast_update()
             mock_write.assert_called_once()
+
+    def test_forecast_update_pushes_the_new_forecast_to_subscribers(self):
+        """Without this the weather card keeps the forecast it subscribed with."""
+        entity = self._make()
+        entity.hass = MagicMock()
+        entity.async_update_listeners = MagicMock(return_value="update-coroutine")
+        self._run(entity.async_added_to_hass())
+
+        entity._handle_forecast_update()
+
+        entity.async_update_listeners.assert_called_once_with(None)
+        entity.hass.async_create_task.assert_called_once_with("update-coroutine")
 
     def test_no_forecast_coordinator_no_listener(self):
         """Entity should not crash when forecast coordinator is None."""

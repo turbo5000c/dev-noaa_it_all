@@ -101,6 +101,10 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
 
     def _handle_forecast_update(self) -> None:
         """Notify HA that forecast data changed (lightweight)."""
+        # Forecast subscribers -- the weather card -- are only sent a new
+        # forecast when told; otherwise they keep whatever they received when
+        # they subscribed, which also hides a followed person's forecast.
+        self.hass.async_create_task(self.async_update_listeners(None))
         self.async_write_ha_state()
 
     @property
@@ -143,6 +147,10 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
             station_id = self.coordinator.data.get("station_id")
             if station_id:
                 attributes["station_id"] = station_id
+            # Only set while following a person or device tracker.
+            location_source = self.coordinator.data.get("location_source")
+            if location_source:
+                attributes["location_source"] = location_source
 
         return attributes
 
