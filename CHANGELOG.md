@@ -5,6 +5,18 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Weather that follows you.** An optional **Follow a person or device** setting in Configure.
+  Pick a `person` or `device_tracker` and, once it is more than 10 miles from home and somewhere
+  the NWS covers, observations, the hourly and extended forecast, cloud cover and NWS alerts are
+  for its location. Home is used again within 5 miles of home, outside NWS coverage and whenever
+  the entity has no GPS position; moves under 10 miles are ignored. Radar, surf, the forecast
+  discussion, meteor showers and eclipses stay on home. Entity IDs do not change; entities fed by
+  the followed data gain a `location_source` attribute, and the alert and cloud cover sensors'
+  `latitude`/`longitude` show where their data is for. (#40)
+
 ## [0.7.3] - Current
 
 Entities are unchanged from 0.7.2.

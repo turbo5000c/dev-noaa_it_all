@@ -27,7 +27,7 @@ from .const import (
     NWS_POINTS_URL, NWS_OBSERVATIONS_URL, NWS_ALERTS_URL,
     NWS_SRF_URL, NWS_AFD_URL, NWS_RADAR_BASE_URL,
     COOPS_WATER_TEMP_URL, NDBC_REALTIME_URL,
-    OFFICE_STATION_IDS, OBSERVATION_STATION_CANDIDATES,
+    OFFICE_STATION_IDS, OBSERVATION_STATION_CANDIDATES, LOCATION_SOURCE_HOME,
     METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
     ECLIPSE_SCAN_INTERVAL, ECLIPSE_APPROACH_SCAN_INTERVAL, ECLIPSE_ACTIVE_SCAN_INTERVAL,
     ECLIPSE_APPROACH_WINDOW_HOURS, ECLIPSE_UPCOMING_COUNT, ECLIPSE_MAX_CATALOG_SCAN,
@@ -52,6 +52,52 @@ def _describe(err: Exception) -> str:
     """
     text = str(err)
     return f"{type(err).__name__}: {text}" if text else type(err).__name__
+
+
+class _LocationCoordinator(DataUpdateCoordinator):
+    """A coordinator whose coordinates can change after construction.
+
+    Used to follow a tracked person or device. Moving discards whatever was
+    resolved for the old location, so the next refresh resolves again, and
+    bumps a version so a lookup still in flight for the old location does
+    not latch its result once it lands.
+    """
+
+    # The tracked entity in use, "home" when following one but using the
+    # configured coordinates, or None when nothing is being followed.
+    location_source: Optional[str] = None
+    _location_version = 0
+
+    def set_location(
+        self, latitude: float, longitude: float, source: Optional[str] = None
+    ) -> None:
+        """Point the coordinator at new coordinates."""
+        self.latitude = latitude
+        self.longitude = longitude
+        self.location_source = source
+        self._location_version += 1
+        self._reset_location()
+
+    def _reset_location(self) -> None:
+        """Forget anything resolved for the previous location."""
+
+    async def _async_update_data(self) -> dict:
+        version = self._location_version
+        data = await self._async_fetch_data()
+        if version == self._location_version:
+            return data
+        # Moved while this refresh was in flight, so what it fetched -- or
+        # half-fetched, if the reset landed between two requests -- is for
+        # the old location. Publish nothing new; the refresh the move
+        # requested brings the new location's data.
+        current = getattr(self, "data", None)
+        if current is not None:
+            return current
+        raise UpdateFailed("Location changed during the refresh")
+
+    async def _async_fetch_data(self) -> dict:
+        """Fetch this coordinator's data for its current location."""
+        raise NotImplementedError
 
 
 # Space weather API endpoints
@@ -164,8 +210,12 @@ class HurricaneCoordinator(DataUpdateCoordinator):
 # NWS Alerts (location-specific)
 # -------------------------------------------------------------------
 
-class NWSAlertsCoordinator(DataUpdateCoordinator):
-    """Fetch NWS active alerts for a specific lat/lon."""
+class NWSAlertsCoordinator(_LocationCoordinator):
+    """Fetch NWS active alerts for a specific lat/lon.
+
+    Nothing is resolved ahead of time -- the URL is built from the current
+    coordinates on every refresh -- so moving needs no reset.
+    """
 
     def __init__(
         self, hass: HomeAssistant, latitude: float, longitude: float
@@ -179,7 +229,7 @@ class NWSAlertsCoordinator(DataUpdateCoordinator):
         self.latitude = latitude
         self.longitude = longitude
 
-    async def _async_update_data(self) -> dict:
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         url = NWS_ALERTS_URL.format(lat=self.latitude, lon=self.longitude)
@@ -201,7 +251,7 @@ class NWSAlertsCoordinator(DataUpdateCoordinator):
 # Weather Observations (location-specific)
 # -------------------------------------------------------------------
 
-class ObservationsCoordinator(DataUpdateCoordinator):
+class ObservationsCoordinator(_LocationCoordinator):
     """Resolve the nearest stations and fetch the latest observation.
 
     Only the nearest station used to be kept, so when it stopped reporting
@@ -241,9 +291,19 @@ class ObservationsCoordinator(DataUpdateCoordinator):
         else:
             self._station_fetched = self.station_id is not None
 
-    async def _async_update_data(self) -> dict:
+    def _reset_location(self) -> None:
+        self._stations = []
+        self._station_fetched = False
+        # The office station is a sensible fallback at home, but away from
+        # home it would show the home airport's weather as if it were local.
+        at_home = self.location_source in (None, LOCATION_SOURCE_HOME)
+        self.station_id = OFFICE_STATION_IDS.get(self.office_code) if at_home else None
+
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        version = self._location_version
+        source = self.location_source
 
         # Resolve station from lat/lon on first run
         if (
@@ -285,8 +345,10 @@ class ObservationsCoordinator(DataUpdateCoordinator):
                 last_err = err
                 continue
 
-            # Log only when the station changes, not on every refresh.
-            if station != self.station_id:
+            # Log only when the station changes, not on every refresh. A
+            # reading for a location we have since moved away from must not
+            # overwrite the reset station_id.
+            if station != self.station_id and version == self._location_version:
                 if errors:
                     _LOGGER.warning(
                         "Nearer observation stations are not answering "
@@ -301,6 +363,7 @@ class ObservationsCoordinator(DataUpdateCoordinator):
             return {
                 "properties": properties,
                 "station_id": station,
+                "location_source": source,
             }
 
         raise UpdateFailed(
@@ -309,6 +372,7 @@ class ObservationsCoordinator(DataUpdateCoordinator):
 
     async def _resolve_station(self, session, timeout) -> None:
         """Fetch the observation stations nearest lat/lon."""
+        version = self._location_version
         try:
             points_url = NWS_POINTS_URL.format(
                 lat=self.latitude, lon=self.longitude
@@ -321,6 +385,8 @@ class ObservationsCoordinator(DataUpdateCoordinator):
                 resp.raise_for_status()
                 data = await resp.json()
 
+            if version != self._location_version:
+                return  # Moved while waiting; this answer is for the old place.
             stations_url = data.get("properties", {}).get("observationStations")
             if not stations_url:
                 _LOGGER.error(
@@ -338,6 +404,8 @@ class ObservationsCoordinator(DataUpdateCoordinator):
                 resp.raise_for_status()
                 stations_data = await resp.json()
 
+            if version != self._location_version:
+                return
             # The API lists stations nearest first. A malformed entry is
             # skipped rather than allowed to discard the valid ones.
             stations: list[str] = []
@@ -356,9 +424,12 @@ class ObservationsCoordinator(DataUpdateCoordinator):
             if stations:
                 self._stations = stations
                 self.station_id = stations[0]
-                _LOGGER.info(
-                    "Found observation stations %s for lat=%s, lon=%s",
-                    ", ".join(stations), self.latitude, self.longitude,
+                # Coordinates only at debug: with a followed person or
+                # device they are that person's position.
+                _LOGGER.info("Found observation stations %s", ", ".join(stations))
+                _LOGGER.debug(
+                    "Observation stations are for lat=%s, lon=%s",
+                    self.latitude, self.longitude,
                 )
             self._station_fetched = True
         except Exception as err:
@@ -468,7 +539,7 @@ class SurfCoordinator(DataUpdateCoordinator):
 # Forecasts (location-specific)
 # -------------------------------------------------------------------
 
-class ForecastCoordinator(DataUpdateCoordinator):
+class ForecastCoordinator(_LocationCoordinator):
     """Resolve forecast URLs from Points API and fetch extended + hourly."""
 
     def __init__(
@@ -492,7 +563,13 @@ class ForecastCoordinator(DataUpdateCoordinator):
         self._urls_fetched: bool = False
         self._resolve_error: Optional[str] = None
 
-    async def _async_update_data(self) -> dict:
+    def _reset_location(self) -> None:
+        self._forecast_url = None
+        self._hourly_forecast_url = None
+        self._urls_fetched = False
+        self._resolve_error = None
+
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
 
@@ -547,6 +624,7 @@ class ForecastCoordinator(DataUpdateCoordinator):
 
     async def _resolve_forecast_urls(self, session, timeout) -> None:
         """Fetch forecast URLs from the NWS Points API."""
+        version = self._location_version
         try:
             points_url = NWS_POINTS_URL.format(
                 lat=self.latitude, lon=self.longitude
@@ -559,14 +637,18 @@ class ForecastCoordinator(DataUpdateCoordinator):
                 resp.raise_for_status()
                 data = await resp.json()
 
+            if version != self._location_version:
+                return  # Moved while waiting; this answer is for the old place.
             props = data.get("properties", {})
             self._forecast_url = props.get("forecast")
             self._hourly_forecast_url = props.get("forecastHourly")
 
+            # Debug, not info: a gridpoint URL places its location to within
+            # a few kilometres, which for a followed person is their position.
             if self._forecast_url:
-                _LOGGER.info("Found forecast URL: %s", self._forecast_url)
+                _LOGGER.debug("Found forecast URL: %s", self._forecast_url)
             if self._hourly_forecast_url:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Found hourly forecast URL: %s",
                     self._hourly_forecast_url,
                 )
@@ -590,7 +672,7 @@ class ForecastCoordinator(DataUpdateCoordinator):
 # Cloud Cover (location-specific, gridpoint data)
 # -------------------------------------------------------------------
 
-class CloudCoverCoordinator(DataUpdateCoordinator):
+class CloudCoverCoordinator(_LocationCoordinator):
     """Resolve gridpoint URL and fetch sky-cover data."""
 
     def __init__(
@@ -612,7 +694,11 @@ class CloudCoverCoordinator(DataUpdateCoordinator):
         self._gridpoint_url: Optional[str] = None
         self._grid_fetched: bool = False
 
-    async def _async_update_data(self) -> dict:
+    def _reset_location(self) -> None:
+        self._gridpoint_url = None
+        self._grid_fetched = False
+
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
 
@@ -640,6 +726,7 @@ class CloudCoverCoordinator(DataUpdateCoordinator):
 
     async def _resolve_gridpoint_url(self, session, timeout) -> None:
         """Fetch gridpoint URL from the NWS Points API."""
+        version = self._location_version
         try:
             points_url = NWS_POINTS_URL.format(
                 lat=self.latitude, lon=self.longitude
@@ -652,11 +739,13 @@ class CloudCoverCoordinator(DataUpdateCoordinator):
                 resp.raise_for_status()
                 data = await resp.json()
 
+            if version != self._location_version:
+                return  # Moved while waiting; this answer is for the old place.
             self._gridpoint_url = (
                 data.get("properties", {}).get("forecastGridData")
             )
             if self._gridpoint_url:
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Found gridpoint URL for lat=%s, lon=%s: %s",
                     self.latitude, self.longitude, self._gridpoint_url,
                 )

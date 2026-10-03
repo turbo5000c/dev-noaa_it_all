@@ -454,6 +454,189 @@ class TestObservationStationFailover(unittest.TestCase):
         self.assertFalse(coordinator._station_fetched)
 
 
+class _MovingResponse(_FakeResponse):
+    """A response whose body arrives after the coordinator has been moved."""
+
+    def __init__(self, payload, move):
+        super().__init__(payload)
+        self._move = move
+
+    async def json(self):
+        self._move()
+        return await super().json()
+
+
+class TestCoordinatorsFollowAMove(unittest.TestCase):
+    """set_location re-points a coordinator at new coordinates.
+
+    What each coordinator resolved for the old location (stations, forecast
+    URLs, gridpoint) must be dropped, and a lookup that was already in
+    flight when the move happened must not latch the old location's answer.
+    """
+
+    AWAY = (39.7392, -104.9903)
+    POINTS = {
+        "properties": {
+            "observationStations": "https://api.weather.gov/gridpoints/BOU/1,2/stations",
+            "forecast": "https://api.weather.gov/gridpoints/BOU/1,2/forecast",
+            "forecastHourly": "https://api.weather.gov/gridpoints/BOU/1,2/forecast/hourly",
+            "forecastGridData": "https://api.weather.gov/gridpoints/BOU/1,2",
+        }
+    }
+    OBSERVATION = {"properties": {"temperature": {"value": 20.0}}}
+
+    def _observations(self):
+        from noaa_it_all.coordinator import ObservationsCoordinator
+        coordinator = ObservationsCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator._stations = ["KILM"]
+        coordinator._station_fetched = True
+        return coordinator
+
+    def test_observations_resolve_again_for_the_new_location(self):
+        coordinator = self._observations()
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/gridpoints/BOU/1,2/stations": _FakeResponse(
+                    {"features": [{"properties": {"stationIdentifier": "KDEN"}}]}
+                ),
+                "/points/39.7392,-104.9903": _FakeResponse(self.POINTS),
+                "/stations/KDEN/observations/latest": _FakeResponse(self.OBSERVATION),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data["station_id"], "KDEN")
+        self.assertEqual(data["location_source"], "person.traveler")
+        self.assertEqual(coordinator._stations, ["KDEN"])
+
+    def test_away_from_home_the_office_station_is_not_a_fallback(self):
+        coordinator = self._observations()
+
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        self.assertIsNone(coordinator.station_id)
+        self.assertEqual(coordinator._stations, [])
+        self.assertFalse(coordinator._station_fetched)
+
+        coordinator.set_location(34.2, -77.9, source="home")
+        self.assertEqual(coordinator.station_id, "KILM")
+
+    def test_an_observation_lookup_in_flight_does_not_latch_after_a_move(self):
+        coordinator = self._observations()
+        coordinator.set_location(34.2, -77.9, source="home")
+        session = _FakeSession(default=_MovingResponse(
+            self.POINTS, lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+        ))
+
+        with _with_session(session):
+            _run(coordinator._resolve_station(session, {}))
+
+        self.assertFalse(coordinator._station_fetched)
+        self.assertEqual(coordinator._stations, [])
+
+    def test_forecast_urls_resolve_again_for_the_new_location(self):
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator._forecast_url = "https://api.weather.gov/gridpoints/ILM/1,2/forecast"
+        coordinator._urls_fetched = True
+
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        self.assertIsNone(coordinator._forecast_url)
+        self.assertFalse(coordinator._urls_fetched)
+
+        session = _FakeSession(default=_FakeResponse(self.POINTS))
+        with _with_session(session):
+            _run(coordinator._resolve_forecast_urls(session, {}))
+        self.assertIn("/points/39.7392,-104.9903", session.calls[0][0])
+        self.assertEqual(coordinator._forecast_url, self.POINTS["properties"]["forecast"])
+
+    def test_a_forecast_lookup_in_flight_does_not_latch_after_a_move(self):
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+        session = _FakeSession(default=_MovingResponse(
+            self.POINTS, lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+        ))
+
+        with _with_session(session):
+            _run(coordinator._resolve_forecast_urls(session, {}))
+
+        self.assertFalse(coordinator._urls_fetched)
+        self.assertIsNone(coordinator._forecast_url)
+
+    def test_cloud_cover_gridpoint_resolves_again_for_the_new_location(self):
+        from noaa_it_all.coordinator import CloudCoverCoordinator
+        coordinator = CloudCoverCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator._gridpoint_url = "https://api.weather.gov/gridpoints/ILM/1,2"
+        coordinator._grid_fetched = True
+
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        self.assertIsNone(coordinator._gridpoint_url)
+        self.assertFalse(coordinator._grid_fetched)
+
+        session = _FakeSession(default=_MovingResponse(
+            self.POINTS, lambda: coordinator.set_location(34.2, -77.9, "home"),
+        ))
+        with _with_session(session):
+            _run(coordinator._resolve_gridpoint_url(session, {}))
+        self.assertFalse(coordinator._grid_fetched)
+
+    def test_a_refresh_that_spans_a_move_keeps_what_is_published(self):
+        """Half of an old-location forecast must not replace the current data."""
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator._forecast_url = "https://api.weather.gov/gridpoints/ILM/1,2/forecast"
+        coordinator._hourly_forecast_url = "https://api.weather.gov/gridpoints/ILM/1,2/forecast/hourly"
+        coordinator._urls_fetched = True
+        coordinator.data = {"extended": "published", "hourly": "published"}
+        session = _FakeSession(default=_MovingResponse(
+            {"properties": {"periods": []}},
+            lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+        ))
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"extended": "published", "hourly": "published"})
+
+    def test_a_first_refresh_that_spans_a_move_fails_rather_than_publishing(self):
+        from noaa_it_all.coordinator import NWSAlertsCoordinator
+        coordinator = NWSAlertsCoordinator(HASS, 34.2, -77.9)
+        session = _FakeSession(default=_MovingResponse(
+            {"features": [{"id": "old-location-alert"}]},
+            lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+        ))
+
+        with _with_session(session), self.assertRaises(_UpdateFailed):
+            _run(coordinator._async_update_data())
+
+    def test_observations_label_the_reading_with_its_source(self):
+        coordinator = self._observations()
+        coordinator.set_location(34.2, -77.9, source="home")
+        coordinator._stations = ["KILM"]
+        coordinator._station_fetched = True
+        session = _FakeSession(default=_FakeResponse(self.OBSERVATION))
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data["location_source"], "home")
+        self.assertEqual(data["station_id"], "KILM")
+
+    def test_alerts_use_the_new_point(self):
+        from noaa_it_all.coordinator import NWSAlertsCoordinator
+        coordinator = NWSAlertsCoordinator(HASS, 34.2, -77.9)
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        session = _FakeSession(default=_FakeResponse({"features": []}))
+
+        with _with_session(session):
+            _run(coordinator._async_update_data())
+
+        self.assertIn("point=39.7392,-104.9903", session.calls[0][0])
+
+
 class TestUserAgentIsAlwaysSent(unittest.TestCase):
     """Every NOAA request must identify the integration.
 

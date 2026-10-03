@@ -233,6 +233,17 @@ class TestNWSAlertsSensor(unittest.TestCase):
         self.assertIn("latitude", attrs)
         self.assertIn("longitude", attrs)
 
+    def test_attrs_show_where_the_alerts_are_for_while_following(self):
+        sensor = self._make(_load_fixture("nws_alerts.json"))
+        sensor.coordinator.location_source = "person.traveler"
+        sensor.coordinator.latitude = 39.7392
+        sensor.coordinator.longitude = -104.9903
+        attrs = sensor.extra_state_attributes
+        self.assertEqual(attrs["latitude"], 39.7392)
+        self.assertEqual(attrs["longitude"], -104.9903)
+        self.assertEqual(attrs["location_source"], "person.traveler")
+        self.assertIn("n77_9447", sensor.unique_id)
+
     def test_device_info_weather_group(self):
         sensor = self._make()
         info = sensor.device_info
@@ -291,6 +302,20 @@ class TestCloudCoverSensor(unittest.TestCase):
         info = sensor.device_info
         ids = list(info["identifiers"])[0]
         self.assertIn("weather", ids[1])
+
+    def test_attrs_show_where_the_cloud_cover_is_for_while_following(self):
+        sensor = self._make(None)
+        sensor.coordinator.location_source = "person.traveler"
+        sensor.coordinator.latitude = 39.7392
+        sensor.coordinator.longitude = -104.9903
+        attrs = sensor.extra_state_attributes
+        self.assertEqual(attrs["latitude"], 39.7392)
+        self.assertEqual(attrs["location_source"], "person.traveler")
+
+    def test_attrs_are_home_when_not_following(self):
+        attrs = self._make(None).extra_state_attributes
+        self.assertEqual(attrs["latitude"], LAT)
+        self.assertNotIn("location_source", attrs)
 
 
 # ---------------------------------------------------------------

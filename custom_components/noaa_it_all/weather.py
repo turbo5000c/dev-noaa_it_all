@@ -143,6 +143,10 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
             station_id = self.coordinator.data.get("station_id")
             if station_id:
                 attributes["station_id"] = station_id
+            # Only set while following a person or device tracker.
+            location_source = self.coordinator.data.get("location_source")
+            if location_source:
+                attributes["location_source"] = location_source
 
         return attributes
 
