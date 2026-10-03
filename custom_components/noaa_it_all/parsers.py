@@ -191,7 +191,10 @@ def extract_storm_scale(message: str, product_id: str) -> str:
             return scale
 
     lower = message.lower()
-    if any(kw in lower for kw in ['extreme', 'severe']):
+    # The NOAA scale words, matching get_severity_level: S5 Extreme, S4 Severe.
+    if 'extreme' in lower:
+        return 'S5'
+    if 'severe' in lower:
         return 'S4'
     if any(kw in lower for kw in ['strong', 'major']):
         return 'S3'
@@ -591,7 +594,7 @@ def parse_nws_alert_features(features: List[Dict[str, Any]]) -> Tuple[
             'category': props.get('category', 'Unknown'),
             'sender': props.get('senderName', 'Unknown'),
             'instruction': instruction,
-            'description': props.get('description', '')[:300],
+            'description': (props.get('description') or '')[:300],
         }
         active_alerts.append(alert_info)
 
@@ -654,7 +657,8 @@ def format_hourly_periods(periods: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         precip_prob = period.get('probabilityOfPrecipitation')
         precip_value = 0
         if precip_prob and isinstance(precip_prob, dict):
-            precip_value = precip_prob.get('value', 0)
+            # NWS sends {'value': null}, which .get('value', 0) passes through.
+            precip_value = precip_prob.get('value') or 0
         elif isinstance(precip_prob, (int, float)):
             precip_value = precip_prob
 

@@ -33,6 +33,16 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _latest_sample(samples):
+    """Return the newest sample of a SWPC feed, by its ``time_tag``.
+
+    The Dst sensors read the first sample and the Kp sensors the last, so
+    one of them was reading the oldest; picking by time works whichever way
+    a feed is ordered. Samples without a time_tag sort first.
+    """
+    return max(samples, key=lambda sample: str(sample.get('time_tag') or ''))
+
+
 class GeomagneticSensor(CoordinatorEntity):
     """Representation of the Geomagnetic Storm sensor.
 
@@ -69,7 +79,7 @@ class GeomagneticSensor(CoordinatorEntity):
             return None
         dst_data = self.coordinator.data.get("dst", [])
         if dst_data and len(dst_data) > 0:
-            return dst_data[0].get('dst')
+            return _latest_sample(dst_data).get('dst')
         return None
 
     @property
@@ -104,7 +114,7 @@ class GeomagneticSensorInterpretation(CoordinatorEntity):
             return None
         dst_data = self.coordinator.data.get("dst", [])
         if dst_data and len(dst_data) > 0:
-            dst_value = dst_data[0].get('dst')
+            dst_value = _latest_sample(dst_data).get('dst')
             if dst_value is not None:
                 return interpret_dst_value(dst_value)
         return None
@@ -169,7 +179,7 @@ class PlanetaryKIndexSensor(CoordinatorEntity):
             return None
         kp_data = self.coordinator.data.get("kp_index", [])
         if kp_data and len(kp_data) > 0:
-            return kp_data[-1].get('kp_index')
+            return _latest_sample(kp_data).get('kp_index')
         return None
 
     @property
@@ -204,7 +214,7 @@ class PlanetaryKIndexSensorRating(CoordinatorEntity):
             return None
         kp_data = self.coordinator.data.get("kp_index", [])
         if kp_data and len(kp_data) > 0:
-            kp_value = kp_data[-1].get('kp_index')
+            kp_value = _latest_sample(kp_data).get('kp_index')
             if kp_value is not None:
                 return rate_kp_index(kp_value)
         return None
@@ -265,7 +275,10 @@ class AuroraNextTimeSensor(CoordinatorEntity):
         if not kp_data or len(kp_data) == 0:
             return 'No Data', {'error': 'No Kp index data available'}
 
-        current_kp = kp_data[-1].get('kp_index', 0)
+        current_kp = _latest_sample(kp_data).get('kp_index', 0)
+        if current_kp is None:
+            # A null Kp, as Aurora Duration and Probability already handle.
+            return None, {}
         office_lat = OFFICE_MAGNETIC_LATITUDES.get(self._office_code, 0)
 
         aurora_possible = calculate_aurora_visibility(
@@ -361,7 +374,7 @@ class AuroraDurationSensor(CoordinatorEntity):
         kp_data = self.coordinator.data.get("kp_index", [])
         if not kp_data or len(kp_data) == 0:
             return None, None
-        current_kp = kp_data[-1].get('kp_index', 0)
+        current_kp = _latest_sample(kp_data).get('kp_index', 0)
         office_lat = OFFICE_MAGNETIC_LATITUDES.get(self._office_code, 0)
         return current_kp, office_lat
 
@@ -441,7 +454,7 @@ class AuroraVisibilityProbabilitySensor(CoordinatorEntity):
         kp_data = self.coordinator.data.get("kp_index", [])
         if not kp_data or len(kp_data) == 0:
             return None, None
-        current_kp = kp_data[-1].get('kp_index', 0)
+        current_kp = _latest_sample(kp_data).get('kp_index', 0)
         office_lat = OFFICE_MAGNETIC_LATITUDES.get(self._office_code, 0)
         return current_kp, office_lat
 

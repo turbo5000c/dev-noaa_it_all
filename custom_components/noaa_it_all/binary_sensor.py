@@ -207,7 +207,7 @@ class SevereWeatherAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
                     'area': props.get('areaDesc', 'Unknown area'),
                     'effective': props.get('effective', 'Unknown'),
                     'expires': props.get('expires', 'Unknown'),
-                    'description': props.get('description', '')[:200],
+                    'description': (props.get('description') or '')[:200],
                 })
         return active_alerts
 
@@ -300,7 +300,7 @@ class FloodWinterAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
                     'area': props.get('areaDesc', 'Unknown area'),
                     'effective': props.get('effective', 'Unknown'),
                     'expires': props.get('expires', 'Unknown'),
-                    'description': props.get('description', '')[:200],
+                    'description': (props.get('description') or '')[:200],
                 })
         return active_alerts
 
@@ -392,7 +392,7 @@ class HeatAirQualityAlertBinarySensor(CoordinatorEntity, BinarySensorEntity):
                     'area': props.get('areaDesc', 'Unknown area'),
                     'effective': props.get('effective', 'Unknown'),
                     'expires': props.get('expires', 'Unknown'),
-                    'description': props.get('description', '')[:200],
+                    'description': (props.get('description') or '')[:200],
                 })
         return active_alerts
 
@@ -473,7 +473,7 @@ class ActiveAlertsGeneralBinarySensor(CoordinatorEntity, BinarySensorEntity):
                     'area': props.get('areaDesc', 'Unknown area'),
                     'effective': props.get('effective', 'Unknown'),
                     'expires': props.get('expires', 'Unknown'),
-                    'description': props.get('description', '')[:200],
+                    'description': (props.get('description') or '')[:200],
                 })
                 alert_types[event] = alert_types.get(event, 0) + 1
         return active_alerts, alert_types
