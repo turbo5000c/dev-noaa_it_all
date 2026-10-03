@@ -468,12 +468,15 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
             return "fog"
         if "overcast" in desc_lower:
             return "cloudy"
-        if "cloudy" in desc_lower:
-            return "cloudy"
         if "partly cloudy" in desc_lower or "mostly clear" in desc_lower or "partly sunny" in desc_lower:
             return "partlycloudy"
-        if "mostly cloudy" in desc_lower or "mostly sunny" in desc_lower:
+        if "mostly sunny" in desc_lower:
             return "partlycloudy"
+        # After the partly-cloudy checks, which it would otherwise swallow.
+        # "Mostly Cloudy" lands here too, as in Home Assistant's own NWS
+        # integration.
+        if "cloudy" in desc_lower:
+            return "cloudy"
         if "clear" in desc_lower or "fair" in desc_lower or "sunny" in desc_lower:
             return "clear-night" if is_night else "sunny"
         if "wind" in desc_lower and ("gust" in desc_lower or "strong" in desc_lower):
