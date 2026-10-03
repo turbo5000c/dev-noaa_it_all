@@ -49,6 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Partly Cloudy" no longer shows as cloudy.** The weather entity and its forecasts mapped the
   NWS "Partly Cloudy" to `cloudy`; it is now `partlycloudy`. "Mostly Cloudy" stays `cloudy`, as in
   Home Assistant's own NWS integration. (#33)
+- **Geomagnetic Storm (Dst) shows the newest reading.** The Dst sensors took the first sample in
+  NOAA's feed and the Kp sensors the last, so one of them was showing the oldest reading in the
+  file. All space weather sensors now take the sample with the latest timestamp, whichever way the
+  feed is ordered. (#33)
+- **Alerts with no description no longer break the alert entities.** An NWS alert whose
+  description was `null` made the NWS Alerts sensor and the four alert binary sensors fail. (#33)
+- **Aurora Next Time no longer fails on a missing Kp value.** It is `unknown` instead, like Aurora
+  Duration and Aurora Visibility Probability. (#33)
+- **Solar radiation storms described as "extreme" are S5.** They were reported as S4, the level for
+  "severe". (#33)
+- **Hourly forecast rain chance is `0` when the NWS gives none**, instead of having no value, which
+  is what the attribute already showed when the field was missing entirely. (#33)
 
 ## [0.7.3] - Current
 

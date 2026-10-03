@@ -408,5 +408,28 @@ class TestActiveAlertsGeneralBinarySensor(unittest.TestCase):
         self.assertEqual(sensor.icon, "mdi:check-circle")
 
 
+class TestNullAlertDescription(unittest.TestCase):
+    """#33: a null description used to raise TypeError in every alert binary sensor."""
+
+    def test_each_alert_sensor_takes_a_null_description(self):
+        from noaa_it_all.binary_sensor import (
+            ActiveAlertsGeneralBinarySensor, FloodWinterAlertBinarySensor,
+            HeatAirQualityAlertBinarySensor, SevereWeatherAlertBinarySensor,
+        )
+        for cls, event in (
+            (SevereWeatherAlertBinarySensor, "Tornado Warning"),
+            (FloodWinterAlertBinarySensor, "Flood Warning"),
+            (HeatAirQualityAlertBinarySensor, "Heat Advisory"),
+            (ActiveAlertsGeneralBinarySensor, "Flood Warning"),
+        ):
+            with self.subTest(sensor=cls.__name__):
+                feature = {"properties": {
+                    "status": "Actual", "event": event, "description": None,
+                }}
+                sensor = cls(_make_coordinator({"features": [feature]}), OFFICE, LAT, LON)
+                self.assertTrue(sensor.is_on)
+                sensor.extra_state_attributes
+
+
 if __name__ == "__main__":
     unittest.main()

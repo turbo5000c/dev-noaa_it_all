@@ -187,7 +187,9 @@ class TestSolarRadiation(unittest.TestCase):
         self.assertEqual(extract_storm_scale("SCALE S2 warning text", ""), "S2")
 
     def test_extract_storm_scale_keyword(self):
-        self.assertEqual(extract_storm_scale("extreme radiation storm", ""), "S4")
+        # #33: S5 is Extreme and S4 Severe, as get_severity_level has them.
+        self.assertEqual(extract_storm_scale("extreme radiation storm", ""), "S5")
+        self.assertEqual(extract_storm_scale("severe radiation storm", ""), "S4")
         self.assertEqual(extract_storm_scale("strong solar event", ""), "S3")
         self.assertEqual(extract_storm_scale("moderate proton flux", ""), "S2")
         self.assertEqual(extract_storm_scale("minor radiation event", ""), "S1")
@@ -493,6 +495,25 @@ class TestForecastFormatting(unittest.TestCase):
                     'probabilityOfPrecipitation': 25}]
         result = format_hourly_periods(periods)
         self.assertEqual(result[0]['precipitation_probability'], 25)
+
+
+class TestNullFieldsFromTheNWS(unittest.TestCase):
+    """#33: api.weather.gov sends present-but-null fields, which .get() defaults miss."""
+
+    def test_null_alert_description(self):
+        feature = {"properties": {
+            "status": "Actual", "event": "Flood Warning", "description": None,
+        }}
+        alerts, _ = parse_nws_alert_features([feature])
+        self.assertEqual(alerts[0]["description"], "")
+
+    def test_null_hourly_precipitation_probability_is_zero(self):
+        periods = format_hourly_periods([{"probabilityOfPrecipitation": {"value": None}}])
+        self.assertEqual(periods[0]["precipitation_probability"], 0)
+
+    def test_hourly_precipitation_probability_value_kept(self):
+        periods = format_hourly_periods([{"probabilityOfPrecipitation": {"value": 40}}])
+        self.assertEqual(periods[0]["precipitation_probability"], 40)
 
 
 if __name__ == '__main__':

@@ -115,6 +115,41 @@ class TestGeomagneticSensor(unittest.TestCase):
         self.assertIn("space", ids[1])
 
 
+class TestNewestSpaceWeatherSample(unittest.TestCase):
+    """#33: Dst read the first sample and Kp the last; one of them was the oldest."""
+
+    _DST = [
+        {"time_tag": "2026-04-07 14:00:00.000", "dst": -10},
+        {"time_tag": "2026-04-07 15:00:00.000", "dst": -120},
+    ]
+    _KP = [
+        {"time_tag": "2026-04-07T15:00:00", "kp_index": 6.0},
+        {"time_tag": "2026-04-07T14:57:00", "kp_index": 2.0},
+    ]
+
+    def test_dst_oldest_first_reads_the_newest(self):
+        from noaa_it_all.sensors.space_weather import (
+            GeomagneticSensor, GeomagneticSensorInterpretation,
+        )
+        coord = _make_coordinator({"dst": self._DST})
+        self.assertEqual(GeomagneticSensor(coord, OFFICE).state, -120)
+        from noaa_it_all.parsers import interpret_dst_value
+        self.assertEqual(
+            GeomagneticSensorInterpretation(coord, OFFICE).state,
+            interpret_dst_value(-120),
+        )
+
+    def test_kp_newest_first_reads_the_newest(self):
+        from noaa_it_all.sensors.space_weather import (
+            AuroraDurationSensor, PlanetaryKIndexSensor,
+        )
+        coord = _make_coordinator({"kp_index": self._KP})
+        self.assertEqual(PlanetaryKIndexSensor(coord, OFFICE).state, 6.0)
+        self.assertEqual(
+            AuroraDurationSensor(coord, OFFICE).extra_state_attributes["current_kp"], 6.0
+        )
+
+
 class TestGeomagneticSensorInterpretation(unittest.TestCase):
     """Tests for GeomagneticSensorInterpretation state computation."""
 
@@ -162,8 +197,8 @@ class TestPlanetaryKIndexSensor(unittest.TestCase):
     def test_state_returns_latest_kp(self):
         kp_data = _load_fixture("space_weather_kp.json")
         sensor = self._make(kp_data)
-        # PlanetaryKIndexSensor uses kp_data[-1] (last element)
-        self.assertEqual(sensor.state, 3.00)
+        # #33: the newest sample by time_tag (15:00), not the last in the list.
+        self.assertEqual(sensor.state, 3.33)
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import PlanetaryKIndexSensor
@@ -333,6 +368,12 @@ class TestAuroraNextTimeSensor(unittest.TestCase):
     def test_state_empty_kp(self):
         sensor = self._make([])
         self.assertEqual(sensor.state, "No Data")
+
+    def test_null_kp_is_unknown(self):
+        """#33: a null Kp raised TypeError; the sibling aurora sensors return None."""
+        sensor = self._make([{"kp_index": None}])
+        self.assertIsNone(sensor.state)
+        self.assertEqual(sensor.extra_state_attributes, {})
 
     def test_unique_id(self):
         sensor = self._make()
