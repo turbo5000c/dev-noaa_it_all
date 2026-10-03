@@ -583,17 +583,99 @@ class TestCoordinatorsFollowAMove(unittest.TestCase):
             _run(coordinator._resolve_gridpoint_url(session, {}))
         self.assertFalse(coordinator._grid_fetched)
 
-    def test_a_refresh_that_spans_a_move_keeps_what_is_published(self):
-        """Half of an old-location forecast must not replace the current data."""
+    def _forecast_at_home(self):
         from noaa_it_all.coordinator import ForecastCoordinator
         coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
         coordinator._forecast_url = "https://api.weather.gov/gridpoints/ILM/1,2/forecast"
         coordinator._hourly_forecast_url = "https://api.weather.gov/gridpoints/ILM/1,2/forecast/hourly"
         coordinator._urls_fetched = True
         coordinator.data = {"extended": "published", "hourly": "published"}
+        return coordinator
+
+    def test_a_refresh_that_spans_a_move_fetches_again_for_the_new_place(self):
+        """Neither the old place's data nor a half-fetched mix is published."""
+        coordinator = self._forecast_at_home()
+        moved = []
+
+        def move():
+            if not moved:
+                moved.append(True)
+                coordinator.set_location(*self.AWAY, "person.traveler")
+
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/gridpoints/ILM/1,2/forecast/hourly": _FakeResponse({"old": "hourly"}),
+                "/gridpoints/ILM/1,2/forecast": _MovingResponse({"old": "extended"}, move),
+                "/points/39.7392,-104.9903": _FakeResponse(self.POINTS),
+                "/gridpoints/BOU/1,2/forecast/hourly": _FakeResponse({"new": "hourly"}),
+                "/gridpoints/BOU/1,2/forecast": _FakeResponse({"new": "extended"}),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"extended": {"new": "extended"}, "hourly": {"new": "hourly"}})
+        self.assertEqual(coordinator.data_location, (*self.AWAY, "person.traveler"))
+
+    def test_a_failure_caused_by_a_move_is_not_reported(self):
+        """The move's reset made the old refresh fail; that is not news."""
+        from noaa_it_all.coordinator import CloudCoverCoordinator
+        coordinator = CloudCoverCoordinator(HASS, "ILM", 34.2, -77.9)
+        moved = []
+
+        def move():
+            if not moved:
+                moved.append(True)
+                coordinator.set_location(*self.AWAY, "person.traveler")
+
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/points/34.2,-77.9": _MovingResponse(self.POINTS, move),
+                "/points/39.7392,-104.9903": _FakeResponse(self.POINTS),
+                "/gridpoints/BOU/1,2": _FakeResponse({"properties": {"skyCover": {}}}),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"properties": {"skyCover": {}}})
+        self.assertEqual(coordinator.data_location, (*self.AWAY, "person.traveler"))
+
+    def test_an_old_place_error_after_a_move_is_not_reported(self):
+        from noaa_it_all.coordinator import NWSAlertsCoordinator
+        coordinator = NWSAlertsCoordinator(HASS, 34.2, -77.9)
+        moved = []
+
+        class _FailAfterMove(_FakeResponse):
+            def raise_for_status(self):
+                if not moved:
+                    moved.append(True)
+                    coordinator.set_location(39.7392, -104.9903, "person.traveler")
+                    raise OSError("503 for the old place")
+
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "point=34.2,-77.9": _FailAfterMove({}),
+                "point=39.7392,-104.9903": _FakeResponse({"features": []}),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data, {"features": []})
+
+    def test_a_refresh_overtaken_every_time_keeps_what_is_published(self):
+        coordinator = self._forecast_at_home()
+        places = iter([(39.0, -105.0), (40.0, -105.0), (41.0, -105.0), (42.0, -105.0)])
         session = _FakeSession(default=_MovingResponse(
-            {"properties": {"periods": []}},
-            lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+            {"properties": {}},
+            lambda: coordinator.set_location(*next(places), "person.traveler"),
         ))
 
         with _with_session(session):
@@ -601,16 +683,41 @@ class TestCoordinatorsFollowAMove(unittest.TestCase):
 
         self.assertEqual(data, {"extended": "published", "hourly": "published"})
 
-    def test_a_first_refresh_that_spans_a_move_fails_rather_than_publishing(self):
+    def test_a_first_refresh_overtaken_every_time_fails(self):
         from noaa_it_all.coordinator import NWSAlertsCoordinator
         coordinator = NWSAlertsCoordinator(HASS, 34.2, -77.9)
+        places = iter([(39.0, -105.0), (40.0, -105.0), (41.0, -105.0)])
         session = _FakeSession(default=_MovingResponse(
-            {"features": [{"id": "old-location-alert"}]},
-            lambda: coordinator.set_location(*self.AWAY, "person.traveler"),
+            {"features": []},
+            lambda: coordinator.set_location(*next(places), "person.traveler"),
         ))
 
         with _with_session(session), self.assertRaises(_UpdateFailed):
             _run(coordinator._async_update_data())
+
+    def test_a_new_label_alone_keeps_what_was_resolved(self):
+        coordinator = self._observations()
+        coordinator.set_location(34.2, -77.9, source="home")
+        self.assertEqual(coordinator._stations, ["KILM"])
+        self.assertTrue(coordinator._station_fetched)
+        self.assertEqual(coordinator.location_source, "home")
+
+    def test_away_no_station_found_is_retried_and_not_blamed_on_the_office(self):
+        coordinator = self._observations()
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/gridpoints/BOU/1,2/stations": _FakeResponse({"features": []}),
+                "/points/39.7392,-104.9903": _FakeResponse(self.POINTS),
+            },
+        )
+
+        with _with_session(session), self.assertRaises(_UpdateFailed) as ctx:
+            _run(coordinator._async_update_data())
+
+        self.assertNotIn("office", str(ctx.exception))
+        self.assertFalse(coordinator._station_fetched)
 
     def test_observations_label_the_reading_with_its_source(self):
         coordinator = self._observations()

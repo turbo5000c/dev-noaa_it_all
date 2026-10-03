@@ -240,11 +240,6 @@ class TestLocationTrackerWiring(unittest.TestCase):
         self.assertIn("refresh", order)
         entry.async_on_unload.assert_any_call(tracker_cls.return_value.async_stop)
 
-        from noaa_it_all.const import DOMAIN
-        self.assertIs(
-            hass.data[DOMAIN]["entry_1"]["location_tracker"], tracker_cls.return_value
-        )
-
     def test_no_tracked_entity_means_no_tracker(self):
         _, _, tracker_cls, _ = self._setup(_make_entry(_ILM))
         tracker_cls.assert_not_called()

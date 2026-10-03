@@ -80,16 +80,21 @@ How it decides where to look:
 - **No GPS position** (the entity is `unavailable`, `unknown`, or has no `latitude` and
   `longitude` attributes, such as a router-based tracker), home is used.
 - **If the NWS cannot be reached** to check a new location, nothing changes and the check is
-  tried again 10 minutes later, or sooner if the entity moves.
+  tried again 10 minutes later. Coming home still switches back straight away in the meantime.
+- **A place found outside coverage** is remembered for 10 minutes, so updates from around it do
+  not each ask the NWS again.
 
 Entity IDs, unique IDs and device names never change, so a trip creates no new entities. The
-entities fed by the followed data show which location it is for:
+entities fed by the followed data show which location their current data is for:
 
 | Attribute | On | Meaning |
 |---|---|---|
-| `location_source` | Weather entity, observation, cloud cover and NWS alert sensors, alert binary sensors | The followed entity (e.g. `person.alex`) while using its location, `home` otherwise. Absent when nothing is followed. |
-| `latitude` / `longitude` | Cloud cover and NWS alert sensors, alert binary sensors | Where the data is for: the followed location while using it, home otherwise |
+| `location_source` | Weather entity; observation, forecast, cloud cover and NWS alert sensors; alert binary sensors | The followed entity (e.g. `person.alex`) while using its location, `home` otherwise. Absent when nothing is followed. |
+| `latitude` / `longitude` | Cloud cover and NWS alert sensors, alert binary sensors | Where the data is for: home, or the followed location rounded to two decimal places (about 1 km) |
 | `station_id` | Weather entity, observation sensors | The observation station the reading came from |
+
+The attributes describe the data currently shown, so right after a move they keep describing the
+previous location until the refresh for the new one lands.
 
 ```yaml
 # Stored in the config entry's options
@@ -97,9 +102,10 @@ tracked_entity: person.alex
 ```
 
 The followed location is sent to `api.weather.gov` in request URLs, in the same way the home
-coordinates already are. It is rounded to four decimal places (about 11 m). Routine log lines
-leave it out, but a failed NWS request can still be logged with its URL or coordinates, so check
-before sharing a log publicly.
+coordinates already are, rounded to four decimal places (about 11 m). Entity attributes only show
+it to about 1 km. Routine log lines leave it out, along with the stations and gridpoints near it,
+but a failed NWS request can still be logged with its URL or coordinates, so check before sharing a
+log publicly.
 
 ### Hours of radar history
 

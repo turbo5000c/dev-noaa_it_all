@@ -181,7 +181,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         "cloud_cover_coordinator": cloud_cover_coord,
         "meteor_coordinator": meteor_coord,
         "eclipse_coordinator": eclipse_coord,
-        "location_tracker": location_tracker,
     }
 
     # Reload the entry whenever its options change. The coordinators capture

@@ -129,6 +129,16 @@ class TestExtendedForecastSensor(unittest.TestCase):
         ids = list(info["identifiers"])[0]
         self.assertIn("weather", ids[1])
 
+    def test_location_source_shown_while_following(self):
+        sensor = self._make(_load_fixture("forecast.json"))
+        sensor.coordinator.data_location = (39.7392, -104.9903, "person.traveler")
+        self.assertEqual(sensor.extra_state_attributes["location_source"], "person.traveler")
+
+    def test_no_location_source_when_not_following(self):
+        sensor = self._make(_load_fixture("forecast.json"))
+        sensor.coordinator.data_location = None
+        self.assertNotIn("location_source", sensor.extra_state_attributes)
+
 
 # ---------------------------------------------------------------
 # Hourly Forecast sensor
@@ -235,12 +245,10 @@ class TestNWSAlertsSensor(unittest.TestCase):
 
     def test_attrs_show_where_the_alerts_are_for_while_following(self):
         sensor = self._make(_load_fixture("nws_alerts.json"))
-        sensor.coordinator.location_source = "person.traveler"
-        sensor.coordinator.latitude = 39.7392
-        sensor.coordinator.longitude = -104.9903
+        sensor.coordinator.data_location = (39.7392, -104.9903, "person.traveler")
         attrs = sensor.extra_state_attributes
-        self.assertEqual(attrs["latitude"], 39.7392)
-        self.assertEqual(attrs["longitude"], -104.9903)
+        self.assertEqual(attrs["latitude"], 39.74)
+        self.assertEqual(attrs["longitude"], -104.99)
         self.assertEqual(attrs["location_source"], "person.traveler")
         self.assertIn("n77_9447", sensor.unique_id)
 
@@ -305,11 +313,9 @@ class TestCloudCoverSensor(unittest.TestCase):
 
     def test_attrs_show_where_the_cloud_cover_is_for_while_following(self):
         sensor = self._make(None)
-        sensor.coordinator.location_source = "person.traveler"
-        sensor.coordinator.latitude = 39.7392
-        sensor.coordinator.longitude = -104.9903
+        sensor.coordinator.data_location = (39.7392, -104.9903, "person.traveler")
         attrs = sensor.extra_state_attributes
-        self.assertEqual(attrs["latitude"], 39.7392)
+        self.assertEqual(attrs["latitude"], 39.74)
         self.assertEqual(attrs["location_source"], "person.traveler")
 
     def test_attrs_are_home_when_not_following(self):

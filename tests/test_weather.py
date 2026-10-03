@@ -201,10 +201,24 @@ class TestAsyncAddedToHass(unittest.TestCase):
     def test_forecast_update_calls_write_ha_state(self):
         """Forecast listener should call async_write_ha_state, not re-parse obs."""
         entity = self._make()
+        entity.hass = MagicMock()
+        entity.async_update_listeners = MagicMock()
         self._run(entity.async_added_to_hass())
         with patch.object(entity, "async_write_ha_state") as mock_write:
             entity._handle_forecast_update()
             mock_write.assert_called_once()
+
+    def test_forecast_update_pushes_the_new_forecast_to_subscribers(self):
+        """Without this the weather card keeps the forecast it subscribed with."""
+        entity = self._make()
+        entity.hass = MagicMock()
+        entity.async_update_listeners = MagicMock(return_value="update-coroutine")
+        self._run(entity.async_added_to_hass())
+
+        entity._handle_forecast_update()
+
+        entity.async_update_listeners.assert_called_once_with(None)
+        entity.hass.async_create_task.assert_called_once_with("update-coroutine")
 
     def test_no_forecast_coordinator_no_listener(self):
         """Entity should not crash when forecast coordinator is None."""

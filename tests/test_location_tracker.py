@@ -18,7 +18,7 @@ if _CC not in sys.path:
 _ha_core = MagicMock()
 _ha_core.callback = lambda f: f
 _ha_config_entries = MagicMock()
-# config_flow (imported for haversine_miles) subclasses these at import time.
+# config_flow (imported via the package) subclasses these at import time.
 _ha_config_entries.ConfigFlow = type("ConfigFlow", (), {
     "__init_subclass__": classmethod(lambda cls, **kw: None),
 })
@@ -202,19 +202,29 @@ class TestLocationAttributes(unittest.TestCase):
         return location_attributes(coordinator, *HOME)
 
     def test_home_coordinates_when_not_following(self):
-        coordinator = SimpleNamespace(location_source=None, latitude=1.0, longitude=2.0)
+        coordinator = SimpleNamespace(data_location=(1.0, 2.0, None))
         self.assertEqual(
             self._attributes(coordinator),
             {"latitude": HOME[0], "longitude": HOME[1]},
         )
 
-    def test_the_data_location_and_source_while_following(self):
+    def test_where_the_data_is_for_while_following_rounded_to_about_a_km(self):
         coordinator = SimpleNamespace(
-            location_source=ENTITY, latitude=DENVER[0], longitude=DENVER[1],
+            data_location=(39.739236, -104.990251, ENTITY),
+            # Already moved on; the published data is still Denver's.
+            latitude=BOULDER[0], longitude=BOULDER[1], location_source=ENTITY,
         )
         self.assertEqual(
             self._attributes(coordinator),
-            {"latitude": DENVER[0], "longitude": DENVER[1], "location_source": ENTITY},
+            {"latitude": 39.74, "longitude": -104.99, "location_source": ENTITY},
+        )
+
+    def test_home_while_following_shows_the_configured_coordinates(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        coordinator = SimpleNamespace(data_location=(*HOME, HOME_SOURCE))
+        self.assertEqual(
+            self._attributes(coordinator),
+            {"latitude": HOME[0], "longitude": HOME[1], "location_source": HOME_SOURCE},
         )
 
     def test_a_coordinator_without_the_attribute_is_home(self):
@@ -290,7 +300,7 @@ class TestFollowing(_TrackerTest):
         self.assertEqual(len(self.session.urls), 1)
 
     def test_a_fix_at_home_counts_as_home_even_near_the_followed_spot(self):
-        from noaa_it_all.config_flow import haversine_miles
+        from noaa_it_all.geo import haversine_miles
         from noaa_it_all.location_tracker import HOME as HOME_SOURCE
         home_fix = (34.2344, -77.9447)  # 0.6 mi from the configured home
         self.assertLess(haversine_miles(*home_fix, *NORTH_10_5), 10)
@@ -368,17 +378,52 @@ class TestHomeFallback(_TrackerTest):
         )
         self.assertEqual(len(self.session.urls), 1)
 
-    def test_an_api_error_changes_nothing_and_is_retried(self):
+    def test_an_api_error_changes_nothing_and_updates_wait_for_the_retry(self):
+        _ha_event.async_call_later = MagicMock(return_value=MagicMock())
         tracker = self._tracker()
         self._evaluate(tracker, _state(NEARBY))
         self._reset_calls()
         self.session = _Session(error=OSError("Connection reset"))
 
-        self._evaluate(tracker, _state(DENVER), _state(DENVER))
+        self._evaluate(tracker, _state(DENVER), _state(DENVER), _state(BOULDER))
 
         self._assert_not_moved()
         self.assertEqual(tracker.location, HOME)
-        # Not remembered as checked, so the next update asks again.
+        # One failed check, then the pending retry decides -- not every update.
+        self.assertEqual(len(self.session.urls), 1)
+
+    def test_coming_home_still_applies_while_a_retry_is_pending(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        _ha_event.async_call_later = MagicMock(return_value=MagicMock())
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER))  # followed
+        self.session = _Session(error=OSError("Connection reset"))
+        self._evaluate(tracker, _state(BOULDER))  # check fails, retry pending
+        self._reset_calls()
+
+        self._evaluate(tracker, _state(NEARBY))
+
+        self._assert_moved_to(HOME, HOME_SOURCE)
+
+    def test_a_first_decision_that_cannot_reach_the_nws_is_labelled_home(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        _ha_event.async_call_later = MagicMock(return_value=MagicMock())
+        self.session = _Session(error=OSError("Connection reset"))
+        tracker = self._tracker()
+
+        self._evaluate(tracker, _state(DENVER))
+
+        self._assert_moved_to(HOME, HOME_SOURCE)
+        self.assertEqual(tracker.source, HOME_SOURCE)
+
+    def test_outside_coverage_is_forgotten_after_a_while(self):
+        import noaa_it_all.location_tracker as module
+        tracker = self._tracker()
+        with patch.object(module.time, "monotonic", return_value=1000.0):
+            self._evaluate(tracker, _state(LONDON))
+        later = 1000.0 + module.OUTSIDE_COVERAGE_MEMORY.total_seconds() + 1
+        with patch.object(module.time, "monotonic", return_value=later):
+            self._evaluate(tracker, _state((51.5080, -0.1300)))
         self.assertEqual(len(self.session.urls), 2)
 
     def test_an_api_error_schedules_a_retry_without_waiting_for_a_move(self):
@@ -467,6 +512,22 @@ class TestLifecycle(_TrackerTest):
         for coordinator in self.coordinators:
             coordinator.async_request_refresh.assert_not_awaited()
         self.hass.states.get.assert_called_with(ENTITY)
+
+    def test_start_subscribes_before_the_first_decision(self):
+        """An update arriving while the first coverage check runs is not lost."""
+        order = []
+        _ha_event.async_track_state_change_event = MagicMock(
+            side_effect=lambda *a: order.append("subscribe") or MagicMock()
+        )
+        self.hass.states.get = MagicMock(
+            side_effect=lambda entity_id: order.append("decide") or _state(DENVER)
+        )
+        tracker = self._tracker()
+
+        with self._session_patch():
+            _run(tracker.async_start())
+
+        self.assertEqual(order[:2], ["subscribe", "decide"])
 
     def test_start_follows_the_entity_and_stop_lets_go(self):
         unsubscribe = MagicMock()

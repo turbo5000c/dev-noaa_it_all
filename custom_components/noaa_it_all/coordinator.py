@@ -66,15 +66,25 @@ class _LocationCoordinator(DataUpdateCoordinator):
     # The tracked entity in use, "home" when following one but using the
     # configured coordinates, or None when nothing is being followed.
     location_source: Optional[str] = None
+    # (latitude, longitude, location_source) the published data was fetched
+    # for -- which lags the current location until a refresh lands.
+    data_location: Optional[tuple] = None
     _location_version = 0
+
+    # A refresh that keeps being overtaken by moves gives up after this many
+    # attempts and keeps what is already published.
+    _MAX_FETCH_ATTEMPTS = 3
 
     def set_location(
         self, latitude: float, longitude: float, source: Optional[str] = None
     ) -> None:
         """Point the coordinator at new coordinates."""
+        self.location_source = source
+        if (latitude, longitude) == (self.latitude, self.longitude):
+            # Only the label changed; what was resolved still applies.
+            return
         self.latitude = latitude
         self.longitude = longitude
-        self.location_source = source
         self._location_version += 1
         self._reset_location()
 
@@ -82,18 +92,29 @@ class _LocationCoordinator(DataUpdateCoordinator):
         """Forget anything resolved for the previous location."""
 
     async def _async_update_data(self) -> dict:
-        version = self._location_version
-        data = await self._async_fetch_data()
-        if version == self._location_version:
-            return data
-        # Moved while this refresh was in flight, so what it fetched -- or
-        # half-fetched, if the reset landed between two requests -- is for
-        # the old location. Publish nothing new; the refresh the move
-        # requested brings the new location's data.
+        for _ in range(self._MAX_FETCH_ATTEMPTS):
+            version = self._location_version
+            fetched_for = (self.latitude, self.longitude, self.location_source)
+            try:
+                data = await self._async_fetch_data()
+            except Exception:
+                if version == self._location_version:
+                    raise
+                # Failed because the move reset what it was using mid-way;
+                # nothing to report about the old location. Fetch again.
+                continue
+            if version == self._location_version:
+                self.data_location = fetched_for
+                return data
+            # Moved while this refresh was in flight, so what it fetched --
+            # or half-fetched -- is for the old location. Fetch again rather
+            # than rely on the refresh the move requested, which Home
+            # Assistant's debouncer may drop while this one is running.
+        # Still moving after every attempt: keep what is already published.
         current = getattr(self, "data", None)
         if current is not None:
             return current
-        raise UpdateFailed("Location changed during the refresh")
+        raise UpdateFailed("Location kept changing during the refresh")
 
     async def _async_fetch_data(self) -> dict:
         """Fetch this coordinator's data for its current location."""
@@ -291,13 +312,15 @@ class ObservationsCoordinator(_LocationCoordinator):
         else:
             self._station_fetched = self.station_id is not None
 
+    def _at_home(self) -> bool:
+        return self.location_source in (None, LOCATION_SOURCE_HOME)
+
     def _reset_location(self) -> None:
         self._stations = []
         self._station_fetched = False
         # The office station is a sensible fallback at home, but away from
         # home it would show the home airport's weather as if it were local.
-        at_home = self.location_source in (None, LOCATION_SOURCE_HOME)
-        self.station_id = OFFICE_STATION_IDS.get(self.office_code) if at_home else None
+        self.station_id = OFFICE_STATION_IDS.get(self.office_code) if self._at_home() else None
 
     async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
@@ -319,6 +342,8 @@ class ObservationsCoordinator(_LocationCoordinator):
         if not stations:
             raise UpdateFailed(
                 f"No observation station for office {self.office_code}"
+                if self._at_home()
+                else "No observation station found near the followed location"
             )
 
         errors: list[str] = []
@@ -393,7 +418,9 @@ class ObservationsCoordinator(_LocationCoordinator):
                     "No observation stations URL for lat=%s, lon=%s",
                     self.latitude, self.longitude,
                 )
-                self._station_fetched = True
+                # At home the office station takes over for good. Away there
+                # is no fallback, so keep looking on later refreshes.
+                self._station_fetched = self._at_home()
                 return
 
             async with session.get(
@@ -424,14 +451,14 @@ class ObservationsCoordinator(_LocationCoordinator):
             if stations:
                 self._stations = stations
                 self.station_id = stations[0]
-                # Coordinates only at debug: with a followed person or
-                # device they are that person's position.
-                _LOGGER.info("Found observation stations %s", ", ".join(stations))
+                # Debug only: for a followed person or device, the nearest
+                # stations say where they are.
                 _LOGGER.debug(
-                    "Observation stations are for lat=%s, lon=%s",
-                    self.latitude, self.longitude,
+                    "Found observation stations %s for lat=%s, lon=%s",
+                    ", ".join(stations), self.latitude, self.longitude,
                 )
-            self._station_fetched = True
+            # Nothing found away from home is retried, as above.
+            self._station_fetched = bool(stations) or self._at_home()
         except Exception as err:
             # Not latched on failure -- see the note in
             # ForecastCoordinator._resolve_forecast_urls. A transient failure

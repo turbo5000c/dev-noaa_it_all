@@ -16,6 +16,7 @@ are untouched, so a trip never creates new entities.
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Iterable, Optional
 
@@ -23,7 +24,6 @@ import aiohttp
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .config_flow import haversine_miles
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     LOCATION_SOURCE_HOME,
@@ -33,6 +33,7 @@ from .const import (
     TRACKING_RETURN_HOME_MILES,
     USER_AGENT,
 )
+from .geo import haversine_miles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,8 +42,18 @@ HOME = LOCATION_SOURCE_HOME
 
 # A coverage check that could not reach the NWS is tried again after this
 # long, rather than waiting for the entity to move -- which a parked phone
-# may not do for hours.
+# may not do for hours. Until then, updates do not ask again.
 COVERAGE_RETRY = timedelta(minutes=DEFAULT_SCAN_INTERVAL)
+
+# How long a place found to be outside NWS coverage is remembered as such,
+# so that updates from around it do not each ask again. Short, so a one-off
+# 404 does not stick to a place, or to the US side of a nearby border.
+OUTSIDE_COVERAGE_MEMORY = COVERAGE_RETRY
+
+# Decimal places of the followed position shown in entity attributes:
+# about 1 km, enough to say where the data is for without publishing the
+# person's exact position to everyone who can see a weather entity.
+ATTRIBUTE_DECIMALS = 2
 
 _NO_POSITION_STATES = ("unavailable", "unknown")
 
@@ -69,17 +80,32 @@ def tracked_position(state) -> Optional[tuple[float, float]]:
 def location_attributes(coordinator, latitude, longitude) -> dict:
     """``latitude``/``longitude`` attributes for an entity fed by ``coordinator``.
 
-    The configured coordinates, unless the coordinator is following a tracked
-    entity -- then where its data actually comes from, and from whom.
+    The configured coordinates, unless the coordinator follows a tracked
+    entity -- then where the published data was fetched for, which lags a
+    move until the next refresh lands, and from whom.
     """
-    source = getattr(coordinator, "location_source", None)
-    if not isinstance(source, str):
+    fetched_for = getattr(coordinator, "data_location", None)
+    if not isinstance(fetched_for, tuple) or not isinstance(fetched_for[2], str):
         return {"latitude": latitude, "longitude": longitude}
+    data_latitude, data_longitude, source = fetched_for
+    if source == HOME:
+        return {"latitude": latitude, "longitude": longitude, "location_source": source}
     return {
-        "latitude": coordinator.latitude,
-        "longitude": coordinator.longitude,
+        "latitude": round(data_latitude, ATTRIBUTE_DECIMALS),
+        "longitude": round(data_longitude, ATTRIBUTE_DECIMALS),
         "location_source": source,
     }
+
+
+def location_source_attribute(coordinator) -> dict:
+    """``location_source`` for an entity fed by ``coordinator``, while following.
+
+    For entities with no coordinates of their own to report.
+    """
+    fetched_for = getattr(coordinator, "data_location", None)
+    if not isinstance(fetched_for, tuple) or not isinstance(fetched_for[2], str):
+        return {}
+    return {"location_source": fetched_for[2]}
 
 
 class LocationTracker:
@@ -98,9 +124,10 @@ class LocationTracker:
         self._coordinators = [c for c in coordinators if c is not None]
         self._location: tuple[float, float] = home
         self._source: Optional[str] = None
-        # The last position found to be outside NWS coverage, so that GPS
-        # updates from around it do not each repeat the coverage check.
+        # The last position found to be outside NWS coverage, and when, so
+        # that GPS updates from around it do not each repeat the check.
         self._last_outside: Optional[tuple[float, float]] = None
+        self._last_outside_at = 0.0
         self._lock = asyncio.Lock()
         self._queued = False
         self._stopped = False
@@ -127,10 +154,12 @@ class LocationTracker:
         # does not need it; Home Assistant core always has it loaded.
         from homeassistant.helpers.event import async_track_state_change_event
 
-        await self._async_evaluate(refresh=False)
+        # Subscribe first: an update that arrives while the first decision
+        # is waiting on the NWS then queues another, instead of being lost.
         self._unsubscribe = async_track_state_change_event(
             self._hass, [self._entity_id], self._queue_evaluation
         )
+        await self._async_evaluate(refresh=False)
 
     @callback
     def async_stop(self) -> None:
@@ -199,11 +228,17 @@ class LocationTracker:
                 return
             if (
                 self._last_outside is not None
+                and time.monotonic() - self._last_outside_at
+                < OUTSIDE_COVERAGE_MEMORY.total_seconds()
                 and haversine_miles(*position, *self._last_outside)
                 < TRACKING_MIN_MOVE_MILES
             ):
-                # Still around a place already found to be outside coverage.
+                # Still around a place just found to be outside coverage.
                 await self._async_apply(self._home, HOME, refresh)
+                return
+            if self._cancel_retry is not None:
+                # The NWS could not be reached a moment ago; the scheduled
+                # retry decides, rather than every update asking again.
                 return
 
             covered = await self._async_nws_covers(position)
@@ -211,14 +246,18 @@ class LocationTracker:
                 return
             if covered is None:
                 # Could not tell. Leave everything as it is and decide again
-                # later, or sooner if the entity moves.
+                # when the retry fires. On the very first decision that means
+                # home, so say so rather than leaving it unlabelled.
                 self._schedule_retry()
+                if self._source is None:
+                    await self._async_apply(self._home, HOME, refresh)
                 return
             if covered:
                 self._last_outside = None
                 await self._async_apply(position, self._entity_id, refresh)
             else:
                 self._last_outside = position
+                self._last_outside_at = time.monotonic()
                 _LOGGER.info(
                     "%s is outside NWS coverage; using the home location",
                     self._entity_id,
