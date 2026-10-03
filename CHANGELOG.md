@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both are now `unknown` until the next successful fetch, and Unsafe to Swim's `risk_level`
   attribute is `Unknown`. Water temperature and surf height from the tide station and buoy still
   update. (#33)
+- **A failed hurricane feed no longer reads as quiet.** Hurricane data comes from two feeds, NWS
+  watches and warnings and the NHC's active storms. When one failed, its part counted as zero, so
+  Hurricane Alerts showed `0` and Hurricane Activity could show `Quiet - No Active Storms or Alerts`
+  or a level below the real one. Now Hurricane Alerts is `unknown` while the NWS feed is down, and
+  Hurricane Activity is `unknown` unless the feed that worked already shows a `High` level, which
+  the missing one can't change. The missing feed's counts in Activity's attributes have no value
+  rather than `0`. (#33)
 
 ## [0.7.3] - Current
 
