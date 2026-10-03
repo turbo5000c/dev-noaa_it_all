@@ -90,12 +90,27 @@ def _state(position=None, state="not_home", **attributes):
 
 
 class _Response:
-    def __init__(self, status):
+    def __init__(self, status, properties=None):
         self.status = status
+        self.properties = properties
 
     def raise_for_status(self):
         if self.status >= 400:
             raise OSError(f"HTTP {self.status}")
+
+    async def json(self):
+        return {"properties": self.properties}
+
+
+# A Points response for anywhere inside the US, in the shape the NWS sends.
+POINTS = {
+    "cwa": "BOU",
+    "radarStation": "KFTG",
+    "forecast": "https://api.weather.gov/gridpoints/BOU/62,60/forecast",
+    "forecastHourly": "https://api.weather.gov/gridpoints/BOU/62,60/forecast/hourly",
+    "forecastGridData": "https://api.weather.gov/gridpoints/BOU/62,60",
+    "observationStations": "https://api.weather.gov/gridpoints/BOU/62,60/stations",
+}
 
 
 class _Get:
@@ -114,16 +129,19 @@ class _Get:
 class _Session:
     """Answers the Points API: 200 inside the US, 404 elsewhere."""
 
-    def __init__(self, error=None):
+    def __init__(self, error=None, points=None):
         self.urls = []
         self._error = error
+        self._points = POINTS if points is None else points
 
     def get(self, url, **kwargs):
         self.urls.append(url)
         if self._error is not None:
             return _Get(self._error)
         latitude = float(url.split("/points/")[1].split(",")[0])
-        return _Get(_Response(200 if latitude < 50 else 404))
+        if latitude < 50:
+            return _Get(_Response(200, self._points))
+        return _Get(_Response(404))
 
 
 class _TrackerTest(unittest.TestCase):
@@ -160,7 +178,10 @@ class _TrackerTest(unittest.TestCase):
 
     def _assert_moved_to(self, location, source):
         for coordinator in self.coordinators:
-            coordinator.set_location.assert_called_with(*location, source=source)
+            call = coordinator.set_location.call_args
+            self.assertIsNotNone(call)
+            self.assertEqual(call.args, location)
+            self.assertEqual(call.kwargs["source"], source)
 
     def _assert_not_moved(self):
         for coordinator in self.coordinators:
@@ -457,6 +478,108 @@ class TestHomeFallback(_TrackerTest):
         tracker.async_stop()
 
         cancel.assert_called_once()
+
+
+class TestRadarAndDiscussionFollow(_TrackerTest):
+    """Radar and the forecast discussion follow the Points response (#41)."""
+
+    def setUp(self):
+        super().setUp()
+        self.radar = MagicMock(home_radar_site="KLTX")
+        self.radar.async_request_refresh = AsyncMock()
+        self.discussion = MagicMock(home_office_code="ILM")
+        self.discussion.async_request_refresh = AsyncMock()
+
+    def _tracker(self):
+        from noaa_it_all.location_tracker import LocationTracker
+        return LocationTracker(
+            self.hass, ENTITY, HOME, self.coordinators,
+            radar_coordinator=self.radar, discussion_coordinator=self.discussion,
+        )
+
+    def test_a_followed_place_uses_its_radar_site_and_office(self):
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER))
+
+        self.radar.set_radar_site.assert_called_with("KFTG", source=ENTITY)
+        self.discussion.set_office.assert_called_with("BOU", source=ENTITY)
+        self.radar.async_request_refresh.assert_awaited_once()
+        self.discussion.async_request_refresh.assert_awaited_once()
+
+    def test_the_coverage_check_response_is_handed_on(self):
+        """One Points request per move, not one per coordinator."""
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER))
+
+        for coordinator in self.coordinators:
+            self.assertEqual(coordinator.set_location.call_args.kwargs["points"], POINTS)
+        self.assertEqual(len(self.session.urls), 1)
+
+    def test_coming_home_goes_back_to_the_home_radar_site_and_office(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER), _state(NEARBY))
+
+        self.radar.set_radar_site.assert_called_with("KLTX", source=HOME_SOURCE)
+        self.discussion.set_office.assert_called_with("ILM", source=HOME_SOURCE)
+        for coordinator in self.coordinators:
+            self.assertIsNone(coordinator.set_location.call_args.kwargs["points"])
+
+    def test_outside_coverage_uses_the_home_radar_site_and_office(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(LONDON))
+
+        self.radar.set_radar_site.assert_called_with("KLTX", source=HOME_SOURCE)
+        self.discussion.set_office.assert_called_with("ILM", source=HOME_SOURCE)
+
+    def test_a_missing_or_malformed_site_or_office_keeps_the_home_one_labelled_home(self):
+        from noaa_it_all.location_tracker import HOME as HOME_SOURCE
+        for points in (
+            {},
+            {"cwa": None, "radarStation": None},
+            {"cwa": "bou", "radarStation": "KFTG/../x"},
+            {"cwa": "BOUL", "radarStation": "KF"},
+            {"cwa": "BOU\n", "radarStation": "KFTG\n"},
+        ):
+            with self.subTest(points=points):
+                self.radar.reset_mock()
+                self.discussion.reset_mock()
+                self.session = _Session(points=points)
+                tracker = self._tracker()
+                self._evaluate(tracker, _state(DENVER))
+                # Home data, so labelled home -- not as the followed entity's.
+                self.radar.set_radar_site.assert_called_with("KLTX", source=HOME_SOURCE)
+                self.discussion.set_office.assert_called_with("ILM", source=HOME_SOURCE)
+
+    def test_unchanged_radar_and_discussion_are_not_refreshed(self):
+        self.radar.set_radar_site.return_value = False
+        self.discussion.set_office.return_value = False
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER))
+
+        self.radar.async_request_refresh.assert_not_awaited()
+        self.discussion.async_request_refresh.assert_not_awaited()
+        for coordinator in self.coordinators:
+            coordinator.async_request_refresh.assert_awaited_once()
+
+    def test_an_unreadable_points_body_still_counts_as_covered(self):
+        class _Unreadable(_Response):
+            async def json(self):
+                raise ValueError("not JSON")
+
+        class _UnreadableSession(_Session):
+            def get(self, url, **kwargs):
+                self.urls.append(url)
+                return _Get(_Unreadable(200))
+
+        self.session = _UnreadableSession()
+        tracker = self._tracker()
+        self._evaluate(tracker, _state(DENVER))
+
+        self._assert_moved_to(DENVER, ENTITY)
+        for coordinator in self.coordinators:
+            self.assertIsNone(coordinator.set_location.call_args.kwargs["points"])
 
 
 class TestPrivacy(_TrackerTest):

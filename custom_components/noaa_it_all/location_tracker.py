@@ -3,7 +3,9 @@
 Observations, forecasts, cloud cover and NWS alerts are all looked up from
 coordinates. With a tracked entity configured, those coordinates follow the
 entity instead of staying on the configured home location, so the weather
-on a trip is the weather where you are.
+on a trip is the weather where you are. Radar and the forecast discussion
+follow too, through the radar site and office the NWS Points API names for
+the followed location.
 
 Home stays the fallback: when the entity has no usable coordinates, when it
 is near home, or when it is somewhere the NWS does not cover (the Points API
@@ -16,6 +18,7 @@ are untouched, so a trip never creates new entities.
 
 import asyncio
 import logging
+import re
 import time
 from datetime import timedelta
 from typing import Iterable, Optional
@@ -57,6 +60,11 @@ ATTRIBUTE_DECIMALS = 2
 
 _NO_POSITION_STATES = ("unavailable", "unknown")
 
+# What the Points API's ``cwa`` and ``radarStation`` look like ("TAE",
+# "KTLH"). Anything else is ignored rather than put into a URL.
+_OFFICE_CODE = re.compile(r"^[A-Z]{3}$")
+_RADAR_SITE = re.compile(r"^[A-Z0-9]{4}$")
+
 
 def tracked_position(state) -> Optional[tuple[float, float]]:
     """Return a tracker state's (latitude, longitude), or None without a fix.
@@ -85,7 +93,11 @@ def location_attributes(coordinator, latitude, longitude) -> dict:
     move until the next refresh lands, and from whom.
     """
     fetched_for = getattr(coordinator, "data_location", None)
-    if not isinstance(fetched_for, tuple) or not isinstance(fetched_for[2], str):
+    if not (
+        isinstance(fetched_for, tuple)
+        and len(fetched_for) == 3
+        and isinstance(fetched_for[2], str)
+    ):
         return {"latitude": latitude, "longitude": longitude}
     data_latitude, data_longitude, source = fetched_for
     if source == HOME:
@@ -100,12 +112,14 @@ def location_attributes(coordinator, latitude, longitude) -> dict:
 def location_source_attribute(coordinator) -> dict:
     """``location_source`` for an entity fed by ``coordinator``, while following.
 
-    For entities with no coordinates of their own to report.
+    For entities with no coordinates of their own to report. Works for any
+    following coordinator: what it records ends with the source, whether it
+    follows coordinates, a radar site or an office.
     """
     fetched_for = getattr(coordinator, "data_location", None)
-    if not isinstance(fetched_for, tuple) or not isinstance(fetched_for[2], str):
+    if not (isinstance(fetched_for, tuple) and fetched_for and isinstance(fetched_for[-1], str)):
         return {}
-    return {"location_source": fetched_for[2]}
+    return {"location_source": fetched_for[-1]}
 
 
 class LocationTracker:
@@ -117,11 +131,18 @@ class LocationTracker:
         entity_id: str,
         home: tuple[float, float],
         coordinators: Iterable,
+        radar_coordinator=None,
+        discussion_coordinator=None,
     ) -> None:
         self._hass = hass
         self._entity_id = entity_id
         self._home = home
+        # Looked up from coordinates.
         self._coordinators = [c for c in coordinators if c is not None]
+        # Keyed on the office instead: they follow the radar site and the
+        # forecast office the Points API names for the followed location.
+        self._radar = radar_coordinator
+        self._discussion = discussion_coordinator
         self._location: tuple[float, float] = home
         self._source: Optional[str] = None
         # The last position found to be outside NWS coverage, and when, so
@@ -241,7 +262,7 @@ class LocationTracker:
                 # retry decides, rather than every update asking again.
                 return
 
-            covered = await self._async_nws_covers(position)
+            covered, points = await self._async_nws_covers(position)
             if self._stopped:
                 return
             if covered is None:
@@ -254,7 +275,7 @@ class LocationTracker:
                 return
             if covered:
                 self._last_outside = None
-                await self._async_apply(position, self._entity_id, refresh)
+                await self._async_apply(position, self._entity_id, refresh, points)
             else:
                 self._last_outside = position
                 self._last_outside_at = time.monotonic()
@@ -265,7 +286,11 @@ class LocationTracker:
                 await self._async_apply(self._home, HOME, refresh)
 
     async def _async_apply(
-        self, location: tuple[float, float], source: str, refresh: bool
+        self,
+        location: tuple[float, float],
+        source: str,
+        refresh: bool,
+        points: Optional[dict] = None,
     ) -> None:
         if location == self._location and source == self._source:
             return
@@ -278,15 +303,54 @@ class LocationTracker:
         )
         _LOGGER.debug("New location: %s, %s", location[0], location[1])
         for coordinator in self._coordinators:
-            coordinator.set_location(*location, source=source)
+            coordinator.set_location(*location, source=source, points=points)
+        office_coordinators = self._retarget_office(source, points)
         if refresh:
             await asyncio.gather(
-                *(c.async_request_refresh() for c in self._coordinators),
+                *(
+                    c.async_request_refresh()
+                    for c in self._coordinators + office_coordinators
+                ),
                 return_exceptions=True,
             )
 
-    async def _async_nws_covers(self, position: tuple[float, float]) -> Optional[bool]:
-        """Whether the NWS has a forecast for ``position``; None if unknown."""
+    def _retarget_office(self, source: str, points: Optional[dict]) -> list:
+        """Point radar and the forecast discussion at the location in use.
+
+        At home they go back to the home office's radar site and office. A
+        followed location uses what its Points response names; anything it
+        does not name stays on the home one, labelled home, since that is
+        the data shown. Returns the coordinators that changed, to refresh.
+        """
+        points = points if source != HOME else None
+        changed = []
+        if self._radar is not None:
+            site = (points or {}).get("radarStation")
+            if isinstance(site, str) and _RADAR_SITE.fullmatch(site):
+                site_source = source
+            else:
+                site, site_source = self._radar.home_radar_site, HOME
+            if self._radar.set_radar_site(site, source=site_source):
+                changed.append(self._radar)
+        if self._discussion is not None:
+            office = (points or {}).get("cwa")
+            if isinstance(office, str) and _OFFICE_CODE.fullmatch(office):
+                office_source = source
+            else:
+                office, office_source = self._discussion.home_office_code, HOME
+            if self._discussion.set_office(office, source=office_source):
+                changed.append(self._discussion)
+        return changed
+
+    async def _async_nws_covers(
+        self, position: tuple[float, float]
+    ) -> tuple[Optional[bool], Optional[dict]]:
+        """Whether the NWS covers ``position`` (None if unknown), and its Points.
+
+        The Points response properties are handed on, so the coordinators can
+        take their URLs, radar site and office from them rather than each
+        asking for the same response again.
+        """
         session = async_get_clientsession(self._hass)
         url = NWS_POINTS_URL.format(lat=position[0], lon=position[1])
         try:
@@ -296,9 +360,17 @@ class LocationTracker:
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
             ) as resp:
                 if resp.status == 404:
-                    return False
+                    return False, None
                 resp.raise_for_status()
-                return True
+                try:
+                    data = await resp.json()
+                except Exception as err:  # noqa: BLE001
+                    # Covered all the same; the coordinators can look the
+                    # Points response up themselves.
+                    _LOGGER.debug("Unreadable Points response: %s", err)
+                    data = None
+            properties = data.get("properties") if isinstance(data, dict) else None
+            return True, properties if isinstance(properties, dict) else None
         except Exception as err:
             # aiohttp errors embed the request URL, which holds the followed
             # coordinates; keep those out of the warning.
@@ -309,4 +381,4 @@ class LocationTracker:
                 f" {status}" if status else "",
             )
             _LOGGER.debug("Coverage check failed: %s", err)
-            return None
+            return None, None
