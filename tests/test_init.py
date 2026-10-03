@@ -235,6 +235,14 @@ class TestLocationTrackerWiring(unittest.TestCase):
                 "ForecastCoordinator", "CloudCoverCoordinator",
             )],
         )
+        self.assertIs(
+            tracker_cls.call_args.kwargs["radar_coordinator"],
+            coordinators["RadarTimestampCoordinator"].return_value,
+        )
+        self.assertIs(
+            tracker_cls.call_args.kwargs["discussion_coordinator"],
+            coordinators["ForecastDiscussionCoordinator"].return_value,
+        )
         # Started before any refresh, so the first refresh is for the right place.
         self.assertEqual(order[0], "start")
         self.assertIn("refresh", order)

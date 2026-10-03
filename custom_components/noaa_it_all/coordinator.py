@@ -54,71 +54,108 @@ def _describe(err: Exception) -> str:
     return f"{type(err).__name__}: {text}" if text else type(err).__name__
 
 
-class _LocationCoordinator(DataUpdateCoordinator):
-    """A coordinator whose coordinates can change after construction.
+class _FollowingCoordinator(DataUpdateCoordinator):
+    """A coordinator whose target can change after construction.
 
-    Used to follow a tracked person or device. Moving discards whatever was
-    resolved for the old location, so the next refresh resolves again, and
-    bumps a version so a lookup still in flight for the old location does
-    not latch its result once it lands.
+    Used to follow a tracked person or device. Retargeting discards whatever
+    was resolved for the old target, so the next refresh resolves again, and
+    bumps a version so a refresh still in flight for the old target neither
+    latches nor publishes what it fetched.
     """
 
     # The tracked entity in use, "home" when following one but using the
-    # configured coordinates, or None when nothing is being followed.
+    # configured location, or None when nothing is being followed.
     location_source: Optional[str] = None
-    # (latitude, longitude, location_source) the published data was fetched
-    # for -- which lags the current location until a refresh lands.
+    # _target() plus location_source, as of the published data -- which lags
+    # a retarget until a refresh lands.
     data_location: Optional[tuple] = None
     _location_version = 0
 
-    # A refresh that keeps being overtaken by moves gives up after this many
-    # attempts and keeps what is already published.
+    # A refresh that keeps being overtaken by retargets gives up after this
+    # many attempts and keeps what is already published.
     _MAX_FETCH_ATTEMPTS = 3
 
-    def set_location(
-        self, latitude: float, longitude: float, source: Optional[str] = None
-    ) -> None:
-        """Point the coordinator at new coordinates."""
-        self.location_source = source
-        if (latitude, longitude) == (self.latitude, self.longitude):
-            # Only the label changed; what was resolved still applies.
-            return
-        self.latitude = latitude
-        self.longitude = longitude
-        self._location_version += 1
-        self._reset_location()
+    def _target(self) -> tuple:
+        """What this coordinator currently fetches for."""
+        raise NotImplementedError
 
-    def _reset_location(self) -> None:
-        """Forget anything resolved for the previous location."""
+    def _apply_target(self, target: tuple) -> None:
+        """Store a new target, in the shape _target() returns."""
+        raise NotImplementedError
+
+    def _set_target(
+        self, target: tuple, source: Optional[str], points: Optional[dict] = None
+    ) -> bool:
+        """Point at ``target``, labelled ``source``. True if anything changed.
+
+        A new label on the same target keeps what was resolved; a new target
+        bumps the version and drops the old one's state.
+        """
+        relabelled = source != self.location_source
+        self.location_source = source
+        if target == self._target():
+            return relabelled
+        self._apply_target(target)
+        self._location_version += 1
+        self._reset_location(points)
+        return True
+
+    def _reset_location(self, points: Optional[dict] = None) -> None:
+        """Forget anything resolved for the previous target.
+
+        ``points`` is the NWS Points response properties for the new
+        location, when the caller already has them, so what can be read from
+        it need not be looked up again.
+        """
 
     async def _async_update_data(self) -> dict:
         for _ in range(self._MAX_FETCH_ATTEMPTS):
             version = self._location_version
-            fetched_for = (self.latitude, self.longitude, self.location_source)
+            fetched_for = (*self._target(), self.location_source)
             try:
                 data = await self._async_fetch_data()
             except Exception:
                 if version == self._location_version:
                     raise
-                # Failed because the move reset what it was using mid-way;
-                # nothing to report about the old location. Fetch again.
+                # Failed because the retarget reset what it was using mid-way;
+                # nothing to report about the old target. Fetch again.
                 continue
             if version == self._location_version:
                 self.data_location = fetched_for
                 return data
-            # Moved while this refresh was in flight, so what it fetched --
-            # or half-fetched -- is for the old location. Fetch again rather
+            # Retargeted while this refresh was in flight, so what it fetched
+            # -- or half-fetched -- is for the old target. Fetch again rather
             # than rely on the refresh the move requested, which Home
             # Assistant's debouncer may drop while this one is running.
-        # Still moving after every attempt: keep what is already published.
+        # Still changing after every attempt: keep what is already published.
         current = getattr(self, "data", None)
         if current is not None:
             return current
         raise UpdateFailed("Location kept changing during the refresh")
 
     async def _async_fetch_data(self) -> dict:
-        """Fetch this coordinator's data for its current location."""
+        """Fetch this coordinator's data for its current target."""
         raise NotImplementedError
+
+
+class _LocationCoordinator(_FollowingCoordinator):
+    """A coordinator whose coordinates can change after construction."""
+
+    def _target(self) -> tuple:
+        return (self.latitude, self.longitude)
+
+    def _apply_target(self, target: tuple) -> None:
+        self.latitude, self.longitude = target
+
+    def set_location(
+        self,
+        latitude: float,
+        longitude: float,
+        source: Optional[str] = None,
+        points: Optional[dict] = None,
+    ) -> bool:
+        """Point the coordinator at new coordinates. True if anything changed."""
+        return self._set_target((latitude, longitude), source, points)
 
 
 # Space weather API endpoints
@@ -304,6 +341,8 @@ class ObservationsCoordinator(_LocationCoordinator):
         self.station_id: Optional[str] = OFFICE_STATION_IDS.get(office_code)
         # Nearest first, filled in by _resolve_station.
         self._stations: list[str] = []
+        # The Points API's stations URL, when a move already supplied it.
+        self._stations_url: Optional[str] = None
         # If latitude/longitude are provided, always attempt to resolve the nearest
         # station via the NWS Points API on first update, using OFFICE_STATION_IDS
         # only as a fallback if resolution fails.
@@ -315,9 +354,10 @@ class ObservationsCoordinator(_LocationCoordinator):
     def _at_home(self) -> bool:
         return self.location_source in (None, LOCATION_SOURCE_HOME)
 
-    def _reset_location(self) -> None:
+    def _reset_location(self, points: Optional[dict] = None) -> None:
         self._stations = []
         self._station_fetched = False
+        self._stations_url = (points or {}).get("observationStations")
         # The office station is a sensible fallback at home, but away from
         # home it would show the home airport's weather as if it were local.
         self.station_id = OFFICE_STATION_IDS.get(self.office_code) if self._at_home() else None
@@ -399,20 +439,22 @@ class ObservationsCoordinator(_LocationCoordinator):
         """Fetch the observation stations nearest lat/lon."""
         version = self._location_version
         try:
-            points_url = NWS_POINTS_URL.format(
-                lat=self.latitude, lon=self.longitude
-            )
-            async with session.get(
-                points_url,
-                headers={"User-Agent": USER_AGENT},
-                timeout=timeout,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+            stations_url = self._stations_url
+            if not stations_url:
+                points_url = NWS_POINTS_URL.format(
+                    lat=self.latitude, lon=self.longitude
+                )
+                async with session.get(
+                    points_url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=timeout,
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
 
-            if version != self._location_version:
-                return  # Moved while waiting; this answer is for the old place.
-            stations_url = data.get("properties", {}).get("observationStations")
+                if version != self._location_version:
+                    return  # Moved while waiting; this answer is for the old place.
+                stations_url = data.get("properties", {}).get("observationStations")
             if not stations_url:
                 _LOGGER.error(
                     "No observation stations URL for lat=%s, lon=%s",
@@ -590,10 +632,11 @@ class ForecastCoordinator(_LocationCoordinator):
         self._urls_fetched: bool = False
         self._resolve_error: Optional[str] = None
 
-    def _reset_location(self) -> None:
-        self._forecast_url = None
-        self._hourly_forecast_url = None
-        self._urls_fetched = False
+    def _reset_location(self, points: Optional[dict] = None) -> None:
+        points = points or {}
+        self._forecast_url = points.get("forecast")
+        self._hourly_forecast_url = points.get("forecastHourly")
+        self._urls_fetched = bool(self._forecast_url or self._hourly_forecast_url)
         self._resolve_error = None
 
     async def _async_fetch_data(self) -> dict:
@@ -687,7 +730,9 @@ class ForecastCoordinator(_LocationCoordinator):
             # later refresh would raise "All forecast API requests failed"
             # until Home Assistant restarted. The coordinator only runs every
             # 10 minutes, so simply retrying next cycle is the right backoff.
-            self._resolve_error = _describe(err)
+            if version == self._location_version:
+                # A lookup for a place already left says nothing about this one.
+                self._resolve_error = _describe(err)
             _LOGGER.warning(
                 "Could not resolve forecast URLs for lat=%s, lon=%s, will "
                 "retry on the next update: %s",
@@ -721,9 +766,9 @@ class CloudCoverCoordinator(_LocationCoordinator):
         self._gridpoint_url: Optional[str] = None
         self._grid_fetched: bool = False
 
-    def _reset_location(self) -> None:
-        self._gridpoint_url = None
-        self._grid_fetched = False
+    def _reset_location(self, points: Optional[dict] = None) -> None:
+        self._gridpoint_url = (points or {}).get("forecastGridData")
+        self._grid_fetched = bool(self._gridpoint_url)
 
     async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
@@ -791,8 +836,13 @@ class CloudCoverCoordinator(_LocationCoordinator):
 # Radar Timestamp (office-specific)
 # -------------------------------------------------------------------
 
-class RadarTimestampCoordinator(DataUpdateCoordinator):
-    """Fetch Last-Modified header from radar image endpoint."""
+class RadarTimestampCoordinator(_FollowingCoordinator):
+    """Fetch Last-Modified header from radar image endpoint.
+
+    Also the record of which radar site is in use: the radar image entities
+    read ``radar_site`` from here, so following a person or device moves them
+    with it.
+    """
 
     def __init__(
         self, hass: HomeAssistant, office_code: str, radar_site: str
@@ -805,8 +855,19 @@ class RadarTimestampCoordinator(DataUpdateCoordinator):
         )
         self.office_code = office_code
         self.radar_site = radar_site
+        self.home_radar_site = radar_site
 
-    async def _async_update_data(self) -> dict:
+    def _target(self) -> tuple:
+        return (self.radar_site,)
+
+    def _apply_target(self, target: tuple) -> None:
+        (self.radar_site,) = target
+
+    def set_radar_site(self, radar_site: str, source: Optional[str] = None) -> bool:
+        """Use another radar site, e.g. the one nearest a followed person."""
+        return self._set_target((radar_site,), source)
+
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         radar_url = NWS_RADAR_BASE_URL.format(radar=self.radar_site)
@@ -844,7 +905,7 @@ class RadarTimestampCoordinator(DataUpdateCoordinator):
 # Forecast Discussion (office-specific)
 # -------------------------------------------------------------------
 
-class ForecastDiscussionCoordinator(DataUpdateCoordinator):
+class ForecastDiscussionCoordinator(_FollowingCoordinator):
     """Fetch Area Forecast Discussion (AFD) text for a specific office."""
 
     def __init__(self, hass: HomeAssistant, office_code: str) -> None:
@@ -855,8 +916,19 @@ class ForecastDiscussionCoordinator(DataUpdateCoordinator):
             update_interval=DEFAULT_UPDATE_INTERVAL,
         )
         self.office_code = office_code
+        self.home_office_code = office_code
 
-    async def _async_update_data(self) -> dict:
+    def _target(self) -> tuple:
+        return (self.office_code,)
+
+    def _apply_target(self, target: tuple) -> None:
+        (self.office_code,) = target
+
+    def set_office(self, office_code: str, source: Optional[str] = None) -> bool:
+        """Use another office's discussion, e.g. where a followed person is."""
+        return self._set_target((office_code,), source)
+
+    async def _async_fetch_data(self) -> dict:
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         url = NWS_AFD_URL.format(office=self.office_code)

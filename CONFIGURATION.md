@@ -55,17 +55,25 @@ then the radar loop. Saving reloads the integration so the new values take effec
 ### Following a person or device
 
 Pick a `person` or `device_tracker` entity on the first step of **Configure** and the weather
-follows it: on a trip, observations, the hourly and extended forecast, cloud cover and NWS alerts
-are for where that entity is, not for home. Clear the field to stop.
+follows it: on a trip, observations, forecasts, cloud cover, NWS alerts, radar and the forecast
+discussion are for where that entity is, not for home. Clear the field to stop.
 
 | Follows the entity | Stays on home |
 |---|---|
-| Weather entity and the observation sensors (temperature, humidity, wind, pressure, dewpoint, visibility, sky conditions, feels like) | Radar image and loop |
-| Hourly and extended forecast | Forecast discussion |
-| Cloud cover | Surf, tide and buoy |
-| NWS alerts and the alert sensors built on them | Meteor showers, eclipses, aurora |
+| Weather entity and the observation sensors (temperature, humidity, wind, pressure, dewpoint, visibility, sky conditions, feels like) | Surf, tide and buoy |
+| Hourly and extended forecast | Meteor showers, eclipses, aurora |
+| Cloud cover | |
+| NWS alerts and the alert sensors built on them | |
+| Radar image, radar loop and radar timestamp: the radar site the NWS names for the location | |
+| Forecast discussion: the forecast office the NWS names for the location | |
 
-The data on the right is tied to the forecast office or computed for home, so it is not moved.
+Surf, tide and buoy come from per-office station tables, and the space data is computed for home,
+so they are not moved.
+
+**The radar loop while away.** The long radar loop is only ever built for the home radar site.
+Away, the Radar Loop shows NOAA's own ~50 minute loop for the local radar instead, while the home
+site's frames keep being collected in the background (one small extra download per refresh). Back
+home, the long loop is shown again straight away, with no gap for the trip.
 
 How it decides where to look:
 
@@ -89,9 +97,11 @@ entities fed by the followed data show which location their current data is for:
 
 | Attribute | On | Meaning |
 |---|---|---|
-| `location_source` | Weather entity; observation, forecast, cloud cover and NWS alert sensors; alert binary sensors | The followed entity (e.g. `person.alex`) while using its location, `home` otherwise. Absent when nothing is followed. |
+| `location_source` | Weather entity; observation, forecast, cloud cover, NWS alert, radar timestamp and forecast discussion sensors; alert binary sensors; radar images | The followed entity (e.g. `person.alex`) while using its location, `home` otherwise. Absent when nothing is followed. |
 | `latitude` / `longitude` | Cloud cover and NWS alert sensors, alert binary sensors | Where the data is for: home, or the followed location rounded to two decimal places (about 1 km) |
 | `station_id` | Weather entity, observation sensors | The observation station the reading came from |
+| `radar_site` | Radar images, radar timestamp sensor | The radar site the picture or timestamp is from |
+| `forecast_office` | Forecast discussion sensor, while following | The office whose discussion is shown; `office_code` stays the configured office |
 
 The attributes describe the data currently shown, so right after a move they keep describing the
 previous location until the refresh for the new one lands.

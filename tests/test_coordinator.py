@@ -744,6 +744,164 @@ class TestCoordinatorsFollowAMove(unittest.TestCase):
         self.assertIn("point=39.7392,-104.9903", session.calls[0][0])
 
 
+class _HeadResponse:
+    def __init__(self, last_modified="Sat, 03 Oct 2026 01:00:00 GMT", on_read=None):
+        self.headers = {"Last-Modified": last_modified}
+        self._on_read = on_read
+
+    def raise_for_status(self):
+        if self._on_read is not None:
+            self._on_read()
+
+
+class _HeadSession(_FakeSession):
+    def head(self, url, **kwargs):
+        return self.get(url, **kwargs)
+
+
+class TestRadarAndDiscussionFollowAMove(unittest.TestCase):
+    """Radar and the forecast discussion can be pointed elsewhere (#41)."""
+
+    def _radar(self):
+        from noaa_it_all.coordinator import RadarTimestampCoordinator
+        return RadarTimestampCoordinator(HASS, "ILM", "KLTX")
+
+    def test_the_radar_coordinator_fetches_for_the_new_site(self):
+        coordinator = self._radar()
+        coordinator.set_radar_site("KFTG", source="person.traveler")
+        session = _HeadSession(default=_HeadResponse())
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertIn("/KFTG_0.gif", session.calls[0][0])
+        self.assertEqual(data["radar_site"], "KFTG")
+        self.assertEqual(coordinator.home_radar_site, "KLTX")
+        self.assertEqual(coordinator.data_location, ("KFTG", "person.traveler"))
+
+    def test_relabelling_the_same_site_is_not_a_move(self):
+        coordinator = self._radar()
+        version = coordinator._location_version
+        coordinator.set_radar_site("KLTX", source="home")
+        self.assertEqual(coordinator._location_version, version)
+        self.assertEqual(coordinator.location_source, "home")
+
+    def test_a_radar_refresh_overtaken_by_a_move_fetches_again(self):
+        coordinator = self._radar()
+        moved = []
+
+        def move():
+            if not moved:
+                moved.append(True)
+                coordinator.set_radar_site("KFTG", source="person.traveler")
+
+        session = _HeadSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/KLTX_0.gif": _HeadResponse(on_read=move),
+                "/KFTG_0.gif": _HeadResponse(),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data["radar_site"], "KFTG")
+
+    def test_setters_say_whether_anything_changed(self):
+        coordinator = self._radar()
+        self.assertTrue(coordinator.set_radar_site("KLTX", source="home"))   # new label
+        self.assertFalse(coordinator.set_radar_site("KLTX", source="home"))  # nothing new
+        self.assertTrue(coordinator.set_radar_site("KFTG", source="home"))   # new site
+
+    def test_a_forecast_lookup_failing_for_a_place_left_leaves_no_error(self):
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+
+        class _FailAfterMove(_FakeResponse):
+            def raise_for_status(self):
+                coordinator.set_location(
+                    39.7392, -104.9903, "person.traveler",
+                    points=TestCoordinatorsFollowAMove.POINTS["properties"],
+                )
+                raise OSError("timeout for the old place")
+
+        session = _FakeSession(default=_FailAfterMove({}))
+        with _with_session(session):
+            _run(coordinator._resolve_forecast_urls(session, {}))
+
+        self.assertIsNone(coordinator._resolve_error)
+        self.assertTrue(coordinator._urls_fetched)
+
+    def test_the_discussion_coordinator_fetches_the_new_office(self):
+        from noaa_it_all.coordinator import ForecastDiscussionCoordinator
+        coordinator = ForecastDiscussionCoordinator(HASS, "ILM")
+        coordinator.set_office("BOU", source="person.traveler")
+
+        class _Text(_FakeResponse):
+            async def text(self):
+                return "<pre>Denver discussion</pre>"
+
+        session = _FakeSession(default=_Text())
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertIn("site=BOU", session.calls[0][0])
+        self.assertIn("issuedby=BOU", session.calls[0][0])
+        self.assertEqual(data["discussion_text"], "Denver discussion")
+        self.assertEqual(coordinator.home_office_code, "ILM")
+        self.assertEqual(coordinator.data_location, ("BOU", "person.traveler"))
+
+
+class TestAMoveCanSupplyThePointsResponse(unittest.TestCase):
+    """A Points response handed over by the tracker is not fetched again."""
+
+    POINTS = TestCoordinatorsFollowAMove.POINTS
+    AWAY = TestCoordinatorsFollowAMove.AWAY
+
+    def test_forecast_urls_come_from_it(self):
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator.set_location(*self.AWAY, source="person.traveler", points=self.POINTS["properties"])
+        self.assertTrue(coordinator._urls_fetched)
+        self.assertEqual(coordinator._forecast_url, self.POINTS["properties"]["forecast"])
+        self.assertEqual(coordinator._hourly_forecast_url, self.POINTS["properties"]["forecastHourly"])
+
+    def test_the_gridpoint_comes_from_it(self):
+        from noaa_it_all.coordinator import CloudCoverCoordinator
+        coordinator = CloudCoverCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator.set_location(*self.AWAY, source="person.traveler", points=self.POINTS["properties"])
+        self.assertTrue(coordinator._grid_fetched)
+        self.assertEqual(coordinator._gridpoint_url, self.POINTS["properties"]["forecastGridData"])
+
+    def test_observations_skip_the_points_request(self):
+        from noaa_it_all.coordinator import ObservationsCoordinator
+        coordinator = ObservationsCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator.set_location(*self.AWAY, source="person.traveler", points=self.POINTS["properties"])
+        session = _FakeSession(
+            default=OSError("unexpected URL"),
+            by_url={
+                "/gridpoints/BOU/1,2/stations": _FakeResponse(
+                    {"features": [{"properties": {"stationIdentifier": "KDEN"}}]}
+                ),
+                "/stations/KDEN/observations/latest": _FakeResponse({"properties": {}}),
+            },
+        )
+
+        with _with_session(session):
+            data = _run(coordinator._async_update_data())
+
+        self.assertEqual(data["station_id"], "KDEN")
+        self.assertFalse(any("/points/" in url for url, _ in session.calls))
+
+    def test_without_it_the_lookup_happens_as_before(self):
+        from noaa_it_all.coordinator import ForecastCoordinator
+        coordinator = ForecastCoordinator(HASS, "ILM", 34.2, -77.9)
+        coordinator.set_location(*self.AWAY, source="person.traveler")
+        self.assertFalse(coordinator._urls_fetched)
+        self.assertIsNone(coordinator._forecast_url)
+
+
 class TestUserAgentIsAlwaysSent(unittest.TestCase):
     """Every NOAA request must identify the integration.
 
