@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request URL, and failed lookups with the latitude and longitude, which for the alerts and
   location lookups is where you are. The status and reason are still logged; the coordinates only
   appear with debug logging.
+- **A failed surf zone forecast no longer reads as a safe beach.** When the forecast couldn't be
+  fetched, Rip Current Risk showed `Low` and Unsafe to Swim showed `off`, whatever the actual risk.
+  Both are now `unknown` until the next successful fetch, and Unsafe to Swim's `risk_level`
+  attribute is `Unknown`. Water temperature and surf height from the tide station and buoy still
+  update. (#33)
 
 ## [0.7.3] - Current
 

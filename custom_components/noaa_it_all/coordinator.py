@@ -558,8 +558,10 @@ class SurfCoordinator(DataUpdateCoordinator):
                 result["forecast_text"] = (await resp.text()).lower()
                 result["source_url"] = srf_url
         except Exception as err:
+            # Leave ``forecast_text`` out rather than empty: empty text parses
+            # as Low risk, which would report a safe beach during a hazard.
+            # No UpdateFailed either, so water temp and waves still update.
             _LOGGER.warning("Error fetching SRF forecast: %s", err)
-            result["forecast_text"] = ""
             result["source_url"] = srf_url
 
         # 2. CO-OPS water temperature

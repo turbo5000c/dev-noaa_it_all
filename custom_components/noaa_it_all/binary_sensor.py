@@ -95,17 +95,23 @@ class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_name = "Unsafe to Swim"
 
     def _check_risk(self):
-        """Return (high_risk_found, moderate_risk_found) from coordinator data."""
+        """Return (high_risk_found, moderate_risk_found) from coordinator data.
+
+        Both are None when there is no surf zone forecast to check, so a
+        failed fetch reads as unknown rather than as safe to swim.
+        """
         if not self.coordinator.data:
-            return False, False
-        forecast_text = self.coordinator.data.get("forecast_text", "")
+            return None, None
+        forecast_text = self.coordinator.data.get("forecast_text")
+        if forecast_text is None:
+            return None, None
         high = any(re.search(p, forecast_text) for p in self._HIGH_RISK_PATTERNS)
         moderate = any(re.search(p, forecast_text) for p in self._MODERATE_RISK_PATTERNS)
         return high, moderate
 
     @property
     def is_on(self):
-        """Return true if unsafe to swim."""
+        """Return true if unsafe to swim, None if the forecast is unavailable."""
         high, _ = self._check_risk()
         return high
 
@@ -127,7 +133,10 @@ class UnsafeToSwimBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if not self.coordinator.data:
             return self._attributes
         high_risk_found, moderate_risk_found = self._check_risk()
-        risk_level = "High" if high_risk_found else ("Moderate" if moderate_risk_found else "Low")
+        if high_risk_found is None:
+            risk_level = "Unknown"
+        else:
+            risk_level = "High" if high_risk_found else ("Moderate" if moderate_risk_found else "Low")
         return {
             'office_code': self._office_code,
             'risk_level': risk_level,

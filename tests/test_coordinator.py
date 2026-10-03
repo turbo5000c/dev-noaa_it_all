@@ -1055,6 +1055,50 @@ class TestFailureMessagesNameTheCause(unittest.TestCase):
         self.assertEqual(_describe(_Silent("why")), "_Silent: why")
 
 
+class TestSurfForecastFailure(unittest.TestCase):
+    """#33 P1.2: a failed surf zone forecast must not look like a calm one."""
+
+    class _Response:
+        def __init__(self, text="", payload=None):
+            self._text = text
+            self._payload = payload or {}
+
+        def raise_for_status(self):
+            pass
+
+        async def text(self):
+            return self._text
+
+        async def json(self, **kwargs):
+            return self._payload
+
+    def _fetch(self, srf_result):
+        from noaa_it_all.coordinator import SurfCoordinator
+        session = _FakeSession(by_url={
+            "product=SRF": srf_result,
+            "tidesandcurrents": self._Response(payload={"data": []}),
+            "ndbc.noaa.gov": self._Response(text="#YY MM DD"),
+        })
+        coordinator = SurfCoordinator(HASS, "ILM", tide_station="8658163", buoy_station="41110")
+        with _with_session(session):
+            return _run(coordinator._async_update_data())
+
+    def test_failed_fetch_leaves_the_forecast_text_out(self):
+        """Empty text parses as Low rip current risk, so it must be absent."""
+        data = self._fetch(asyncio.TimeoutError())
+        self.assertNotIn("forecast_text", data)
+
+    def test_failed_fetch_keeps_the_other_sources(self):
+        """No UpdateFailed: water temperature and wave height still update."""
+        data = self._fetch(OSError("503"))
+        self.assertIn("water_temp_f", data)
+        self.assertIn("wave_height_ft", data)
+
+    def test_successful_fetch_still_returns_the_text(self):
+        data = self._fetch(self._Response(text="HIGH RIP CURRENT RISK"))
+        self.assertEqual(data["forecast_text"], "high rip current risk")
+
+
 class TestEclipseCoordinator(unittest.TestCase):
     """The eclipse coordinator computes rather than fetches, and re-paces itself.
 
