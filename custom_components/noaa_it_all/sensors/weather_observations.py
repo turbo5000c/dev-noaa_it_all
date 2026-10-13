@@ -83,11 +83,14 @@ class WeatherObservationSensor(CoordinatorEntity):
         if not self.coordinator.data:
             return self._attributes
         properties = self.coordinator.data.get("properties", {})
+        # A value carried from an earlier observation says when it was made.
+        field = self._observation_field.split('.')[0]
+        field_times = self.coordinator.data.get("field_times") or {}
         return {
             'office_code': self._office_code,
             'station_id': self.coordinator.data.get("station_id"),
             'station_name': properties.get('stationName', 'Unknown'),
-            'timestamp': properties.get('timestamp', 'Unknown'),
+            'timestamp': field_times.get(field) or properties.get('timestamp', 'Unknown'),
         }
 
     @property
