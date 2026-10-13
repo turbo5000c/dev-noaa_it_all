@@ -234,8 +234,9 @@ class MarineForecastSensor(CoordinatorEntity):
 
     The state is the label of the first forecast period (for example
     "Rest Of Today"); every period is in the ``periods`` attribute as
-    ``{"name", "detailed_forecast"}``. Entity IDs look like
-    ``sensor.noaa_lot_surf_marine_forecast``.
+    ``{"name", "detailed_forecast"}``. Each zone has its own marine entry and
+    device, "NOAA LMZ741 Marine", so entity IDs look like
+    ``sensor.noaa_lmz741_marine_forecast``.
     """
 
     _attr_has_entity_name = True
@@ -245,12 +246,12 @@ class MarineForecastSensor(CoordinatorEntity):
         super().__init__(coordinator)
         self._office_code = office_code
         self._marine_zone = marine_zone
-        self._attr_unique_id = f"noaa_{office_code}_{marine_zone.lower()}_marine_forecast"
+        self._attr_unique_id = f"noaa_{marine_zone}_marine_forecast"
 
     @property
     def name(self):
         """Return the local name of the sensor."""
-        return "Marine Forecast"
+        return "Forecast"
 
     def _forecast(self):
         data = self.coordinator.data
@@ -295,7 +296,7 @@ class MarineForecastSensor(CoordinatorEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information to group this entity."""
         return DeviceInfo(
-            identifiers={(DOMAIN, f"noaa_{self._office_code}_surf")},
-            name=f"NOAA {self._office_code} Surf",
+            identifiers={(DOMAIN, f"noaa_{self._marine_zone}_marine")},
+            name=f"NOAA {self._marine_zone} Marine",
             manufacturer="NOAA"
         )

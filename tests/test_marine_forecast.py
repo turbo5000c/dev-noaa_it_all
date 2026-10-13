@@ -395,12 +395,14 @@ class TestMarineForecastSensor(unittest.TestCase):
 
     def test_identity(self):
         sensor = self._make()
-        self.assertEqual(sensor.name, "Marine Forecast")
-        self.assertEqual(sensor._attr_unique_id, "noaa_LOT_lmz741_marine_forecast")
+        self.assertEqual(sensor.name, "Forecast")
+        self.assertEqual(sensor._attr_unique_id, "noaa_LMZ741_marine_forecast")
 
-    def test_grouped_under_the_surf_device(self):
+    def test_grouped_under_its_zone_device(self):
+        """Its own device, so the surf entry's device never holds it."""
         info = self._make().device_info
-        self.assertEqual(info["name"], "NOAA LOT Surf")
+        self.assertEqual(info["name"], "NOAA LMZ741 Marine")
+        self.assertEqual(info["identifiers"], {("noaa_it_all", "noaa_LMZ741_marine")})
 
     def test_no_data(self):
         sensor = self._make(data=None)

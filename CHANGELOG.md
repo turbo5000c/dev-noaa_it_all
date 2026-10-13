@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current risk, and **no forecast this week** when NWS hasn't issued one lately (the Great Lakes
   offices only do in summer). **No surf data** adds none. More beaches can be added on their own
   with **Add entry**.
+- **Nearshore marine forecasts for the Great Lakes.** **Add entry → Nearshore marine forecast**
+  takes an NWS marine zone such as `LMZ741` and adds a `NOAA Marine - <zone name>` entry with the
+  zone's forecast periods and any advisories. NWS supplies the office and name, and setup checks
+  the zone is in that office's Nearshore Marine Forecast. Thanks @gjsiii. (#37)
 
 ### Changed
 - **Weather, surf and hurricanes are separate entries.** A location is now `NOAA Weather - <office>`
