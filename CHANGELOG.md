@@ -8,11 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.0]
 
 ### Added
-- **Inland offices pick a second office for surf data.** Rip current risk, surf height and water
-  temperature come from a coastal office chosen in an extra step, nearest first, so you can follow
-  the beach you visit. Each office shows whether it has water temperature and surf height as well as
-  rip current risk. **No surf data** leaves the surf entities out. Existing entries keep their
-  office and surf data.
+- **Surf for any coast.** Setting up a location ends by choosing the coastal office whose surf
+  forecast you want, nearest first, so an inland location can follow the beach you visit. Each
+  office shows its distance, whether it has water temperature and surf height as well as rip
+  current risk, and **no forecast this week** when NWS hasn't issued one lately (the Great Lakes
+  offices only do in summer). **No surf data** adds none. More beaches can be added on their own
+  with **Add entry**.
+
+### Changed
+- **Weather, surf and hurricanes are separate entries.** A location is now `NOAA Weather - <office>`
+  (forecast, alerts, radar and space), each surf office is `NOAA Surf - <office>`, and the hurricane
+  and satellite entities are in `NOAA - Hurricane`. Locations that use the same surf office share
+  its entry, and the first location adds the hurricane entry; delete it and later locations won't
+  add it back. **Add entry** asks which kind to add. Configure is only on weather entries.
+- **A surf entry only has the entities its office has data for.** Water Temperature needs a tide
+  station and Surf Height a buoy; an office without one no longer gets an entity stuck at unknown.
+- **Upgrading splits existing entries once.** Each becomes a weather entry, and its surf and the
+  hurricane entities move to their own entries, keeping their entity IDs and history. Water
+  Temperature and Surf Height are removed where the office has no tide station or buoy. Going back
+  to 0.7.x afterwards needs the integration removed and added again.
 
 ### Fixed
 - **Inland locations get their own forecast office.** Setup only listed the 36 coastal offices

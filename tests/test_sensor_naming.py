@@ -1009,32 +1009,30 @@ class TestBinarySensorNaming(unittest.TestCase):
             self.assertEqual(sensor._attr_unique_id, expected[name], f"{name} unique_id")
 
 
-class TestPlatformsWithoutSurf(unittest.TestCase):
-    """An entry with no surf office gets no surf entities, and nothing breaks."""
+class TestPlatformsByEntryType(unittest.TestCase):
+    """Each kind of entry gets only its own entities."""
 
-    def _added(self, module_name, surf_coord):
+    _HURRICANE = {"HurricaneAlertsSensor", "HurricaneActivitySensor"}
+    _SURF = {"RipCurrentRiskSensor", "SurfHeightSensor", "WaterTemperatureSensor"}
+
+    def _added(self, module_name, data):
         import importlib
         from noaa_it_all.const import DOMAIN
         module = importlib.import_module(f"noaa_it_all.{module_name}")
         entry = MagicMock()
         entry.entry_id = "entry_1"
-        entry.data = {
-            "office_code": "VEF", "surf_office_code": None, "radar_site": "KESX",
-            "latitude": 36.1699, "longitude": -115.1398,
-        }
+        entry.data = data
         entry.options = {}
         hass = MagicMock()
-        hass.data = {}
-        hass.data[DOMAIN] = {"entry_1": {
+        hass.data = {DOMAIN: {"entry_1": {
             key: MagicMock() for key in (
                 "space_weather_coordinator", "hurricane_coordinator",
                 "observations_coordinator", "forecast_coordinator",
                 "alerts_coordinator", "cloud_cover_coordinator",
                 "radar_timestamp_coordinator", "forecast_discussion_coordinator",
-                "meteor_coordinator", "eclipse_coordinator",
+                "meteor_coordinator", "eclipse_coordinator", "surf_coordinator",
             )
-        }}
-        hass.data[DOMAIN]["entry_1"]["surf_coordinator"] = surf_coord
+        }}}
         added = []
         loop = asyncio.new_event_loop()
         try:
@@ -1043,14 +1041,34 @@ class TestPlatformsWithoutSurf(unittest.TestCase):
             loop.close()
         return {type(entity).__name__ for entity in added}
 
-    def test_sensors(self):
-        surf = {"RipCurrentRiskSensor", "SurfHeightSensor", "WaterTemperatureSensor"}
-        self.assertFalse(surf & self._added("sensor", None))
-        self.assertTrue(surf <= self._added("sensor", MagicMock()))
+    _WEATHER = {
+        "entry_type": "weather", "office_code": "VEF", "radar_site": "KESX",
+        "latitude": 36.1699, "longitude": -115.1398,
+    }
 
-    def test_binary_sensors(self):
-        self.assertNotIn("UnsafeToSwimBinarySensor", self._added("binary_sensor", None))
-        self.assertIn("UnsafeToSwimBinarySensor", self._added("binary_sensor", MagicMock()))
+    def test_a_weather_entry_has_no_surf_or_hurricane_sensors(self):
+        added = self._added("sensor", self._WEATHER)
+        self.assertIn("TemperatureSensor", added)
+        self.assertFalse((self._SURF | self._HURRICANE) & added)
+        self.assertNotIn(
+            "UnsafeToSwimBinarySensor", self._added("binary_sensor", self._WEATHER)
+        )
+
+    def test_a_surf_entry_has_only_surf(self):
+        data = {"entry_type": "surf", "office_code": "ILM"}
+        self.assertEqual(self._added("sensor", data), self._SURF)
+        self.assertEqual(self._added("binary_sensor", data), {"UnsafeToSwimBinarySensor"})
+
+    def test_a_surf_entry_leaves_out_what_its_office_has_no_data_for(self):
+        lot = {"entry_type": "surf", "office_code": "LOT"}  # no tide station or buoy
+        self.assertEqual(self._added("sensor", lot), {"RipCurrentRiskSensor"})
+        dlh = {"entry_type": "surf", "office_code": "DLH"}  # tide station, no buoy
+        self.assertEqual(
+            self._added("sensor", dlh), {"RipCurrentRiskSensor", "WaterTemperatureSensor"}
+        )
+
+    def test_the_hurricane_entry_has_only_hurricanes(self):
+        self.assertEqual(self._added("sensor", {"entry_type": "hurricane"}), self._HURRICANE)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,49 @@
-"""Which office, radar site and magnetic latitude an entry's data comes from.
+"""What kind of entry this is, and where its office's data comes from.
 
-An entry names its local NWS forecast office. The tables in const.py cover
-only the coastal offices that issue Surf Zone Forecasts, so anything they do
-not cover for an inland office is stored on the entry at setup or estimated.
+A weather entry names the NWS forecast office for its location; a surf entry
+names one coastal office that issues Surf Zone Forecasts. The tables in
+const.py cover only those coastal offices, so anything they do not cover for
+an inland office is stored on the entry at setup or estimated.
 """
 
 import math
 import re
 
 from .const import (
+    CONF_ENTRY_TYPE,
+    ENTRY_TYPE_HURRICANE,
+    ENTRY_TYPE_WEATHER,
     CONF_OFFICE_CODE,
     CONF_RADAR_SITE,
     CONF_SURF_OFFICE_CODE,
+    ENTRY_TYPE_SURF,
     GEOMAGNETIC_POLE_LAT,
     GEOMAGNETIC_POLE_LON,
+    OFFICE_BUOY_STATIONS,
     OFFICE_COORDINATES,
     OFFICE_MAGNETIC_LATITUDES,
     OFFICE_RADAR_SITES,
+    OFFICE_TIDE_STATIONS,
+)
+
+# The surf entities, as (platform, unique ID suffix). Their unique IDs are
+# noaa_<office>_<suffix>, from the days surf lived in the weather entry, so an
+# upgraded entry's entities keep their IDs and history in the surf entry.
+RIP_CURRENT_RISK = ("sensor", "rip_current_risk")
+UNSAFE_TO_SWIM = ("binary_sensor", "unsafe_to_swim")
+WATER_TEMPERATURE = ("sensor", "water_temperature")
+SURF_HEIGHT = ("sensor", "surf_height")
+ALL_SURF_ENTITIES = (RIP_CURRENT_RISK, UNSAFE_TO_SWIM, WATER_TEMPERATURE, SURF_HEIGHT)
+
+# The hurricane entry's entities, as (platform, unique ID). The same IDs they
+# had when the first weather entry hosted them, so they keep their history.
+HURRICANE_ENTITIES = (
+    ("sensor", "noaa_hurricane_alerts"),
+    ("sensor", "noaa_hurricane_activity"),
+    ("image", "noaa_hurricane_outlook_image"),
+    ("image", "noaa_hurricane_pacific_outlook_image"),
+    ("image", "noaa_hurricane_goes_air_mass"),
+    ("image", "noaa_hurricane_goes_geocolor"),
 )
 
 
@@ -31,11 +58,46 @@ def is_radar_site(value):
     return isinstance(value, str) and _RADAR_SITE.fullmatch(value) is not None
 
 
-def surf_office(conf):
-    """Return the office whose Surf Zone Forecast to use, or None for none.
+def entry_type(conf):
+    """Return what an entry is: weather, surf or hurricane."""
+    return conf.get(CONF_ENTRY_TYPE, ENTRY_TYPE_WEATHER)
 
-    An entry made before the surf office was its own setting has no such key.
-    Its office was always one of the coastal offices, so it keeps using it.
+
+def is_surf_entry(conf):
+    """Return True for a surf entry."""
+    return entry_type(conf) == ENTRY_TYPE_SURF
+
+
+def is_hurricane_entry(conf):
+    """Return True for the hurricane entry."""
+    return entry_type(conf) == ENTRY_TYPE_HURRICANE
+
+
+def is_weather_entry(conf):
+    """Return True for a weather entry: a location's forecast, radar and space."""
+    return entry_type(conf) == ENTRY_TYPE_WEATHER
+
+
+def surf_entities(office):
+    """Return the surf entities a surf entry for ``office`` creates.
+
+    Rip current risk always comes from the forecast. Water temperature needs a
+    tide station and surf height a buoy, and an office without one would only
+    ever show unknown, so it does not get that entity.
+    """
+    entities = [RIP_CURRENT_RISK, UNSAFE_TO_SWIM]
+    if office in OFFICE_TIDE_STATIONS:
+        entities.append(WATER_TEMPERATURE)
+    if office in OFFICE_BUOY_STATIONS:
+        entities.append(SURF_HEIGHT)
+    return entities
+
+
+def surf_office(conf):
+    """Return the surf office a weather entry from before 0.8.0 used, or None.
+
+    Only read when migrating. A 0.8.0 test build saved the choice; an older
+    entry always used its own office, which was always a coastal one.
     """
     if CONF_SURF_OFFICE_CODE in conf:
         return conf[CONF_SURF_OFFICE_CODE]
@@ -45,6 +107,8 @@ def surf_office(conf):
 
 def radar_site(conf):
     """Return the NEXRAD site for the entry's radar images, or None."""
+    if not is_weather_entry(conf):
+        return None
     stored = conf.get(CONF_RADAR_SITE)
     if is_radar_site(stored):
         return stored

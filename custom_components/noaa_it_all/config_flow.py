@@ -11,6 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN,
+    CONF_ENTRY_TYPE,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_OFFICE_CODE,
@@ -18,17 +19,32 @@ from .const import (
     CONF_RADAR_SITE,
     CONF_SURF_OFFICE_CODE,
     DEFAULT_RADAR_LOOP_HOURS,
+    ENTRY_TYPE_HURRICANE,
+    ENTRY_TYPE_SURF,
+    ENTRY_TYPE_WEATHER,
+    HURRICANE_ENTRY_TITLE,
     NWS_OFFICE_URL,
     NWS_POINTS_URL,
+    NWS_SRF_PRODUCTS_URL,
     OFFICE_BUOY_STATIONS,
     OFFICE_COORDINATES,
+    OFFICE_ISSUING_IDS,
     OFFICE_RADAR_SITES,
     OFFICE_TIDE_STATIONS,
     RADAR_LOOP_MAX_HOURS,
     USER_AGENT,
 )
 from .entry_config import resolve_entry_config
-from .offices import is_radar_site
+from .offices import (
+    entry_type,
+    is_hurricane_entry,
+    is_radar_site,
+    is_surf_entry,
+    is_weather_entry,
+)
+
+# The hurricane entry's unique ID: there is only one.
+_HURRICANE_UNIQUE_ID = "noaa_hurricane"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +91,7 @@ NWS_OFFICES = {
 # Maximum distance (miles) used to filter "nearby" offices.
 NEARBY_OFFICE_RADIUS_MILES = 50.0
 
-# Choice on the surf step for an inland user who wants no surf entities.
+# Choice on the location flow's surf step for adding no surf entry.
 NO_SURF_OFFICE = "none"
 
 # Seconds to wait on NWS while the setup form is open.
@@ -115,12 +131,18 @@ def _format_office_label(code, distance_miles):
     return f"{code} - {name} ({distance_miles:.1f} mi)"
 
 
-def _format_surf_label(code, distance_miles):
+def _format_surf_label(code, distance_miles, issuing=None, added=False):
     """Build a surf dropdown label naming the surf data the office provides.
 
     Every surf office gives rip current risk. Water temperature needs a tide
-    station and surf height a buoy, which not every office has.
+    station and surf height a buoy, which not every office has; a surf entry
+    only gets the entities its office has data for. ``issuing`` is the set of
+    offices with a forecast this week, or None when that is not known.
     """
+    if distance_miles is None:
+        label = f"{code} - {NWS_OFFICES.get(code, 'Unknown')}"
+    else:
+        label = _format_office_label(code, distance_miles)
     provides = ["rip current"]
     if code in OFFICE_TIDE_STATIONS:
         provides.append("water temp")
@@ -128,7 +150,43 @@ def _format_surf_label(code, distance_miles):
         provides.append("surf height")
     if len(provides) == 1:
         provides[0] = "rip current only"
-    return f"{_format_office_label(code, distance_miles)} - {', '.join(provides)}"
+    label = f"{label} - {', '.join(provides)}"
+    if issuing is not None and code not in issuing:
+        label += " - no forecast this week"
+    if added:
+        label += " - already added"
+    return label
+
+
+async def async_issuing_surf_offices(hass):
+    """Return the surf offices that issued a Surf Zone Forecast this week.
+
+    Several offices stop issuing outside their summer season, and a surf entry
+    for one of them shows unknown until it starts again. Returns None when NWS
+    cannot say, so the labels just leave it out.
+    """
+    if hass is None:
+        return None
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(
+            NWS_SRF_PRODUCTS_URL,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/ld+json"},
+            timeout=aiohttp.ClientTimeout(total=_LOOKUP_TIMEOUT),
+        ) as resp:
+            resp.raise_for_status()
+            products = (await resp.json()).get("@graph")
+    except Exception as err:  # noqa: BLE001 - the labels work without it
+        _LOGGER.debug("Could not look up which offices issue surf forecasts: %s", err)
+        return None
+    if not isinstance(products, list):
+        return None
+    by_issuer = {OFFICE_ISSUING_IDS.get(code, f"K{code}"): code for code in NWS_OFFICES}
+    return {
+        by_issuer[product.get("issuingOffice")]
+        for product in products
+        if isinstance(product, dict) and product.get("issuingOffice") in by_issuer
+    }
 
 
 async def async_lookup_point(hass, latitude, longitude):
@@ -206,16 +264,31 @@ def _build_office_options(latitude, longitude, point=None):
     return options, default_code, no_within_radius
 
 
-def _build_surf_options(latitude, longitude):
+def _build_surf_options(latitude, longitude, issuing=None, configured=(), offer_none=True):
     """Return (options_dict, default_code) for choosing a surf office.
 
-    Every office that issues a Surf Zone Forecast, nearest first, so an inland
-    user can take the nearest coast or the one they visit.
+    Every office that issues a Surf Zone Forecast, nearest first, so a user can
+    take the nearest coast or the one they visit. Without a location they are
+    listed by name. ``configured`` offices already have a surf entry: offered
+    as "already added" when ``offer_none`` (the location flow, which shares
+    them), and left out otherwise (adding a surf entry on its own).
     """
-    candidates = find_nearby_offices(latitude, longitude, max_miles=None)
-    options = {code: _format_surf_label(code, dist) for code, dist in candidates}
-    options[NO_SURF_OFFICE] = "No surf data"
-    return options, candidates[0][0] if candidates else NO_SURF_OFFICE
+    if latitude is None or longitude is None:
+        candidates = [
+            (code, None) for code in sorted(NWS_OFFICES, key=NWS_OFFICES.get)
+        ]
+    else:
+        candidates = find_nearby_offices(latitude, longitude, max_miles=None)
+    options = {}
+    for code, dist in candidates:
+        added = code in configured
+        if added and not offer_none:
+            continue
+        options[code] = _format_surf_label(code, dist, issuing, added)
+    default_code = next(iter(options), NO_SURF_OFFICE)
+    if offer_none:
+        options[NO_SURF_OFFICE] = "No surf data"
+    return options, default_code
 
 
 def _office_name(code, point):
@@ -256,9 +329,18 @@ def _ha_home_coords(hass):
 
 
 class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for NOAA Integration."""
+    """Handle a config flow for NOAA Integration.
 
-    VERSION = 1
+    An entry is weather for a location (forecast, alerts, radar and space),
+    the surf forecast of one coastal office, or the one hurricane entry (NHC
+    feeds and satellite images). A location flow ends by offering a surf
+    office, which it adds as a separate surf entry through the import step, or
+    shares when that office already has one. The first weather entry also adds
+    the hurricane entry, as every install had hurricane entities before.
+    """
+
+    # 2: entries have an entry type; surf and hurricanes moved into their own.
+    VERSION = 2
 
     def __init__(self):
         """Initialize transient state for the multi-step flow."""
@@ -266,9 +348,22 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._longitude = None
         self._point = None
         self._office_code = None
+        self._issuing = None
+        self._issuing_checked = False
 
     async def async_step_user(self, user_input=None):
-        """Step 1: collect latitude and longitude (pre-filled from HA Home)."""
+        """Step 1: choose weather for a location, a surf forecast or hurricanes."""
+        menu_options = ["location", "surf"]
+        if not any(is_hurricane_entry(e.data) for e in self._entries()):
+            menu_options.append("hurricane")
+        return self.async_show_menu(step_id="user", menu_options=menu_options)
+
+    async def async_step_hurricane(self, user_input=None):
+        """Add the hurricane entry."""
+        return await self._async_create_hurricane()
+
+    async def async_step_location(self, user_input=None):
+        """Collect latitude and longitude (pre-filled from HA Home)."""
         errors = {}
         ha_lat, ha_lon = _ha_home_coords(getattr(self, "hass", None))
 
@@ -298,7 +393,7 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ha_location_text = "not configured"
 
         return self.async_show_form(
-            step_id="user",
+            step_id="location",
             data_schema=vol.Schema({
                 vol.Required(CONF_LATITUDE, default=default_lat): vol.Coerce(float),
                 vol.Required(CONF_LONGITUDE, default=default_lon): vol.Coerce(float),
@@ -308,7 +403,7 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_office(self, user_input=None):
-        """Step 2: choose the NWS forecast office for the location."""
+        """Choose the NWS forecast office for the location."""
         options, default_code, no_within_radius = _build_office_options(
             self._latitude, self._longitude, self._point
         )
@@ -329,9 +424,6 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             self._office_code = office_code
-            if office_code in NWS_OFFICES:
-                # A coastal office issues its own Surf Zone Forecast.
-                return await self._async_create(office_code)
             return await self.async_step_surf()
 
         return self.async_show_form(
@@ -343,18 +435,43 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_surf(self, user_input=None):
-        """Step 3, for an inland office only: choose an office for surf data."""
-        options, default_code = _build_surf_options(self._latitude, self._longitude)
+        """Choose a surf office: the last location step, or a surf entry on its own."""
+        hass = getattr(self, "hass", None)
+        location_flow = self._office_code is not None
+        if not self._issuing_checked:
+            self._issuing = await async_issuing_surf_offices(hass)
+            self._issuing_checked = True
+        configured = self._configured_surf_offices()
+        if location_flow:
+            latitude, longitude = self._latitude, self._longitude
+        else:
+            latitude, longitude = _ha_home_coords(hass)
+        options, default_code = _build_surf_options(
+            latitude, longitude, self._issuing, configured, offer_none=location_flow
+        )
+        if not options:
+            return self.async_abort(reason="all_surf_configured")
 
+        errors = {}
         if user_input is not None:
             surf_code = user_input.get(CONF_SURF_OFFICE_CODE)
-            if surf_code in options:
-                return await self._async_create(
-                    None if surf_code == NO_SURF_OFFICE else surf_code
-                )
-            errors = {CONF_SURF_OFFICE_CODE: "invalid_office"}
-        else:
-            errors = {}
+            if surf_code not in options:
+                errors = {CONF_SURF_OFFICE_CODE: "invalid_office"}
+            elif not location_flow:
+                return await self._async_create_surf(surf_code)
+            else:
+                # Aborts here if the location is already set up, before any
+                # other entry is added for it.
+                await self._async_set_weather_unique_id()
+                if surf_code != NO_SURF_OFFICE and surf_code not in configured:
+                    self._add_entry({
+                        CONF_ENTRY_TYPE: ENTRY_TYPE_SURF, CONF_OFFICE_CODE: surf_code,
+                    })
+                if not any(is_weather_entry(e.data) for e in self._entries()):
+                    # The first weather entry: hurricanes come with it. Once
+                    # the hurricane entry is deleted, later ones leave it out.
+                    self._add_entry({CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE})
+                return self._create_weather()
 
         return self.async_show_form(
             step_id="surf",
@@ -362,22 +479,76 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_SURF_OFFICE_CODE, default=default_code): vol.In(options),
             }),
             errors=errors,
-            description_placeholders={"office": self._office_code},
+            description_placeholders={
+                "none_note": (
+                    " Choose No surf data to add none. An office marked already "
+                    "added is shared with the entries that use it."
+                ) if location_flow else "",
+            },
         )
 
-    async def _async_create(self, surf_code):
-        """Create the entry for the chosen office and surf office."""
-        office_code = self._office_code
+    async def async_step_import(self, import_data):
+        """Create a surf or hurricane entry, for a location flow or an upgrade."""
+        if entry_type(import_data) == ENTRY_TYPE_HURRICANE:
+            return await self._async_create_hurricane()
+        office_code = import_data.get(CONF_OFFICE_CODE)
+        if not is_surf_entry(import_data) or office_code not in NWS_OFFICES:
+            return self.async_abort(reason="unknown_surf_office")
+        return await self._async_create_surf(office_code)
+
+    def _entries(self):
+        """Return this integration's entries, leaving out ignored ones."""
+        return self._async_current_entries(include_ignore=False)
+
+    def _add_entry(self, data):
+        """Start adding a surf or hurricane entry; one that exists already is kept."""
+        self.hass.async_create_task(
+            self.hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=data
+            )
+        )
+
+    def _configured_surf_offices(self):
+        """Return the offices that already have a surf entry."""
+        return {
+            entry.data.get(CONF_OFFICE_CODE)
+            for entry in self._entries()
+            if is_surf_entry(entry.data)
+        }
+
+    async def _async_create_hurricane(self):
+        """Create the hurricane entry, unless there is one already."""
+        await self.async_set_unique_id(_HURRICANE_UNIQUE_ID)
+        self._abort_if_unique_id_configured(error="hurricane_already_configured")
+        return self.async_create_entry(
+            title=HURRICANE_ENTRY_TITLE,
+            data={CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE},
+        )
+
+    async def _async_create_surf(self, office_code):
+        """Create the surf entry for an office, unless it already has one."""
+        await self.async_set_unique_id(f"noaa_surf_{office_code}")
+        self._abort_if_unique_id_configured(error="surf_already_configured")
+        return self.async_create_entry(
+            title=f"NOAA Surf - {NWS_OFFICES[office_code]}",
+            data={CONF_ENTRY_TYPE: ENTRY_TYPE_SURF, CONF_OFFICE_CODE: office_code},
+        )
+
+    async def _async_set_weather_unique_id(self):
+        """Claim the location's unique ID, aborting if it is already set up."""
         lat_str = f"{self._latitude:.4f}".replace('.', '_').replace('-', 'n')
         lon_str = f"{self._longitude:.4f}".replace('.', '_').replace('-', 'n')
-        await self.async_set_unique_id(f"noaa_{office_code}_{lat_str}_{lon_str}")
+        await self.async_set_unique_id(f"noaa_{self._office_code}_{lat_str}_{lon_str}")
         self._abort_if_unique_id_configured()
 
+    def _create_weather(self):
+        """Create the weather entry for the location and office."""
+        office_code = self._office_code
         return self.async_create_entry(
-            title=f"NOAA - {_office_name(office_code, self._point)}",
+            title=f"NOAA Weather - {_office_name(office_code, self._point)}",
             data={
+                CONF_ENTRY_TYPE: ENTRY_TYPE_WEATHER,
                 CONF_OFFICE_CODE: office_code,
-                CONF_SURF_OFFICE_CODE: surf_code,
                 CONF_RADAR_SITE: _radar_site_for(office_code, self._point),
                 CONF_LATITUDE: self._latitude,
                 CONF_LONGITUDE: self._longitude,
@@ -402,6 +573,12 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Create the options flow."""
         return NOAAOptionsFlow()
 
+    @classmethod
+    @callback
+    def async_supports_options_flow(cls, config_entry):
+        """Offer Configure on weather entries; surf and hurricane have nothing to set."""
+        return is_weather_entry(config_entry.data)
+
 
 class NOAAOptionsFlow(config_entries.OptionsFlow):
     """NOAA config flow options handler."""
@@ -417,7 +594,6 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
         self._longitude = None
         self._point = None
         self._office_code = None
-        self._surf_office_code = None
 
     async def async_step_init(self, user_input=None):
         """Step 1 of the options flow: latitude / longitude."""
@@ -506,10 +682,7 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
                     description_placeholders=self._office_placeholders(no_within_radius),
                 )
             self._office_code = office_code
-            if office_code in NWS_OFFICES:
-                self._surf_office_code = office_code
-                return await self.async_step_radar()
-            return await self.async_step_surf()
+            return await self.async_step_radar()
 
         return self.async_show_form(
             step_id="office",
@@ -517,35 +690,6 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_OFFICE_CODE, default=default_code): vol.In(options),
             }),
             description_placeholders=self._office_placeholders(no_within_radius),
-        )
-
-    async def async_step_surf(self, user_input=None):
-        """Options step for an inland office only: choose an office for surf data."""
-        options, default_code = _build_surf_options(self._latitude, self._longitude)
-        existing = resolve_entry_config(self.config_entry)
-        if CONF_SURF_OFFICE_CODE in existing:
-            saved = existing[CONF_SURF_OFFICE_CODE] or NO_SURF_OFFICE
-            if saved in options:
-                default_code = saved
-
-        if user_input is not None:
-            surf_code = user_input.get(CONF_SURF_OFFICE_CODE)
-            if surf_code in options:
-                self._surf_office_code = (
-                    None if surf_code == NO_SURF_OFFICE else surf_code
-                )
-                return await self.async_step_radar()
-            errors = {CONF_SURF_OFFICE_CODE: "invalid_office"}
-        else:
-            errors = {}
-
-        return self.async_show_form(
-            step_id="surf",
-            data_schema=vol.Schema({
-                vol.Required(CONF_SURF_OFFICE_CODE, default=default_code): vol.In(options),
-            }),
-            errors=errors,
-            description_placeholders={"office": self._office_code},
         )
 
     async def async_step_radar(self, user_input=None):
@@ -580,7 +724,6 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
                     title="",
                     data={
                         CONF_OFFICE_CODE: self._office_code,
-                        CONF_SURF_OFFICE_CODE: self._surf_office_code,
                         CONF_RADAR_SITE: self._radar_site(),
                         CONF_LATITUDE: self._latitude,
                         CONF_LONGITUDE: self._longitude,

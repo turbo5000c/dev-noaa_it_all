@@ -324,36 +324,99 @@ _VEF = {
 }
 
 
-class TestSurfOffice(unittest.TestCase):
-    """Surf comes from the entry's surf office, which may be another office or none."""
+class TestEntryTypesSetUp(unittest.TestCase):
+    """Each kind of entry builds only its own coordinators and platforms."""
 
     def _data(self, hass):
         from noaa_it_all.const import DOMAIN
         return hass.data[DOMAIN]["entry_1"]
 
-    def test_an_older_entry_uses_its_own_office(self):
-        _, _, coordinators = _setup(_make_entry(_ILM))
-        args = coordinators["SurfCoordinator"].call_args.args
-        self.assertEqual(args[1:], ("ILM", "8658163", "41110"))
+    def _setup(self, data):
+        import noaa_it_all
+        with patch.object(noaa_it_all, "_async_adopt_entities") as adopt:
+            hass, result, coordinators = _setup(_make_entry(data))
+        self.assertTrue(result)
+        return hass, coordinators, adopt
 
-    def test_an_inland_entry_uses_its_surf_office(self):
-        _, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": "SGX"}))
-        args = coordinators["SurfCoordinator"].call_args.args
-        self.assertEqual(args[1:], ("SGX", "9410170", "46235"))
-        # Everything else still comes from the local office.
-        self.assertEqual(
-            coordinators["ForecastDiscussionCoordinator"].call_args.args[1], "VEF"
+    def test_a_weather_entry_has_no_surf_or_hurricanes(self):
+        hass, coordinators, _ = self._setup({**_VEF, "entry_type": "weather"})
+        coordinators["SurfCoordinator"].assert_not_called()
+        coordinators["HurricaneCoordinator"].assert_not_called()
+        self.assertNotIn("surf_coordinator", self._data(hass))
+        self.assertNotIn("hurricane_coordinator", self._data(hass))
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+            hass.config_entries.async_forward_entry_setups.call_args.args[0],
+            ["sensor", "image", "binary_sensor", "weather"],
         )
 
-    def test_no_surf_office_builds_no_surf_coordinator(self):
-        hass, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": None}))
-        coordinators["SurfCoordinator"].assert_not_called()
-        self.assertIsNone(self._data(hass)["surf_coordinator"])
-
     def test_the_stored_radar_site_is_used(self):
-        _, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": None}))
+        _, coordinators, _ = self._setup({**_VEF, "entry_type": "weather"})
         self.assertEqual(
             coordinators["RadarTimestampCoordinator"].call_args.args[1:], ("VEF", "KESX")
+        )
+
+    def test_a_surf_entry_has_only_its_office_surf(self):
+        hass, coordinators, adopt = self._setup({"entry_type": "surf", "office_code": "ILM"})
+        args = coordinators["SurfCoordinator"].call_args.args
+        self.assertEqual(args[1:], ("ILM", "8658163", "41110"))
+        coordinators["SpaceWeatherCoordinator"].assert_not_called()
+        coordinators["HurricaneCoordinator"].assert_not_called()
+        self.assertIs(self._data(hass)["surf_coordinator"], coordinators["SurfCoordinator"].return_value)
+        self.assertEqual(
+            hass.config_entries.async_forward_entry_setups.call_args.args[1],
+            ["sensor", "binary_sensor"],
+        )
+        # Takes over its device and keeps all four: ILM has a tide station and a buoy.
+        _, _, device_key, keep, drop = adopt.call_args.args
+        self.assertEqual(device_key, "noaa_ILM_surf")
+        self.assertEqual(len(keep), 4)
+        self.assertEqual(list(drop), [])
+
+    def test_a_surf_entry_drops_entities_its_office_has_no_data_for(self):
+        _, _, adopt = self._setup({"entry_type": "surf", "office_code": "LOT"})
+        _, _, _, keep, drop = adopt.call_args.args
+        self.assertEqual(
+            sorted(unique_id for _, unique_id in drop),
+            ["noaa_LOT_surf_height", "noaa_LOT_water_temperature"],
+        )
+        self.assertEqual(
+            sorted(unique_id for _, unique_id in keep),
+            ["noaa_LOT_rip_current_risk", "noaa_LOT_unsafe_to_swim"],
+        )
+
+    def test_the_hurricane_entry_has_only_hurricanes(self):
+        hass, coordinators, adopt = self._setup({"entry_type": "hurricane"})
+        coordinators["HurricaneCoordinator"].assert_called_once()
+        coordinators["SurfCoordinator"].assert_not_called()
+        coordinators["SpaceWeatherCoordinator"].assert_not_called()
+        self.assertEqual(
+            hass.config_entries.async_forward_entry_setups.call_args.args[1],
+            ["sensor", "image"],
+        )
+        _, _, device_key, keep = adopt.call_args.args
+        self.assertEqual(device_key, "noaa_hurricane")
+        self.assertEqual(len(keep), 6)
+
+    def test_a_failed_takeover_does_not_stop_setup(self):
+        import noaa_it_all
+        with patch.object(
+            noaa_it_all, "_async_adopt_entities", side_effect=RuntimeError("registry")
+        ):
+            _, result, coordinators = _setup(_make_entry({"entry_type": "hurricane"}))
+        self.assertTrue(result)
+        coordinators["HurricaneCoordinator"].assert_called_once()
+
+    def test_unload_uses_the_entry_type_platforms(self):
+        import noaa_it_all
+        from noaa_it_all.const import DOMAIN
+        hass = _make_hass()
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        entry = _make_entry({"entry_type": "surf", "office_code": "ILM"})
+        hass.data[DOMAIN] = {"entry_1": {}}
+        self.assertTrue(_run(noaa_it_all.async_unload_entry(hass, entry)))
+        self.assertEqual(
+            hass.config_entries.async_unload_platforms.call_args.args[1],
+            ["sensor", "binary_sensor"],
         )
 
     def test_removing_an_inland_entry_deletes_its_stored_radar_site(self):
@@ -365,6 +428,227 @@ class TestSurfOffice(unittest.TestCase):
             TestRemoveEntryCleansUpRadarFrames._hass([entry]), entry
         )
         self.assertEqual(["KESX"], removed)
+
+    def test_removing_a_surf_entry_leaves_radar_frames_alone(self):
+        entry = MagicMock()
+        entry.entry_id = "entry_1"
+        entry.data = {"entry_type": "surf", "office_code": "ILM"}
+        entry.options = {}
+        removed = TestRemoveEntryCleansUpRadarFrames()._remove(
+            TestRemoveEntryCleansUpRadarFrames._hass([entry]), entry
+        )
+        self.assertEqual([], removed)
+
+
+class _Device:
+    def __init__(self, device_id, config_entries):
+        self.id = device_id
+        self.config_entries = set(config_entries)
+
+
+class _Registries:
+    """Device and entity registries that behave like Home Assistant's.
+
+    Taking an entry off a device deletes the device's entities that still
+    belong to that entry, and taking off its last entry deletes the device.
+    That is what makes the order of a takeover matter, so the fakes do it too.
+    """
+
+    def __init__(self):
+        self.devices = {}          # identifier -> _Device
+        self.entities = {}         # entity_id -> SimpleNamespace
+        self.calls = []
+
+    # -- device registry
+    def async_get_device(self, identifiers):
+        (identifier,) = identifiers
+        return self.devices.get(identifier[1])
+
+    def async_update_device(self, device_id, add_config_entry_id=None, remove_config_entry_id=None):
+        key, device = next((k, d) for k, d in self.devices.items() if d.id == device_id)
+        if add_config_entry_id:
+            self.calls.append(("add", add_config_entry_id))
+            device.config_entries = device.config_entries | {add_config_entry_id}
+        if remove_config_entry_id:
+            self.calls.append(("remove", remove_config_entry_id))
+            device.config_entries = device.config_entries - {remove_config_entry_id}
+            for entity_id, ent in list(self.entities.items()):
+                if ent.device_id == device_id and ent.config_entry_id == remove_config_entry_id:
+                    del self.entities[entity_id]
+            if not device.config_entries:
+                del self.devices[key]
+
+    # -- entity registry
+    def add_entity(self, entity_id, platform, unique_id, config_entry_id, device_id):
+        from types import SimpleNamespace
+        self.entities[entity_id] = SimpleNamespace(
+            entity_id=entity_id, domain=platform, unique_id=unique_id,
+            config_entry_id=config_entry_id, device_id=device_id,
+        )
+
+    def async_get_entity_id(self, domain, platform, unique_id):
+        return next(
+            (e.entity_id for e in self.entities.values()
+             if e.domain == domain and e.unique_id == unique_id),
+            None,
+        )
+
+    def async_get(self, entity_id):
+        return self.entities.get(entity_id)
+
+    def async_update_entity(self, entity_id, config_entry_id):
+        self.calls.append(("move", entity_id))
+        self.entities[entity_id].config_entry_id = config_entry_id
+
+    def async_remove(self, entity_id):
+        self.calls.append(("delete", entity_id))
+        del self.entities[entity_id]
+
+
+class TestAdoptEntities(unittest.TestCase):
+    """A surf or hurricane entry takes over the entities a weather entry had."""
+
+    def _adopt(self, regs, entry_id, *args):
+        import noaa_it_all
+        entry = MagicMock()
+        entry.entry_id = entry_id
+        with patch.object(noaa_it_all.dr, "async_get", return_value=regs), \
+                patch.object(noaa_it_all.er, "async_get", return_value=regs):
+            noaa_it_all._async_adopt_entities(MagicMock(), entry, *args)
+
+    def _wilmington(self):
+        """A weather entry from before 0.8.0 with ILM's surf device and entities."""
+        regs = _Registries()
+        regs.devices["noaa_ILM_surf"] = _Device("dev_surf", {"weather_1"})
+        for platform, suffix in (
+            ("sensor", "rip_current_risk"), ("binary_sensor", "unsafe_to_swim"),
+            ("sensor", "water_temperature"), ("sensor", "surf_height"),
+        ):
+            regs.add_entity(
+                f"{platform}.noaa_ilm_surf_{suffix}", platform,
+                f"noaa_ILM_{suffix}", "weather_1", "dev_surf",
+            )
+        return regs
+
+    def _keep(self, office, suffixes):
+        platforms = {"unsafe_to_swim": "binary_sensor"}
+        return [(platforms.get(s, "sensor"), f"noaa_{office}_{s}") for s in suffixes]
+
+    def test_moves_the_entities_and_device_keeping_their_ids(self):
+        regs = self._wilmington()
+        keep = self._keep("ILM", ["rip_current_risk", "unsafe_to_swim",
+                                  "water_temperature", "surf_height"])
+        self._adopt(regs, "surf_1", "noaa_ILM_surf", keep)
+        self.assertEqual(
+            sorted(regs.entities),
+            ["binary_sensor.noaa_ilm_surf_unsafe_to_swim",
+             "sensor.noaa_ilm_surf_rip_current_risk",
+             "sensor.noaa_ilm_surf_surf_height",
+             "sensor.noaa_ilm_surf_water_temperature"],
+        )
+        self.assertEqual({e.config_entry_id for e in regs.entities.values()}, {"surf_1"})
+        self.assertEqual(regs.devices["noaa_ILM_surf"].config_entries, {"surf_1"})
+        # The old entry lets go of the device last; any earlier deletes the entities.
+        self.assertEqual(regs.calls[0], ("add", "surf_1"))
+        self.assertEqual(regs.calls[-1], ("remove", "weather_1"))
+
+    def test_removes_entities_the_office_has_no_data_for(self):
+        regs = self._wilmington()
+        keep = self._keep("ILM", ["rip_current_risk", "unsafe_to_swim"])
+        drop = self._keep("ILM", ["water_temperature", "surf_height"])
+        self._adopt(regs, "surf_1", "noaa_ILM_surf", keep, drop)
+        self.assertEqual(
+            sorted(regs.entities),
+            ["binary_sensor.noaa_ilm_surf_unsafe_to_swim",
+             "sensor.noaa_ilm_surf_rip_current_risk"],
+        )
+
+    def test_a_second_run_changes_nothing(self):
+        regs = self._wilmington()
+        keep = self._keep("ILM", ["rip_current_risk"])
+        self._adopt(regs, "surf_1", "noaa_ILM_surf", keep)
+        regs.calls.clear()
+        self._adopt(regs, "surf_1", "noaa_ILM_surf", keep)
+        self.assertEqual(regs.calls, [])
+
+    def test_nothing_to_take_over_is_fine(self):
+        regs = _Registries()
+        self._adopt(regs, "hurricane_1", "noaa_hurricane", [("sensor", "noaa_hurricane_alerts")])
+        self.assertEqual(regs.calls, [])
+
+
+class TestMigrateEntry(unittest.TestCase):
+    """Upgrading a version 1 entry into weather, surf and hurricane entries."""
+
+    def _migrate(self, data, title="NOAA - Wilmington, NC", version=1, options=None, regs=None):
+        import noaa_it_all
+        hass = _make_hass()
+        entry = _make_entry(data, options)
+        entry.version = version
+        entry.title = title
+        regs = regs or _Registries()
+        with patch.object(noaa_it_all.dr, "async_get", return_value=regs):
+            result = _run(noaa_it_all.async_migrate_entry(hass, entry))
+        return hass, result
+
+    def _added(self, hass):
+        return [c.kwargs["data"] for c in hass.config_entries.flow.async_init.call_args_list]
+
+    def test_a_coastal_entry_becomes_weather_with_its_surf_and_hurricanes(self):
+        hass, result = self._migrate(dict(_ILM), options={"radar_loop_hours": 6})
+        self.assertTrue(result)
+        kwargs = hass.config_entries.async_update_entry.call_args.kwargs
+        self.assertEqual(kwargs["data"], {**_ILM, "entry_type": "weather"})
+        self.assertEqual(kwargs["options"], {"radar_loop_hours": 6})
+        self.assertEqual(kwargs["title"], "NOAA Weather - Wilmington, NC")
+        self.assertEqual(kwargs["version"], 2)
+        self.assertEqual(self._added(hass), [
+            {"entry_type": "surf", "office_code": "ILM"},
+            {"entry_type": "hurricane"},
+        ])
+
+    def test_the_office_in_options_decides_the_surf_office(self):
+        hass, _ = self._migrate(dict(_SGX), options=dict(_ILM))
+        self.assertIn({"entry_type": "surf", "office_code": "ILM"}, self._added(hass))
+
+    def test_a_renamed_entry_keeps_its_name(self):
+        hass, _ = self._migrate(dict(_ILM), title="Beach house")
+        self.assertEqual(
+            hass.config_entries.async_update_entry.call_args.kwargs["title"], "Beach house"
+        )
+
+    def test_a_test_build_entry_moves_to_its_chosen_surf_office(self):
+        """0.8.0 test builds saved a surf office on the weather entry."""
+        regs = _Registries()
+        regs.devices["noaa_VEF_surf"] = _Device("dev_vef", {"entry_1"})
+        regs.add_entity("sensor.noaa_vef_surf_rip_current_risk", "sensor",
+                        "noaa_VEF_rip_current_risk", "entry_1", "dev_vef")
+        hass, _ = self._migrate(
+            {**_VEF, "surf_office_code": "SGX"}, title="NOAA - Las Vegas, NV", regs=regs,
+        )
+        data = hass.config_entries.async_update_entry.call_args.kwargs["data"]
+        self.assertNotIn("surf_office_code", data)
+        self.assertIn({"entry_type": "surf", "office_code": "SGX"}, self._added(hass))
+        # Its VEF-named surf device held SGX data; nothing can take it over.
+        self.assertEqual(regs.devices, {})
+        self.assertEqual(regs.entities, {})
+
+    def test_a_test_build_entry_with_no_surf_adds_only_hurricanes(self):
+        hass, _ = self._migrate(
+            {**_VEF, "surf_office_code": None}, title="NOAA - Las Vegas, NV",
+        )
+        self.assertEqual(self._added(hass), [{"entry_type": "hurricane"}])
+
+    def test_an_entry_from_a_newer_release_is_refused(self):
+        hass, result = self._migrate(dict(_ILM), version=3)
+        self.assertFalse(result)
+        hass.config_entries.async_update_entry.assert_not_called()
+
+    def test_a_current_entry_is_left_alone(self):
+        hass, result = self._migrate({**_ILM, "entry_type": "weather"}, version=2)
+        self.assertTrue(result)
+        hass.config_entries.async_update_entry.assert_not_called()
+        hass.config_entries.flow.async_init.assert_not_called()
 
 
 class TestOfficeHelpers(unittest.TestCase):
@@ -383,6 +667,29 @@ class TestOfficeHelpers(unittest.TestCase):
         self.assertEqual(radar_site({"office_code": "ILM", "radar_site": None}), "KLTX")
         self.assertEqual(radar_site(_VEF), "KESX")
         self.assertIsNone(radar_site({"office_code": "VEF"}))
+        self.assertIsNone(radar_site({"entry_type": "surf", "office_code": "ILM"}))
+        self.assertIsNone(radar_site({"entry_type": "hurricane"}))
+
+    def test_entry_types(self):
+        from noaa_it_all.offices import (
+            entry_type, is_hurricane_entry, is_surf_entry, is_weather_entry,
+        )
+        self.assertEqual(entry_type({"office_code": "ILM"}), "weather")
+        self.assertTrue(is_weather_entry({"office_code": "ILM"}))
+        self.assertTrue(is_surf_entry({"entry_type": "surf"}))
+        self.assertTrue(is_hurricane_entry({"entry_type": "hurricane"}))
+        self.assertFalse(is_weather_entry({"entry_type": "surf"}))
+
+    def test_surf_entities_follow_the_stations(self):
+        from noaa_it_all.offices import (
+            RIP_CURRENT_RISK, SURF_HEIGHT, UNSAFE_TO_SWIM, WATER_TEMPERATURE, surf_entities,
+        )
+        self.assertEqual(
+            surf_entities("ILM"),
+            [RIP_CURRENT_RISK, UNSAFE_TO_SWIM, WATER_TEMPERATURE, SURF_HEIGHT],
+        )
+        self.assertEqual(surf_entities("DLH"), [RIP_CURRENT_RISK, UNSAFE_TO_SWIM, WATER_TEMPERATURE])
+        self.assertEqual(surf_entities("APX"), [RIP_CURRENT_RISK, UNSAFE_TO_SWIM])
 
     def test_a_stored_radar_site_that_is_not_a_site_is_ignored(self):
         """It names a directory that removing the entry deletes."""
