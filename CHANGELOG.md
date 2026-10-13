@@ -5,7 +5,14 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0]
+
+### Added
+- **Inland offices pick a second office for surf data.** Rip current risk, surf height and water
+  temperature come from a coastal office chosen in an extra step, nearest first, so you can follow
+  the beach you visit. Each office shows whether it has water temperature and surf height as well as
+  rip current risk. **No surf data** leaves the surf entities out. Existing entries keep their
+  office and surf data.
 
 ### Fixed
 - **Inland locations get their own forecast office.** Setup only listed the 36 coastal offices
@@ -13,11 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and its forecast discussion, radar and aurora estimates came from there. Setup now asks NWS which
   office covers the location and pre-selects it (VEF for Las Vegas), with its own radar site. The
   coastal offices are still listed, and are all that's offered if NWS can't be reached.
-- **An inland office picks a second office for surf data.** Rip current risk, surf height and water
-  temperature come from a coastal office chosen in an extra step, nearest first, so you can follow
-  the beach you visit. Each office shows whether it has water temperature and surf height as well as
-  rip current risk. **No surf data** leaves the surf entities out. Existing entries keep their
-  office and surf data.
 - **Aurora estimates work for any office.** Offices missing from the magnetic latitude table read
   as the equator, so aurora never looked possible. Their magnetic latitude is now worked out from
   the configured location.
