@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Space for any office.** Space weather, aurora, meteor showers and eclipses are now a
-  `NOAA Space` entry of their own, one per forecast office and named after it, such as
-  `NOAA MQT Space`. Setting up a location ends by adding its office's Space entry, worked out for
-  that location. An office that already has one is marked **already added** and shared, and
-  **No space data** adds none. **Add entry** → **Space weather, aurora, meteor showers and
-  eclipses** adds Space for another location, such as a cabin up north, with no weather entry
-  for it.
+  `NOAA Space` entry of their own, one per forecast office, such as `NOAA Space - Marquette, MI`
+  with its `NOAA MQT Space` device. Setting up a location ends by adding its office's Space entry,
+  worked out for that location. An office that already has one is marked **already added** and
+  shared, and **No space data** adds none. **Add entry** → **Space weather, aurora, meteor
+  showers and eclipses** adds Space for another location, such as a cabin up north, with no
+  weather entry for it. It's refused for an office that already has a Space entry, and for a
+  location NWS doesn't name an office for.
 
 ### Changed
 - **Space is its own entry.** A weather entry now has only its `NOAA {OFFICE} Weather` device.

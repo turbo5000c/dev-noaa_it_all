@@ -693,6 +693,11 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         options, default_code, no_within_radius = _build_office_options(
             self._latitude, self._longitude, self._point
         )
+        if no_within_radius:
+            # Neither NWS nor the coastal table knows an office for the
+            # location. The nearest coastal offices would be offered, and one
+            # chosen here takes that office's only Space entry for good.
+            return self.async_abort(reason="space_no_office")
         if user_input is not None:
             office_code = user_input.get(CONF_OFFICE_CODE)
             if office_code in options:

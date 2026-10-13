@@ -1341,11 +1341,22 @@ class TestSpaceOnlyFlow(unittest.TestCase):
         # A Space entry on its own adds no other entries.
         self.assertEqual(_added_entries(flow), [])
 
-    def test_without_nws_the_coastal_offices_are_offered(self):
-        flow, form = self._office_form(point=None)
-        self.assertIn("50 miles", form["description_placeholders"]["warning"])
-        result = _run(flow.async_step_space_office(user_input={"office_code": "LOX"}))
-        self.assertEqual(result["title"], "NOAA Space - Los Angeles, CA")
+    def test_without_an_office_for_the_location_it_is_refused(self):
+        """A distant coastal office chosen here would take that office's only Space entry."""
+        flow, result = self._office_form(point=None)
+        self.assertEqual(result, {"type": "abort", "reason": "space_no_office"})
+
+    def test_without_nws_a_coastal_office_nearby_is_offered(self):
+        flow = _flow()
+        with patch(
+            "noaa_it_all.config_flow.async_lookup_point", AsyncMock(return_value=None),
+        ):
+            form = _run(flow.async_step_space_location(user_input={
+                "latitude": _WILMINGTON[0], "longitude": _WILMINGTON[1],
+            }))
+        self.assertEqual(form["step_id"], "space_office")
+        result = _run(flow.async_step_space_office(user_input={"office_code": "ILM"}))
+        self.assertEqual(result["title"], "NOAA Space - Wilmington, NC")
 
     def test_an_office_not_offered_is_rejected(self):
         flow, _ = self._office_form()

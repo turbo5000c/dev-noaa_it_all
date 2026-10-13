@@ -19,7 +19,7 @@ from .const import (
     OFFICE_COORDINATES, OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
     RADAR_FRAME_DIR,
 )
-from .config_flow import NWS_OFFICES, add_entry_by_import, add_space_entry_by_import
+from .config_flow import add_entry_by_import, add_space_entry_by_import
 from .entry_config import resolve_entry_config
 from .offices import (
     ALL_SURF_ENTITIES,
@@ -118,7 +118,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         **(changes.get("options", entry.options) or {}),
     }
     if is_weather_entry(conf):
-        _async_add_space_entry(hass, conf, changes.get("title", entry.title))
+        _async_add_space_entry(
+            hass, entry, conf, changes.get("data", entry.data), changes.get("title", entry.title)
+        )
     hass.config_entries.async_update_entry(entry, **changes, version=3)
     return True
 
@@ -169,14 +171,24 @@ def _async_split_version_1(hass: HomeAssistant, entry: ConfigEntry) -> dict:
     return {"data": data, "options": options, "title": title}
 
 
-def _async_add_space_entry(hass: HomeAssistant, conf: dict, title: str) -> None:
-    """Add the Space entry of a weather entry's office, at its location.
+def _async_add_space_entry(
+    hass: HomeAssistant, entry: ConfigEntry, conf: dict, data: dict, title: str
+) -> None:
+    """Add the Space entry of a weather entry's office, where its Space was.
 
-    Before 0.10.0 every weather entry had a Space device for its office. Weather
-    entries in the same office share one Space entry: their Space entities had
-    the same unique IDs, so only one of them ever had any.
+    Before 0.10.0 every weather entry had a Space device for its office.
+    Weather entries in the same office share one Space entry: their Space
+    entities had the same unique IDs, so only the one that set up first ever
+    had any, and the Space entry goes to that one's location. Only the first of
+    them to upgrade adds it, so a Space entry deleted after the upgrade stays
+    deleted when another of them is enabled later.
     """
     office = conf.get(CONF_OFFICE_CODE)
+    if _space_already_moved(hass, entry, office):
+        return
+    owner = _space_owner(hass, entry, office)
+    if owner is not None:
+        conf, data, title = resolve_entry_config(owner), owner.data, owner.title
     latitude, longitude = conf.get(CONF_LATITUDE), conf.get(CONF_LONGITUDE)
     if latitude is None or longitude is None:
         # Saved without a location, its Space had no meteor showers or
@@ -188,18 +200,51 @@ def _async_add_space_entry(hass: HomeAssistant, conf: dict, title: str) -> None:
             title,
         )
         return
-    add_space_entry_by_import(hass, office, latitude, longitude, _space_place(office, title))
+    place = _space_place(office, data.get(CONF_OFFICE_CODE), title)
+    add_space_entry_by_import(hass, office, latitude, longitude, place)
 
 
-def _space_place(office: str, title: str) -> str:
-    """Return the place an upgraded Space entry's title names."""
-    if office in NWS_OFFICES:
-        return NWS_OFFICES[office]
+def _space_already_moved(hass: HomeAssistant, entry: ConfigEntry, office: str) -> bool:
+    """Return True if another weather entry in the office is on version 3 already."""
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id == entry.entry_id or other.version < 3:
+            continue
+        other_conf = resolve_entry_config(other)
+        if is_weather_entry(other_conf) and other_conf.get(CONF_OFFICE_CODE) == office:
+            return True
+    return False
+
+
+def _space_owner(hass: HomeAssistant, entry: ConfigEntry, office: str):
+    """Return the other weather entry the office's Space entities belong to, or None."""
+    try:
+        ent_reg = er.async_get(hass)
+        for platform, suffix in SPACE_ENTITIES:
+            entity_id = ent_reg.async_get_entity_id(platform, DOMAIN, f"noaa_{office}_{suffix}")
+            if not entity_id:
+                continue
+            owner = hass.config_entries.async_get_entry(ent_reg.async_get(entity_id).config_entry_id)
+            if (
+                owner is not None and owner.entry_id != entry.entry_id
+                and is_weather_entry(resolve_entry_config(owner))
+            ):
+                return owner
+            return None
+    except Exception:  # noqa: BLE001 - the upgrading entry's own location is used instead
+        _LOGGER.exception("Could not read which entry has the %s Space entities", office)
+    return None
+
+
+def _space_place(office: str, setup_office: str, title: str):
+    """Return the place an upgraded Space entry's title names, or None for its office's name.
+
+    A weather entry's title names the office it was set up with, and keeps it
+    when Configure moves the entry to another office.
+    """
     prefix = "NOAA Weather - "
-    if title.startswith(prefix) and len(title) > len(prefix):
-        # An inland office: the name NWS gave it at setup.
+    if office == setup_office and title.startswith(prefix) and len(title) > len(prefix):
         return title[len(prefix):]
-    return office
+    return None
 
 
 def _surf_device(hass: HomeAssistant, office: str):

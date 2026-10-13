@@ -80,7 +80,7 @@ The integration has five kinds of entry, each listed separately under **Settings
 
    <img width="420" alt="Choose Surf Forecast Office step with ILM - Wilmington, NC selected" src="docs/images/setup-surf.png" />
 
-5. Choose **Space**: space weather, aurora, meteor showers and eclipses, as a `NOAA Space` entry named after the forecast office. `NOAA ILM Space - this location` adds it, worked out for this location. Each office has one Space entry:
+5. Choose **Space**: space weather, aurora, meteor showers and eclipses, as a `NOAA Space` entry for the forecast office, with a device named after it. `NOAA ILM Space - this location` adds it, worked out for this location. Each office has one Space entry:
    - **already added** means the office has one already. The location shares it, and it stays at its own location.
    - The other offices' Space entries are listed as **already added** too. Choosing one, or **No space data**, adds nothing.
 
@@ -104,7 +104,7 @@ Use **Add entry** on the NOAA It All page and pick from the same menu. **Hurrica
 
   <img width="420" alt="Nearshore Marine Forecast step with LMZ741 entered as the marine zone ID" src="docs/images/setup-marine.png" />
 
-- **Space weather, aurora, meteor showers and eclipses** asks for a location, pre-filled from your Home zone, then the forecast office it's named after. Use it for aurora, meteor showers and eclipses somewhere other than your weather locations, such as a cabin near Marquette (`NOAA MQT Space`). Each office has one Space entry, so an office that has one is refused.
+- **Space weather, aurora, meteor showers and eclipses** asks for a location, pre-filled from your Home zone, then its forecast office. Use it for aurora, meteor showers and eclipses somewhere other than your weather locations, such as a cabin near Marquette (`NOAA Space - Marquette, MI`, device `NOAA MQT Space`). Each office has one Space entry, so an office that has one is refused. So is a location NWS doesn't name an office for, as when NWS is down: try again later.
 
 #### Change a location
 

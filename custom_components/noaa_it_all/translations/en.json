@@ -50,7 +50,7 @@
       },
       "space_location": {
         "title": "Space for a Location",
-        "description": "Detected Home Assistant Home location: {ha_location}.\n\nAurora, meteor showers and eclipses are worked out for this location. If a Home location is configured, latitude and longitude have been pre-filled from your Home Assistant Home zone; otherwise enter them manually. The NWS forecast office for this location is suggested in the next step, and the Space entry is named after it.",
+        "description": "Detected Home Assistant Home location: {ha_location}.\n\nAurora, meteor showers and eclipses are worked out for this location. If a Home location is configured, latitude and longitude have been pre-filled from your Home Assistant Home zone; otherwise enter them manually. The NWS forecast office for this location is suggested in the next step, and the Space device is named after it.",
         "data": {
           "latitude": "Latitude",
           "longitude": "Longitude"
@@ -58,7 +58,7 @@
       },
       "space_office": {
         "title": "Choose NWS Forecast Office",
-        "description": "Select the NOAA / NWS forecast office for {latitude}, {longitude}. The Space entry is named after it, as in NOAA ILM Space, and each office has one. The office NWS names for this location is pre-selected, followed by the nearby coastal offices.\n\n{warning}",
+        "description": "Select the NOAA / NWS forecast office for {latitude}, {longitude}. Each office has one Space entry, and its device is named after the office, as in NOAA ILM Space. The office NWS names for this location is pre-selected, followed by the nearby coastal offices.\n\n{warning}",
         "data": {
           "office_code": "NWS Forecast Office"
         }
@@ -83,7 +83,8 @@
       "already_in_progress": "This is already being set up.",
       "marine_already_configured": "The marine forecast for this zone is already set up.",
       "space_already_configured": "This office already has a Space entry. Each office has one: add Space for a location in another office instead.",
-      "invalid_space": "Space needs an NWS forecast office and a location."
+      "invalid_space": "Space needs an NWS forecast office and a location.",
+      "space_no_office": "NWS didn't name a forecast office for this location, and Space is named after one. If NWS is down, try again in a moment. Locations outside NWS coverage can't have Space."
     }
   },
   "options": {
