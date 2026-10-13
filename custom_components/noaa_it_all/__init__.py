@@ -123,10 +123,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
     # ---- Optionally follow a person or device tracker ----
-    # Moves the data looked up from coordinates, plus radar and the forecast
-    # discussion, which follow the radar site and office the NWS names for
-    # the followed location. Surf stays on home -- it comes from per-office
-    # station tables -- as do meteor showers and eclipses.
+    # Moves only the data looked up from coordinates. Meteor showers and
+    # eclipses stay on home, as do radar, surf and the forecast discussion,
+    # which are keyed on the office.
     location_tracker = None
     tracked_entity = conf.get(CONF_TRACKED_ENTITY)
     if tracked_entity and latitude is not None and longitude is not None:
@@ -135,8 +134,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             tracked_entity,
             (latitude, longitude),
             (alerts_coord, observations_coord, forecast_coord, cloud_cover_coord),
-            radar_coordinator=radar_coord,
-            discussion_coordinator=discussion_coord,
         )
         # Before the first refresh, so that refresh is already for the right place.
         await location_tracker.async_start()
