@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Nearshore marine forecasts for the Great Lakes.** **Add entry → Nearshore marine forecast**
   takes an NWS marine zone such as `LMZ741` and adds a `NOAA Marine - <zone name>` entry. Its
-  Forecast sensor shows the current period's forecast, with every period and any advisories in its
-  attributes. NWS supplies the office and name, and setup checks the zone is in that office's
-  Nearshore Marine Forecast. Delete marine entries before going back to 0.8.0. Thanks @gjsiii. (#37)
+  Period sensor is the current forecast period, such as `Rest Of Today`, and its Forecast sensor is
+  that period's forecast, with every period and any advisories in its attributes. NWS supplies the
+  office and name, and setup checks the zone is in that office's Nearshore Marine Forecast. Delete
+  marine entries before going back to 0.8.0. Thanks @gjsiii. (#37)
 
 ## [0.8.0]
 

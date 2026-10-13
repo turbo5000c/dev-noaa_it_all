@@ -435,5 +435,34 @@ class TestMarineForecastSensor(unittest.TestCase):
         self.assertEqual(sensor.extra_state_attributes, {"periods": []})
 
 
+class TestMarinePeriodSensor(unittest.TestCase):
+
+    def _make(self, data="fixture"):
+        from noaa_it_all.sensors.surf import MarinePeriodSensor
+        coord = MagicMock()
+        if data == "fixture":
+            data = {"forecast": parse_nearshore_forecast(_fixture(), "LMZ741")}
+        coord.data = data
+        return MarinePeriodSensor(coord, "LOT", "LMZ741")
+
+    def test_state_is_the_first_period_name(self):
+        self.assertEqual(self._make().state, "Rest Of Today")
+
+    def test_identity(self):
+        sensor = self._make()
+        self.assertEqual(sensor.name, "Period")
+        self.assertEqual(sensor._attr_unique_id, "noaa_LMZ741_marine_period")
+
+    def test_shares_the_forecast_device(self):
+        from noaa_it_all.sensors.surf import MarineForecastSensor
+        period = self._make()
+        forecast = MarineForecastSensor(period.coordinator, "LOT", "LMZ741")
+        self.assertEqual(period.device_info, forecast.device_info)
+
+    def test_no_data(self):
+        self.assertIsNone(self._make(data=None).state)
+        self.assertIsNone(self._make(data={"forecast": {"periods": []}}).state)
+
+
 if __name__ == "__main__":
     unittest.main()
