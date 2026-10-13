@@ -12,34 +12,31 @@
   <img src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/icon.png" width="120" alt="NOAA It All"><br>
 </p>
 
-This Home Assistant integration provides comprehensive NOAA data through sensors and images, with the latest addition of location-specific rip current and surf zone forecasts.
+This Home Assistant integration brings NOAA and National Weather Service data into Home Assistant as sensors, binary sensors, images and a weather entity:
 
-## 
+- **Weather for your location**: observations, forecasts, NWS alerts, radar and the forecast discussion, from any NWS forecast office
+- **Surf for any coast**: rip current risk, surf height and water temperature from the coastal office you choose
+- **Nearshore marine forecasts** for Great Lakes marine zones
+- **Hurricanes**: NHC activity and outlooks, and GOES satellite images
+- **Space**: geomagnetic activity, aurora, solar radiation storms, meteor showers and eclipses, worked out for where you are
+
 > example using mushroom-template-card
 
 <p align="center">
-<img width="429" height="221" alt="image" src="https://github.com/user-attachments/assets/9ba0e041-afbc-4dcd-8457-5a09dc33814d" />
+<img width="429" height="221" alt="Forecast card showing Today and Tonight with icons, temperatures and the NWS detailed forecast" src="https://github.com/user-attachments/assets/9ba0e041-afbc-4dcd-8457-5a09dc33814d" />
 
 
 </p>
 
 ## Installation & Configuration
 
+Requires Home Assistant **2026.3.0** or newer.
+
 ### HACS Installation (Recommended)
-
-#### Option 1: HACS Default Store (after acceptance)
 1. Open HACS in Home Assistant
-2. Click **Integrations**
-3. Search for "NOAA It All"
-4. Click **Download**
-5. Restart Home Assistant
-
-#### Option 2: HACS Custom Repository
-1. Open HACS in Home Assistant
-2. Click the three-dot menu (⋮) → **Custom repositories**
-3. Add `https://github.com/dawg-io/noaa_it_all` with category **Integration**
-4. Click **Download** on the NOAA It All card
-5. Restart Home Assistant
+2. Search for "NOAA It All" and open it
+3. Click **Download**
+4. Restart Home Assistant
 
 ### Manual Installation
 1. Download the latest release from [GitHub Releases](https://github.com/dawg-io/noaa_it_all/releases)
@@ -48,136 +45,268 @@ This Home Assistant integration provides comprehensive NOAA data through sensors
 
 ### Configuration
 
-#### Config Flow (Recommended - New!)
-The integration has three kinds of entry, each listed separately under **Settings → Devices & Services → NOAA It All**:
+The integration has four kinds of entry, each listed separately under **Settings → Devices & services → NOAA It All**:
 
 | Entry | Title | Devices |
 |---|---|---|
-| Weather for a location | `NOAA Weather - Las Vegas, NV` | `NOAA VEF Weather`, `NOAA VEF Space` |
+| Weather for a location | `NOAA Weather - Wilmington, NC` | `NOAA ILM Weather`, `NOAA ILM Space` |
 | Surf forecast for a coast | `NOAA Surf - Wilmington, NC` | `NOAA ILM Surf` |
 | Nearshore marine forecast for a Great Lakes zone | `NOAA Marine - Wilmette Harbor to Northerly Island IL` | `NOAA LMZ741 Marine` |
 | Hurricanes and satellite images | `NOAA Hurricane` | `NOAA Hurricane` |
 
-Add a location first:
-1. Go to **Settings** → **Integrations** → **Add Integration**
-2. Search for "NOAA It All" and choose **Weather for a location**
-3. **Enter your Latitude and Longitude** (required) - Weather observations will be fetched from the nearest station to this location
 <p align="left">
-<img width="485" height="409" alt="image" src="https://github.com/user-attachments/assets/556faa39-2eee-45e7-8ba0-6771a334ef0a" />
+<img width="560" alt="The NOAA It All page under Devices &amp; services, with a Hurricane, a Marine, a Surf and a Weather entry" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/entries.png" />
 </p>
-4. Select your **NWS Forecast Office** from the dropdown. The office NWS names for your location is pre-selected (e.g., ILM for Wilmington, VEF for Las Vegas, BOU for Denver), followed by the nearby coastal offices. If NWS can't be reached, only the coastal offices are listed.
-5. Choose a **surf forecast office**. Only coastal offices issue Surf Zone Forecasts, so this is the coast whose rip current risk, surf height and water temperature you want, added as its own `NOAA Surf` entry. The nearest is pre-selected; pick another to follow a beach you visit, or choose **No surf data**. Each office is listed with its distance and what it provides, e.g. `SGX - San Diego, CA (260.6 mi) - rip current, water temp, surf height`:
-   - Every office gives rip current risk. Water temperature needs a tide station and surf height a buoy; a new surf entry for an office without one doesn't get that entity, so nothing sits at unknown.
-   - **no forecast this week** means NWS hasn't issued one for that office in the last 7 days. The Great Lakes offices, for example, only issue them in summer.
+
+#### Add a location
+
+1. Go to **Settings** → **Devices & services** → **Add integration**, search for "NOAA It All", and choose **Weather for a location**.
+
+   <img width="420" alt="The NOAA It All setup menu: Weather for a location, Surf forecast for a coast, Nearshore marine forecast for a Great Lakes zone, Hurricanes and satellite images" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-menu.png" />
+
+2. Enter the **latitude and longitude** (required). They're pre-filled from your Home Assistant Home zone; change them to use another location. Observations come from the NWS station nearest to them, and alerts, forecasts, cloud cover, aurora, meteor shower and eclipse entities use them too.
+
+   <img width="420" alt="Weather for a Location step with latitude and longitude fields" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-location.png" />
+
+3. Select your **NWS Forecast Office**. The office NWS names for your location is pre-selected (e.g., ILM for Wilmington, VEF for Las Vegas, BOU for Denver), followed by any coastal offices within 50 miles. If NWS can't be reached, only coastal offices are listed.
+
+   <img width="420" alt="Choose NWS Forecast Office step with ILM - Wilmington, NC selected" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-office.png" />
+
+4. Choose a **surf forecast office**. Only coastal offices issue Surf Zone Forecasts, so this is the coast whose rip current risk, surf height and water temperature you want, added as its own `NOAA Surf` entry. The nearest is pre-selected; pick another to follow a beach you visit, or choose **No surf data**. Each office is listed with its distance and what it provides, e.g. `ILM - Wilmington, NC (4.0 mi) - rip current, water temp, surf height`:
+   - Every office gives rip current risk. Water temperature needs a tide station and surf height a buoy; a new surf entry for an office without one doesn't get that entity, so nothing sits at unknown. See [NWS Forecast Offices](#nws-forecast-offices) for which offices have which.
+   - **no forecast this week** means NWS hasn't issued one for that office in the last 7 days. Some offices, such as the Great Lakes ones, only issue them in their summer season.
    - **already added** means another entry already uses that office's surf entry, which is shared rather than added twice.
 
-A location set up as the integration's first entry also adds the `NOAA Hurricane` entry. Delete it if you don't want hurricane and satellite entities; nothing adds it back. To add another beach, or hurricanes again, use **Add entry** and choose **Surf forecast for a coast** or **Hurricanes and satellite images**.
+   <img width="420" alt="Choose Surf Forecast Office step with ILM - Wilmington, NC selected" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-surf.png" />
 
-Upgrading from 0.7.x splits each existing entry the same way, once: the location becomes a `NOAA Weather` entry, and its surf and the hurricane entities move to their own entries, keeping their entity IDs and history. Every surf entity you had is kept, including Water Temperature or Surf Height read from the forecast text where the office has no station. After upgrading, going back to 0.7.x needs the integration removed and added again, and the Home Assistant page needs a reload for the new setup screens to show.
+5. Assign the devices to areas, or choose **Skip and finish**. A weather entry has two devices, `NOAA ILM Weather` and `NOAA ILM Space`. The surf entry, and the hurricane entry on a first setup, are added alongside it.
+
+   <img width="420" alt="Name and assign step listing the NOAA ILM Space and NOAA ILM Weather devices" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-devices.png" />
+
+A location set up as the integration's first entry also adds the `NOAA Hurricane` entry. Delete it if you don't want hurricane and satellite entities; nothing adds it back.
+
+#### Add more beaches, marine zones or hurricanes
+
+Use **Add entry** on the NOAA It All page and pick from the same menu. **Hurricanes and satellite images** is only offered while there's no `NOAA Hurricane` entry.
+
+- **Surf forecast for a coast** lists every coastal office that doesn't have a surf entry yet, nearest to your Home zone first.
+
+  <img width="420" alt="Surf forecast office list: MHX, CHS, AKQ and more, each with its distance and what it provides, some marked no forecast this week" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/add-surf-offices.png" />
+
+- **Nearshore marine forecast for a Great Lakes zone** takes an NWS marine zone ID such as `LMZ741`. NWS supplies the zone's office and name, and setup checks the zone is in that office's Nearshore Marine Forecast. To find a zone ID, open the zone's [marine forecast](https://forecast.weather.gov/shmrn.php?mz=lmz741) on weather.gov; the ID is in the page address (`mz=lmz741`). Open-lake and ocean zones aren't covered.
+
+  <img width="420" alt="Nearshore Marine Forecast step with LMZ741 entered as the marine zone ID" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/setup-marine.png" />
+
+#### Change a location
+
+**Configure** (the gear on a `NOAA Weather` entry) walks through the latitude and longitude, the forecast office, then how many hours the radar loop covers (see [Radar loop history](#image-entities)). Surf, marine and hurricane entries have nothing to configure: add or delete them instead.
+
 <p align="left">
-<img width="490" height="222" alt="image" src="https://github.com/user-attachments/assets/0c9711bc-9c7b-428d-b7de-a405e07299e8" />
+<img width="420" alt="Radar Loop History options step with Hours of radar history set to 24" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/options-radar.png" />
 </p>
-6. Complete the setup
-<p align="left">
-<img width="480" height="794" alt="image" src="https://github.com/user-attachments/assets/2688c4dd-b6c6-4449-9ce2-37f5552335a8" />
-</p>
-**Important:** Starting with version 0.4.0, latitude and longitude are required fields for proper weather entity setup. Weather data is now fetched from the nearest observation station to your specified coordinates using the weather.gov API, rather than defaulting to the Home Assistant location or using a predefined office-to-station mapping.
+
+#### Upgrading from 0.7.x
+
+Upgrading splits each existing entry once: the location becomes a `NOAA Weather` entry, and its surf and the hurricane entities move to their own entries, keeping their entity IDs and history. Every surf entity you had is kept, including Water Temperature or Surf Height read from the forecast text where the office has no station. Reload the Home Assistant page afterwards so the new setup screens show. Going back to 0.7.x afterwards needs the integration removed and added again.
 
 #### Legacy YAML Configuration
 
 > **Removed.** YAML configuration is no longer supported and creates **no entities**. If
 > `noaa_it_all:` is present in `configuration.yaml`, the integration logs an error and sets nothing
-> up. Remove the block and add the integration through **Settings → Devices & Services → Add
+> up. Remove the block and add the integration through **Settings → Devices & services → Add
 > Integration → NOAA It All**.
 
 ## Device Grouping and Organization
 
-NOAA It All organizes entities into logical device groups for better organization in Home Assistant. All entities are automatically grouped under one of the following devices:
+Every entity belongs to one of five kinds of device. A weather entry has a Weather and a Space device for its office, and each surf, marine and hurricane entry has one device. The screenshots below are from a Wilmington, NC (ILM) setup.
 
 ### Device Groups Overview
 
-#### 🌌 NOAA Space
-Space weather monitoring — aurora visibility, geomagnetic storms, solar radiation alerts — plus the meteor shower and eclipse forecasts
-- **Device ID**: `noaa_{office}_space`
-- **Location**: Space weather is global; meteor shower and eclipse entities use your configured latitude/longitude
-- **Update Frequency**: 10 minutes for space weather, 30 minutes for meteor showers; eclipses recompute hourly, tightening to every minute while one is under way
+#### 📍 NOAA {OFFICE} Weather
+Location-specific weather observations, forecasts, alerts and radar, in the `NOAA Weather - <office>` entry
+- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_ILM_weather`)
+- **Location**: Your configured NWS office and coordinates
+- **Update Frequency**: 10 minutes
+- **Entities**: 22: nine observations, two forecasts, the weather entity, Active NWS Alerts and four alert binary sensors, cloud cover, the forecast discussion, and the radar timestamp, image and loop
 
 <p align="left">
-<img width="330" height="620" alt="image" src="https://github.com/user-attachments/assets/50d6d649-dec7-4a52-a6db-d53488b7bbc3" />
+  <img width="270" alt="NOAA ILM Weather device: weather entity, alert binary sensors, observations, forecasts and radar images" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/device-weather.png" />
+</p>
+
+#### 🌌 NOAA {OFFICE} Space
+Space weather (geomagnetic storms, Kp, aurora, solar radiation storms) plus the meteor shower and eclipse forecasts, in the `NOAA Weather - <office>` entry
+- **Device ID**: `noaa_{office}_space` (e.g., `noaa_ILM_space`)
+- **Location**: Space weather is global; aurora, meteor shower and eclipse entities use your configured latitude and longitude
+- **Update Frequency**: 10 minutes for space weather and its images, 30 minutes for meteor showers. Eclipses recompute hourly, every 5 minutes in the 6 hours before one, and every minute while one is under way
+- **Entities**: 20: eight space weather sensors, three meteor shower and four eclipse sensors, three binary sensors, and two images
+
+<p align="left">
+  <img width="295" alt="NOAA ILM Space device: aurora, eclipse, geomagnetic, meteor shower, Kp and solar radiation entities" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/device-space.png" />
+</p>
+
+#### 🌊 NOAA {OFFICE} Surf
+Rip current risk, surf height and water temperature for one coastal office, in its `NOAA Surf - <office>` entry
+- **Device ID**: `noaa_{office}_surf` (e.g., `noaa_ILM_surf`)
+- **Location**: The coastal office's surf zones. A new surf entry only gets Water Temperature and Surf Height where the office has a tide station or buoy
+- **Update Frequency**: 10 minutes
+- **Entities**: 2 to 4: Rip Current Risk and Unsafe to Swim, plus Water Temperature and Surf Height where available
+
+<p align="left">
+  <img width="320" alt="NOAA ILM Surf device: Rip Current Risk, Surf Height, Unsafe to Swim, Water Temperature" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/device-surf.png" />
+</p>
+
+#### ⛵ NOAA {ZONE} Marine
+The nearshore marine forecast for one Great Lakes marine zone, in its `NOAA Marine - <zone name>` entry
+- **Device ID**: `noaa_{ZONE}_marine` (e.g., `noaa_LMZ741_marine`)
+- **Location**: The marine zone
+- **Update Frequency**: 10 minutes
+- **Entities**: `sensor.noaa_{zone}_marine_period` and `sensor.noaa_{zone}_marine_forecast`
+
+<p align="left">
+  <img width="320" alt="NOAA LMZ741 Marine device: Forecast and Period sensors" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/device-marine.png" />
 </p>
 
 #### 🌀 NOAA Hurricane
 Global hurricane tracking and GOES satellite imagery, in the `NOAA Hurricane` entry
 - **Device ID**: `noaa_hurricane`
 - **Location**: Independent (global NHC/GOES data)
-- **Update Frequency**: 5 minutes
+- **Update Frequency**: 10 minutes
 - **Entities**: `sensor.noaa_hurricane_activity`, `sensor.noaa_hurricane_alerts`, `image.noaa_hurricane_outlook_image`, `image.noaa_hurricane_pacific_outlook_image`, `image.noaa_hurricane_goes_air_mass`, `image.noaa_hurricane_goes_geocolor`
 
 <p align="left">
-  <img width="327" height="380" alt="image" src="https://github.com/user-attachments/assets/7b484039-abe9-4c14-ab37-91b41d084411" />
+  <img width="320" alt="NOAA Hurricane device: Activity, Alerts, GOES Air Mass, GOES Geocolor, Outlook Image, Pacific Outlook Image" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/device-hurricane.png" />
 </p>
 
 > **Important**: Hurricane and GOES satellite entities live under **NOAA Hurricane** only, in its own entry. There is one, however many locations are configured.
 
-#### 🌊 NOAA {OFFICE} Surf
-Surf conditions, rip currents, and water temperature for one coastal office, in its `NOAA Surf - <office>` entry
-- **Device ID**: `noaa_{office}_surf` (e.g., `noaa_ILM_surf`)
-- **Location**: The coastal office's surf zones. A new surf entry only gets Water Temperature and Surf Height where the office has a tide station or buoy
-- **Update Frequency**: 5 minutes
-
-<p align="left">
-  <img width="331" height="330" alt="image" src="https://github.com/user-attachments/assets/10961ad3-b813-4f82-9af4-ca02ad2682bf" />
-</p>
-
-#### 📍 NOAA {OFFICE} Weather
-Location-specific weather observations, forecasts, alerts, and radar — **one device per configured NWS office** (e.g., "NOAA ILM Weather" for Wilmington, NC, "NOAA ILM Weather" for Wilmington)
-- **Device ID**: `noaa_{office}_weather` (e.g., `noaa_ILM_weather`)
-- **Location**: Specific to configured NWS office and coordinates
-- **Update Frequency**: 5 minutes
-- **Radar image**: `image.noaa_{office}_weather_radar_base_reflectivity` (e.g., `image.noaa_ilm_weather_radar_base_reflectivity`)
-
-<p align="left">
-  <img width="263" height="910" alt="image" src="https://github.com/user-attachments/assets/63d814c0-832c-485f-9317-f16dba72b6c0" />
-</p>
-
-> **Tip**: In Home Assistant's device view (Settings → Devices & Services), click on any NOAA device to see all related entities grouped together. This makes it easy to create dashboard cards and automations for specific categories of data.
+> **Tip**: Under **Settings → Devices & services**, click any NOAA device to see its entities together. This makes it easy to create dashboard cards and automations for specific categories of data.
 
 ## Available Entities
 
-### Global Sensors (Available with all configurations)
-- **Kp Index**: Planetary average of geomagnetic activity, updated every 3 hours *(NOAA Space)*
-- **Geomagnetic Storm Measurements**: Long-term measure of geomagnetic storm intensity *(NOAA Space)*
-- **Hurricane Alerts**: Number of active hurricane/tropical storm warnings and watches *(NOAA Hurricane)*
-- **Hurricane Activity**: Overall hurricane activity status (Quiet, Low, Moderate, High) *(NOAA Hurricane)*
+### Entity Reference
 
-### Location-Specific Sensors (Config Flow Only)
-- **Rip Current Risk**: Current risk level (Low, Moderate, High) from your NWS office's surf zone forecast *(NOAA Surf)*
-- **Surf Height**: Wave height estimates in feet from local surf zone forecasts *(NOAA Surf)*
-- **Marine Forecast** *(NOAA {ZONE} Marine)*: Nearshore marine forecast for one Great Lakes marine zone (for example `LMZ741` on Lake Michigan), as two sensors. `sensor.noaa_lmz741_marine_period` is the current forecast period, such as `Rest Of Today`, and `sensor.noaa_lmz741_marine_forecast` is that period's forecast, such as `West winds 10 to 20 kt becoming northeast. Partly cloudy. Waves 1 to 2 ft.` The forecast's `periods` attribute lists every period as `name` and `detailed_forecast`, with any advisories in `headlines`. If the office hasn't issued a forecast in 24 hours, both are unavailable rather than showing an old one. Add it with **Add entry → Nearshore marine forecast for a Great Lakes zone** and the zone ID; NWS supplies the zone's office and name, and setup checks the zone is in that office's Nearshore Marine Forecast (NSH).
-- **Water Temperature**: Local water temperature from surf zone forecasts *(NOAA Surf)*
-- **Unsafe to Swim**: Binary sensor indicating dangerous rip current conditions *(NOAA Surf)*
+Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine zone. Replace `ilm` with your office code and `lmz741` with your zone, in lower case. The sections after the tables describe each group in detail.
 
-### NWS Active Weather Alerts (Config Flow Only)
-Real-time monitoring of National Weather Service alerts for your location *(NOAA Weather [OFFICE])*:
+**NOAA {OFFICE} Weather** (22)
 
-**Binary Sensors (True/False):**
+| Entity ID | State |
+|---|---|
+| `weather.noaa_ilm_weather` | Weather entity: condition, temperature and forecasts |
+| `sensor.noaa_ilm_weather_temperature` | °F |
+| `sensor.noaa_ilm_weather_feels_like` | °F, heat index or wind chill |
+| `sensor.noaa_ilm_weather_humidity` | % |
+| `sensor.noaa_ilm_weather_dewpoint` | °F |
+| `sensor.noaa_ilm_weather_wind_speed` | mph |
+| `sensor.noaa_ilm_weather_wind_direction` | Degrees; `cardinal_direction` attribute |
+| `sensor.noaa_ilm_weather_barometric_pressure` | inHg |
+| `sensor.noaa_ilm_weather_visibility` | mi |
+| `sensor.noaa_ilm_weather_sky_conditions` | Text, e.g. `Mostly Clear` |
+| `sensor.noaa_ilm_weather_cloud_cover` | % |
+| `sensor.noaa_ilm_weather_extended_forecast` | Number of periods, e.g. `14 periods` |
+| `sensor.noaa_ilm_weather_hourly_forecast` | This hour's forecast temperature |
+| `sensor.noaa_ilm_weather_forecast_discussion` | `Available`; text in attributes |
+| `sensor.noaa_ilm_weather_active_nws_alerts` | Number of active alerts |
+| `sensor.noaa_ilm_weather_radar_timestamp` | Time of the latest radar image |
+| `binary_sensor.noaa_ilm_weather_severe_weather_alert` | On (Unsafe) during a severe weather alert |
+| `binary_sensor.noaa_ilm_weather_flood_winter_alert` | On (Unsafe) during a flood or winter alert |
+| `binary_sensor.noaa_ilm_weather_heat_air_quality_alert` | On (Unsafe) during a heat, air quality or fire alert |
+| `binary_sensor.noaa_ilm_weather_active_alerts` | On (Unsafe) during any alert |
+| `image.noaa_ilm_weather_radar_base_reflectivity` | Time of the image |
+| `image.noaa_ilm_weather_radar_loop` | Time of the image |
+
+**NOAA {OFFICE} Space** (20)
+
+| Entity ID | State |
+|---|---|
+| `sensor.noaa_ilm_space_planetary_k_index` | Kp, 0–9 |
+| `sensor.noaa_ilm_space_planetary_k_index_rating` | `low` (Kp under 2), `moderate` (2 to under 5) or `high` |
+| `sensor.noaa_ilm_space_geomagnetic_storm` | Dst index in nT, e.g. `-13.2` |
+| `sensor.noaa_ilm_space_geomagnetic_storm_interpretation` | `No Storm (Quiet conditions)`, `Minor Storm`, `Moderate Storm`, `Strong Storm` or `Severe Storm` |
+| `sensor.noaa_ilm_space_aurora_visibility_probability` | % |
+| `sensor.noaa_ilm_space_aurora_next_time` | Estimated start, e.g. `2026-10-15 00:06 UTC` |
+| `sensor.noaa_ilm_space_aurora_duration` | Hours |
+| `sensor.noaa_ilm_space_solar_radiation_storm_alerts` | Number of SWPC alerts |
+| `sensor.noaa_ilm_space_meteor_shower_activity` | Shower most worth watching now, or `None` |
+| `sensor.noaa_ilm_space_next_meteor_shower` | Next shower to peak |
+| `sensor.noaa_ilm_space_meteor_viewing_score` | % |
+| `binary_sensor.noaa_ilm_space_meteor_shower_active` | On when a shower is worth going out for |
+| `sensor.noaa_ilm_space_next_eclipse` | Next eclipse visible here, e.g. `Partial Lunar Eclipse` |
+| `sensor.noaa_ilm_space_next_eclipse_time` | Timestamp: when to go outside |
+| `sensor.noaa_ilm_space_eclipse_coverage` | % of the disc covered |
+| `sensor.noaa_ilm_space_eclipse_viewing_score` | % |
+| `binary_sensor.noaa_ilm_space_eclipse_visible_now` | On from an hour before first contact to last contact |
+| `binary_sensor.noaa_ilm_space_eclipse_coming_up` | On two weeks before an eclipse worth planning for |
+| `image.noaa_ilm_space_geoelectric_field_image` | Time of the image |
+| `image.noaa_ilm_space_aurora_forecast_image` | Time of the image |
+
+**NOAA {OFFICE} Surf** (2 to 4)
+
+| Entity ID | State |
+|---|---|
+| `sensor.noaa_ilm_surf_rip_current_risk` | `Low`, `Moderate` or `High` |
+| `binary_sensor.noaa_ilm_surf_unsafe_to_swim` | On (Unsafe) when the rip current risk is high |
+| `sensor.noaa_ilm_surf_water_temperature` | °F, if the office has a tide station |
+| `sensor.noaa_ilm_surf_surf_height` | ft, if the office has a buoy |
+
+**NOAA {ZONE} Marine** (2)
+
+| Entity ID | State |
+|---|---|
+| `sensor.noaa_lmz741_marine_period` | Current forecast period, e.g. `Rest Of Today` |
+| `sensor.noaa_lmz741_marine_forecast` | That period's forecast text |
+
+**NOAA Hurricane** (6)
+
+| Entity ID | State |
+|---|---|
+| `sensor.noaa_hurricane_activity` | Activity level, e.g. `Quiet - No Active Storms or Alerts` |
+| `sensor.noaa_hurricane_alerts` | Number of hurricane and tropical storm watches and warnings |
+| `image.noaa_hurricane_outlook_image` | Time of the image (Atlantic) |
+| `image.noaa_hurricane_pacific_outlook_image` | Time of the image (East Pacific) |
+| `image.noaa_hurricane_goes_air_mass` | Time of the image |
+| `image.noaa_hurricane_goes_geocolor` | Time of the image |
+
+### Space Weather and Hurricane Sensors
+- **Planetary K-index**: NOAA SWPC's estimated planetary Kp, from its 1-minute feed *(NOAA Space)*
+- **Geomagnetic Storm**: The Dst index in nT, hourly from SWPC; the more negative, the stronger the storm *(NOAA Space)*
+- **Hurricane Alerts**: Number of active NWS hurricane and tropical storm warnings and watches *(NOAA Hurricane)*
+- **Hurricane Activity**: Overall activity from the NWS alerts and the NHC's active storms. The state starts with the level, `Quiet`, `Low`, `Moderate` or `High`, followed by the reason, e.g. `High - 1 Active Hurricane(s)`. The `storm_details` attribute lists each active storm with its classification, intensity, position and movement *(NOAA Hurricane)*
+
+### Surf Sensors
+For the coastal office of a `NOAA Surf` entry *(NOAA {OFFICE} Surf)*:
+- **Rip Current Risk**: Risk level (Low, Moderate, High) from the office's Surf Zone Forecast
+- **Unsafe to Swim**: Binary sensor that turns on when the Surf Zone Forecast gives a high rip current risk; the `risk_level` attribute has the level
+- **Water Temperature**: Water temperature in °F from the office's NOAA tide station. Only created for offices with one
+- **Surf Height**: Wave height in feet from the office's NDBC buoy. Only created for offices with one
+
+Rip Current Risk and Unsafe to Swim are `unknown` while the Surf Zone Forecast can't be fetched, rather than reading as safe. An entry upgraded from 0.7.x keeps any Water Temperature or Surf Height it had, read from the forecast text where the office has no station.
+
+### Nearshore Marine Forecast
+For the marine zone of a `NOAA Marine` entry, for example `LMZ741` on Lake Michigan *(NOAA {ZONE} Marine)*:
+- **Period**: The current forecast period, such as `Rest Of Today` *(sensor.noaa_{zone}_marine_period)*
+- **Forecast**: That period's forecast, such as `West winds 10 to 20 kt becoming northeast. Partly cloudy. Waves 1 to 2 ft.` *(sensor.noaa_{zone}_marine_forecast)*. The `periods` attribute lists every period as `name` and `detailed_forecast`, with any advisories in `headlines`
+
+If the office hasn't issued a forecast in 24 hours, both are unavailable rather than showing an old one. The forecasts come from the Great Lakes offices' Nearshore Marine Forecast (NSH).
+
+### NWS Active Weather Alerts
+Real-time monitoring of National Weather Service alerts for your location *(NOAA {OFFICE} Weather)*:
+
+**Binary Sensors:**
 - **Severe Weather Alert**: Active tornado, thunderstorm, hurricane, or extreme wind warnings/watches *(binary_sensor.noaa_{office}_weather_severe_weather_alert)*
 - **Flood/Winter Alert**: Active flood, winter storm, snow, ice, or freezing rain warnings/watches *(binary_sensor.noaa_{office}_weather_flood_winter_alert)*
 - **Heat/Air Quality Alert**: Active heat, air quality, fire weather, or environmental advisories *(binary_sensor.noaa_{office}_weather_heat_air_quality_alert)*
 - **Active Alerts**: General indicator for any active NWS alerts *(binary_sensor.noaa_{office}_weather_active_alerts)*
 
+Each has `alert_count` and an `alerts` list with each alert's `event`, `headline`, `severity`, `urgency`, `certainty`, `area`, `effective`, `expires` and `description`. They use the `safety` device class, so Home Assistant shows them as **Safe** or **Unsafe**.
+
 **Comprehensive Sensor:**
-- **Active NWS Alerts**: Detailed alert information including *(NOAA Weather)*:
-  - Total alert count
-  - Summary by severity (Extreme, Severe, Moderate, Minor)
-  - Summary by urgency (Immediate, Expected, Future)
-  - Breakdown by alert type (warnings, watches, advisories, statements)
-  - Full alert details with headlines, descriptions, and instructions
-  - Location-specific filtering based on configured coordinates
+- **Active NWS Alerts**: The number of active alerts *(sensor.noaa_{office}_weather_active_nws_alerts)*, with:
+  - `alert_count` and an `alerts` list with each alert's headline, description and instructions
+  - `summary`: counts of warnings, watches, advisories and statements, and counts `by_severity` (Extreme, Severe, Moderate, Minor) and `by_urgency` (Immediate, Expected, Future)
 
-> **Note**: Alert sensors update every 10 minutes and only include actual alerts (excludes test messages and drafts). All alerts are filtered to your specific location using latitude/longitude coordinates from config flow setup. Binary sensors are grouped under NOAA Weather [OFFICE] while the comprehensive sensor is under NOAA Weather.
+> **Note**: Alert sensors update every 10 minutes and only include actual alerts (excludes test messages and drafts). All alerts are filtered to your configured latitude and longitude. The binary sensors and the comprehensive sensor are all on the NOAA {OFFICE} Weather device.
 
-### Current Weather Conditions (Config Flow Only)
+### Current Weather Conditions
 Real-time weather observations from your local NWS observation station *(NOAA Weather)*:
 - **Temperature**: Current temperature in °F *(sensor.noaa_{office}_weather_temperature)*
 - **Humidity**: Relative humidity percentage *(sensor.noaa_{office}_weather_humidity)*
@@ -191,17 +320,17 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 
 > **Note**: Weather observations update every 10 minutes from the NWS observation station nearest your configured coordinates. If that station stops reporting, the next nearest (of up to three) is used until it comes back; the `station_id` attribute shows which one. Data includes automatic unit conversions to US customary units.
 
-### Aurora Visibility Alerts (Config Flow Only)
+### Aurora Visibility Alerts
 Location-aware aurora visibility predictions *(NOAA Space)*:
 - **Aurora Next Time**: Predicted timing when aurora activity may begin at your location *(sensor.noaa_{office}_space_aurora_next_time)*
 - **Aurora Duration**: Estimated length of aurora visibility in hours based on geomagnetic conditions *(sensor.noaa_{office}_space_aurora_duration)*
 - **Aurora Visibility Probability**: Percentage chance of aurora visibility from your specific location *(sensor.noaa_{office}_space_aurora_visibility_probability)*
 
-> **Note**: Aurora predictions are based on real-time Kp index data and your location's magnetic latitude. Northern locations (like Duluth, MN) have much higher visibility potential than southern locations (like Miami, FL).
+> **Note**: Aurora predictions are based on real-time Kp index data and the magnetic latitude of your office (for the coastal offices) or of your configured location (for any other office). Northern locations (like Duluth, MN) have much higher visibility potential than southern locations (like Miami, FL).
 
-### Solar Radiation Storm Alerts (Config Flow Only)
+### Solar Radiation Storm Alerts
 Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
-- **Solar Radiation Storm Alerts**: Location-aware monitoring of solar radiation storm activity with S1-S5 classification *(sensor.noaa_{office}_space_solar_radiation_storm_alerts)*
+- **Solar Radiation Storm Alerts**: The number of current SWPC alerts, with solar radiation storms classified S1-S5 *(sensor.noaa_{office}_space_solar_radiation_storm_alerts)*
   - **Storm Classification**: Automatic detection and classification of solar radiation storms (S1-S5 scale)
   - **Expected Timing**: Start and end times for radiation storm events when available
   - **Impact Assessment**: Potential impacts including satellite interference, radio blackouts, and radiation exposure risks
@@ -210,7 +339,7 @@ Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
 
 > **Note**: Solar radiation storm impacts vary by location and magnetic latitude. Higher latitudes (like Alaska and northern Canada) experience more severe effects, while equatorial regions are generally less affected. The integration provides location-specific risk assessments for your configured NWS office.
 
-### Meteor Showers (Config Flow Only)
+### Meteor Showers
 Meteor shower alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 - **Meteor Shower Activity**: The shower most worth watching right now, or `None` *(sensor.noaa_{office}_space_meteor_shower_activity)*
@@ -227,7 +356,7 @@ Meteor shower alerts and a viewing forecast for your exact location *(NOAA Space
 
 > **Note on the score**: The viewing score measures *sky conditions*, not shower strength — it is the fraction of the ideal meteor rate you would actually achieve, so a minor shower riding high under a new moon scores well while the Perseids behind a full moon score badly. Shower strength is reported separately as `expected_per_hour`. The score accounts for radiant altitude, moonlight and astronomical darkness. It does **not** account for cloud cover; pair it with `sensor.noaa_{office}_weather_cloud_cover` if you want that.
 
-### Solar and Lunar Eclipses (Config Flow Only)
+### Solar and Lunar Eclipses
 Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 - **Next Eclipse**: The next eclipse visible from where you are, named the way *you* will see it *(sensor.noaa_{office}_space_next_eclipse)*
@@ -254,7 +383,7 @@ Eclipse alerts and a viewing forecast for your exact location *(NOAA Space)*:
 
 > **Note on the score**: Unlike the meteor viewing score this deliberately does **not** factor out the strength of the event — whether the Moon covers a tenth of the Sun or all of it is the single most important thing about a solar eclipse. It accounts for how much is covered, how high the Sun or Moon sits, and for lunar eclipses how dark the sky is. It does **not** account for cloud cover; pair it with `sensor.noaa_{office}_weather_cloud_cover` if you want that.
 
-### Optional Secondary Sensors (Config Flow Only)
+### Optional Secondary Sensors
 These sensors provide additional weather data where available from NOAA/NWS *(NOAA Weather)*:
 
 - **Cloud Cover**: Current cloud coverage percentage from NWS gridpoint data *(sensor.noaa_{office}_weather_cloud_cover)*
@@ -266,27 +395,31 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
 - **Radar Timestamp**: Timestamp of the latest radar image for your NWS office *(sensor.noaa_{office}_weather_radar_timestamp)*
   - Shows when the most recent radar image was captured
   - Useful for automations or displaying radar freshness
-  - Based on NEXRAD radar site for your office location
-  - Available for most coastal and land-based offices
+  - Based on the NEXRAD radar site for your location, which NWS names during setup
+  - Not created if no radar site is known for the office
 
 - **Forecast Discussion**: Meteorologist-written forecast discussion (AFD product) *(sensor.noaa_{office}_weather_forecast_discussion)*
   - Detailed technical analysis from local NWS meteorologists
   - Includes reasoning behind forecast decisions
   - Updated when new forecast discussions are issued (typically 2-3 times daily)
-  - State is the literal `Available` (or unknown); the text lives in the `full_text` and
-    `summary` attributes
+  - State is the literal `Available` (or unknown); the text is in the `full_text` attribute,
+    and `summary` has its first 200 characters. `issue_time` says when it was issued
   - Provides insight into weather patterns and forecast confidence
 
-### Forecast Sensors and the Weather Entity (Config Flow Only)
+### Forecast Sensors and the Weather Entity
 
-- **Extended Forecast**: Multi-day NWS forecast *(sensor.noaa_{office}_weather_extended_forecast)* —
-  periods are in the `forecast` attribute
-- **Hourly Forecast**: Hour-by-hour NWS forecast *(sensor.noaa_{office}_weather_hourly_forecast)*
+- **Extended Forecast**: Multi-day NWS forecast *(sensor.noaa_{office}_weather_extended_forecast)*.
+  The state is the number of periods; the `periods` attribute lists each one with `name`,
+  `start_time`, `temperature`, `temperature_unit`, `wind_speed`, `wind_direction`,
+  `short_forecast`, `detailed_forecast` and `icon`
+- **Hourly Forecast**: Hour-by-hour NWS forecast *(sensor.noaa_{office}_weather_hourly_forecast)*.
+  The state is this hour's temperature; `current_hour` has this hour and `hourly_periods` the
+  next 48, each with `precipitation_probability` as well
 - **Weather**: A full Home Assistant weather entity backed by NWS observations and forecasts
   *(weather.noaa_{office}_weather)* — use this with the standard Weather Forecast card, and with
   `weather.get_forecasts` in templates. Note the single `weather` in the ID, not `_weather_weather`.
 
-### Derived Space Weather Sensors (Config Flow Only)
+### Derived Space Weather Sensors
 
 - **Geomagnetic Storm Interpretation**: Plain-language reading of the Dst value
   *(sensor.noaa_{office}_space_geomagnetic_storm_interpretation)*
@@ -298,9 +431,9 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
 ### Image Entities
 Visual representations of current conditions:
 
-**NOAA Space** (global, shared):
-- **Geomagnetic Field Image** — Real-time geomagnetic storm intensity visualization *(image.noaa_ilm_space_geoelectric_field_image)*
-- **Aurora Forecast Image** — Tonight's aurora coverage forecast *(image.noaa_ilm_space_aurora_forecast_image)*
+**NOAA {OFFICE} Space** (global images, one set per weather entry):
+- **Geoelectric Field Image** — Real-time geoelectric field map from SWPC *(image.noaa_{office}_space_geoelectric_field_image)*
+- **Aurora Forecast Image** — SWPC's aurora forecast map for the northern hemisphere *(image.noaa_{office}_space_aurora_forecast_image)*
 
 **NOAA Hurricane** (global, created once):
 - **Outlook Image** — 2-day tropical weather outlook from NHC, **Atlantic basin** *(image.noaa_hurricane_outlook_image)*
@@ -308,11 +441,11 @@ Visual representations of current conditions:
 - **GOES Air Mass** — GOES-19 Air Mass RGB satellite imagery *(image.noaa_hurricane_goes_air_mass)*
 - **GOES Geocolor** — GOES-19 GeoColor satellite imagery *(image.noaa_hurricane_goes_geocolor)*
 
-**NOAA {OFFICE} Weather** (one per configured office):
+**NOAA {OFFICE} Weather** (one set per weather entry):
 - **Radar Base Reflectivity** — Latest NEXRAD base reflectivity radar for your NWS office *(image.noaa_{office}_weather_radar_base_reflectivity)*
 - **Radar Loop** — Animated NEXRAD radar loop, covering up to 24 hours *(image.noaa_{office}_weather_radar_loop)*
 
-> **Radar loop history**: NOAA's own radar animation is fixed at ten frames covering roughly 50 minutes, and only those ten frames exist on its server — a longer loop cannot simply be downloaded. So the integration collects one frame per refresh and assembles the animation itself. The window defaults to **24 hours** and is set under **Settings → Devices & Services → NOAA It All → Configure**; set it to `0` to serve NOAA's 50-minute loop unchanged and store nothing.
+> **Radar loop history**: NOAA's own radar animation is fixed at ten frames covering roughly 50 minutes, and only those ten frames exist on its server — a longer loop cannot simply be downloaded. So the integration collects one frame per refresh and assembles the animation itself. The window defaults to **24 hours** and is set with **Configure** on the `NOAA Weather` entry (see [Change a location](#change-a-location)); set it to `0` to serve NOAA's 50-minute loop unchanged and store nothing.
 >
 > Worth knowing before you turn it up:
 >
@@ -328,28 +461,61 @@ Visual representations of current conditions:
 
 ## NWS Forecast Offices
 
-The integration supports all NWS offices that issue Surf Zone Forecasts (SRF):
+**Weather** works with any NWS forecast office. Setup asks NWS which office covers your location and pre-selects it, so an inland location such as Las Vegas gets its own office (VEF), radar site and forecast discussion.
 
-**East Coast**: Norfolk (AKQ), Boston (BOX), Wilmington (ILM), Charleston (CHS), Jacksonville (JAX), Miami (MFL), Tampa (TBW), etc.
+**Surf** comes from the 36 coastal offices that issue Surf Zone Forecasts. Every one gives rip current risk; water temperature needs a NOAA tide station and surf height an NDBC buoy:
 
-**West Coast**: Wilmington (ILM), Los Angeles (LOX), San Francisco (MTR), Portland OR (PQR), Eureka (EKA)
+| Office | Code | Water temperature | Surf height |
+|---|---|---|---|
+| Boston, MA | `BOX` | ✓ | ✓ |
+| Brownsville, TX | `BRO` | ✓ | — |
+| Caribou, ME | `CAR` | ✓ | — |
+| Charleston, SC | `CHS` | ✓ | ✓ |
+| Chicago, IL | `LOT` | — | — |
+| Cleveland, OH | `CLE` | ✓ | — |
+| Corpus Christi, TX | `CRP` | ✓ | ✓ |
+| Detroit, MI | `DTX` | — | — |
+| Duluth, MN | `DLH` | ✓ | — |
+| Eureka, CA | `EKA` | ✓ | ✓ |
+| Gaylord, MI | `APX` | — | — |
+| Grand Rapids, MI | `GRR` | — | — |
+| Green Bay, WI | `GRB` | ✓ | — |
+| Guam | `GUM` | ✓ | — |
+| Honolulu, HI | `HFO` | ✓ | ✓ |
+| Jacksonville, FL | `JAX` | ✓ | ✓ |
+| Los Angeles, CA | `LOX` | ✓ | ✓ |
+| Marquette, MI | `MQT` | ✓ | — |
+| Medford, OR | `MFR` | — | — |
+| Melbourne, FL | `MLB` | ✓ | ✓ |
+| Miami, FL | `MFL` | ✓ | ✓ |
+| Milwaukee, WI | `MKX` | ✓ | — |
+| Mobile, AL | `MOB` | ✓ | ✓ |
+| New York, NY | `OKX` | ✓ | ✓ |
+| Newport, NC | `MHX` | ✓ | ✓ |
+| Norfolk, VA | `AKQ` | ✓ | ✓ |
+| Northern Indiana | `IWX` | — | — |
+| Philadelphia, PA | `PHI` | ✓ | — |
+| Portland, ME | `GYX` | ✓ | ✓ |
+| Portland, OR | `PQR` | ✓ | ✓ |
+| San Diego, CA | `SGX` | ✓ | ✓ |
+| San Francisco, CA | `MTR` | ✓ | ✓ |
+| San Juan, PR | `SJU` | ✓ | ✓ |
+| Tallahassee, FL | `TAE` | ✓ | ✓ |
+| Tampa, FL | `TBW` | ✓ | ✓ |
+| Wilmington, NC | `ILM` | ✓ | ✓ |
 
-**Gulf Coast**: Mobile (MOB), Corpus Christi (CRP), Brownsville (BRO), Tallahassee (TAE)
+Brownsville has no surf height buoy: the one it shared with Corpus Christi was recovered and no other buoy nearby reports wave height. Some offices, such as the Great Lakes ones, only issue Surf Zone Forecasts in their summer season.
 
-**Great Lakes**: Chicago (LOT), Cleveland (CLE), Detroit (DTX), Milwaukee (MKX), Duluth (DLH)
-
-**Pacific**: Honolulu (HFO), Guam (GUM)
+**Nearshore marine forecasts** come from the Great Lakes offices: Buffalo (BUF), Cleveland (CLE), Detroit (DTX), Duluth (DLH), Gaylord (APX), Grand Rapids (GRR), Green Bay (GRB), Marquette (MQT), Milwaukee (MKX), Chicago (LOT) and Northern Indiana (IWX).
 
 ## Entity Naming Conventions
 
 Understanding entity naming helps you quickly identify and use sensors in automations and dashboards.
 
-Home Assistant derives the entity ID by combining the **device name** slug with the entity's
-own **name** slug. The device name is prepended whether or not the integration sets
-`_attr_has_entity_name` — that flag only decides whether a redundant device-name prefix is
-stripped off the entity's own name first. The five global hurricane entities are the exception,
-because their device carries no office code — see
-[Exceptions to the pattern](#exceptions-to-the-pattern) below.
+Home Assistant builds each entity ID from the **device name** and the entity's own **name**:
+`NOAA ILM Weather` + `Temperature` becomes `sensor.noaa_ilm_weather_temperature`. The six
+hurricane entities have no office code, because their device has none, and the marine entities
+use the zone instead — see [Exceptions to the pattern](#exceptions-to-the-pattern) below.
 
 **Every example in this document uses the `ILM` office.** To adapt one to your own location,
 replace `ilm` with your office code in lower case — and leave the entities listed under
@@ -363,6 +529,7 @@ replace `ilm` with your office code in lower case — and leave the entities lis
 | NOAA {OFFICE} Weather | `NOAA {OFFICE} Weather` | `sensor.noaa_ilm_weather_visibility` |
 | NOAA {OFFICE} Space | `NOAA {OFFICE} Space` | `sensor.noaa_ilm_space_planetary_k_index` |
 | NOAA {OFFICE} Surf | `NOAA {OFFICE} Surf` | `sensor.noaa_ilm_surf_rip_current_risk` |
+| NOAA {ZONE} Marine | `NOAA {ZONE} Marine` (marine zone, not office) | `sensor.noaa_lmz741_marine_forecast` |
 
 **Examples:**
 - `sensor.noaa_ilm_weather_temperature` — Temperature for Wilmington (ILM office)
@@ -388,6 +555,10 @@ skip these — substituting into them produces an entity that does not exist:
 | `image.noaa_hurricane_goes_air_mass` | Global GOES imagery, on the shared `NOAA Hurricane` device |
 | `image.noaa_hurricane_goes_geocolor` | Global GOES imagery, on the shared `NOAA Hurricane` device |
 
+The marine entities use the marine zone where the others use the office:
+`sensor.noaa_{zone}_marine_period` and `sensor.noaa_{zone}_marine_forecast`, e.g.
+`sensor.noaa_lmz741_marine_forecast` for `LMZ741`.
+
 Two further IDs are easy to get wrong even though they do follow the rule:
 
 - `sensor.noaa_{office}_surf_surf_height` — the word "surf" appears **twice**: once for the
@@ -398,18 +569,20 @@ Two further IDs are easy to get wrong even though they do follow the rule:
 ### Office Code Usage
 - **Office-specific entities**: Include the office code in the device name (e.g., `NOAA ILM Weather`)
 - **Global hurricane entities**: Always under `NOAA Hurricane` — never duplicated per office
-- **Replace office code**: If you change NWS offices, entity IDs for office-scoped entities will
-  include the new code. Entity IDs also embed the configured latitude/longitude in their
-  `unique_id`, so changing coordinates re-registers those entities — see the note in the Changelog.
+- **Replace office code**: If you change the NWS office under **Configure**, the entities are
+  created again with the new office code in their IDs, and the previous office's entities are left
+  behind as unavailable for you to delete under **Settings → Devices & services → Entities**.
+  Update any automations and cards that use the old IDs.
 
 ### Entity Types
 - **sensor.**: Numeric or text state (temperature, humidity, alert count, etc.)
 - **binary_sensor.**: On/Off or True/False state (unsafe conditions, active alerts)
 - **image.**: Visual data (radar, satellite, forecast images)
+- **weather.**: The weather entity, for the Weather Forecast card and `weather.get_forecasts`
 
 ### Best Practices
 
-1. **Use Device Views**: Access entities by device (Settings → Devices & Services → NOAA It All) for organized browsing
+1. **Use Device Views**: Access entities by device (Settings → Devices & services → NOAA It All) for organized browsing
 2. **Create Groups**: Use Home Assistant groups to combine related entities across device boundaries
 3. **Label Your Location**: In automations, use friendly names in messages (e.g., "Wilmington" instead of "ILM")
 4. **Check Availability**: Sensors return `unknown` or `None` when data is unavailable - use conditions to verify state
@@ -436,6 +609,7 @@ Two further IDs are easy to get wrong even though they do follow the rule:
 | Hurricane Images (global) | `image.noaa_hurricane_{name}` | `image.noaa_hurricane_outlook_image` |
 | Space Images | `image.noaa_{office}_space_{name}` | `image.noaa_ilm_space_aurora_forecast_image` |
 | Radar Image | `image.noaa_{office}_weather_radar_{name}` | `image.noaa_ilm_weather_radar_base_reflectivity` |
+| Marine Forecast | `sensor.noaa_{zone}_marine_{name}` | `sensor.noaa_lmz741_marine_forecast` |
 
 ### Migration: Old Entity IDs
 
@@ -448,7 +622,7 @@ If you are upgrading from a previous version, the following image entity IDs hav
 | `image.noaa_weather_noaa_satellite_goes_geocolor` | `image.noaa_hurricane_goes_geocolor` |
 | `image.noaa_weather_radar_base_reflectivity_{office}` | `image.noaa_{office}_weather_radar_base_reflectivity` |
 
-The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & Services → Entities**, filter by "unavailable", and remove the old image entities. Update any automations or dashboard cards that reference the old entity IDs.
+The underlying unique IDs for GOES Air Mass and GOES Geocolor have also changed, so Home Assistant will register them as new entities. To clean up stale entries, go to **Settings → Devices & services → Entities**, filter by "unavailable", and remove the old image entities. Update any automations or dashboard cards that reference the old entity IDs.
 
 #### Binary sensor names (0.5.0)
 
@@ -464,7 +638,7 @@ Before 0.5.0 the binary sensors set a full name that already contained `NOAA {of
 
 **Existing installations keep their current entity IDs and nothing breaks.** The `unique_id` values are unchanged, so Home Assistant's entity registry holds on to whatever ID it already assigned — your automations and dashboard cards keep working untouched. What does change is the displayed friendly name, which loses the stutter (for example "NOAA ILM Surf NOAA ILM Unsafe to Swim" becomes "NOAA ILM Surf Unsafe to Swim").
 
-Only fresh installations get the shorter entity IDs. If you would like an existing installation to match, rename the entities yourself in **Settings → Devices & Services → Entities**, then update any automations that reference the old IDs.
+Only fresh installations get the shorter entity IDs. If you would like an existing installation to match, rename the entities yourself in **Settings → Devices & services → Entities**, then update any automations that reference the old IDs.
 
 ## Example Automations
 
@@ -945,7 +1119,7 @@ These examples demonstrate how to create effective dashboard cards organized by 
 >
 > The examples below all do this.
 
-#### Weather Alerts Card (NOAA Weather [OFFICE] Group)
+#### Weather Alerts Card (NOAA Weather Group)
 ```yaml
 type: entities
 title: "🚨 NWS Active Alerts - Wilmington"
@@ -1195,13 +1369,12 @@ entities:
     name: Duration
     icon: mdi:timer-outline
   - type: divider
-  - entity: sensor.noaa_ilm_weather_active_nws_alerts
-    name: Solar Radiation
+  - entity: sensor.noaa_ilm_space_solar_radiation_storm_alerts
+    name: Solar Radiation Alerts
     icon: mdi:radioactive
-
 ```
 
-#### Hurricane Tracking Card (NOAA Weather Group)
+#### Hurricane Tracking Card (NOAA Hurricane Group)
 ```yaml
 type: entities
 title: "🌀 Hurricane Activity"
@@ -1231,7 +1404,7 @@ cards:
           content: |
             ## ⚠️ ACTIVE WEATHER ALERTS
             **{{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} Alert(s)**
-            {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'summary') }}
+            {{ (state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alerts') or []) | map(attribute='event') | unique | join(', ') }}
           card_mod:
             style: |
               ha-card {
@@ -1379,16 +1552,31 @@ type: markdown
 title: "📝 Forecast Discussion"
 content: |
   **{{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'office_code') }}** - Updated {{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'issue_time') }}
-  
-  {{ states('sensor.noaa_ilm_weather_forecast_discussion') }}
+
+  {{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'full_text') or 'No discussion yet.' }}
+```
+
+#### Marine Forecast Card (NOAA Marine Group)
+```yaml
+type: markdown
+title: "⛵ Wilmette Harbor to Northerly Island"
+content: |
+  {% set f = 'sensor.noaa_lmz741_marine_forecast' %}
+  {% for h in state_attr(f, 'headlines') or [] %}
+  **⚠️ {{ h }}**
+  {% endfor %}
+  {% for p in state_attr(f, 'periods') or [] %}
+  **{{ p.name }}**: {{ p.detailed_forecast }}
+  {% endfor %}
 ```
 
 ## Troubleshooting & FAQ
 
 ### Entities Not Appearing
-- Ensure you completed Config Flow setup with valid latitude and longitude
-- Verify your NWS office code is listed in the [supported offices](#nws-forecast-offices) table
-- Restart Home Assistant after adding or reconfiguring the integration
+- Ensure you completed setup with valid latitude and longitude
+- Surf entities are in their own `NOAA Surf` entry, and hurricane and satellite entities in the `NOAA Hurricane` entry. If you chose **No surf data** or deleted the hurricane entry, add them back with **Add entry**
+- A new surf entry only gets Water Temperature and Surf Height if its office has a tide station or buoy; see [NWS Forecast Offices](#nws-forecast-offices)
+- After upgrading, reload the Home Assistant page so the new setup screens show
 - Check **Settings** → **System** → **Logs** for any error messages from `noaa_it_all`
 
 ### Data Not Updating
@@ -1399,15 +1587,15 @@ content: |
 
 ### Incorrect or Missing Weather Data
 - Weather observations are pulled from the nearest NWS station to your configured coordinates. If it stops reporting, the next nearest of up to three is used instead, and a warning naming the failed station is logged
-- Confirm your latitude and longitude are accurate (you can reconfigure via **Settings** → **Integrations** → **NOAA It All** → **Configure**)
+- Confirm your latitude and longitude are accurate (you can change them with **Configure** on the `NOAA Weather` entry under **Settings** → **Devices & services** → **NOAA It All**)
 - If no nearby station answers, observation entities show `unavailable`. The log line `Error fetching NOAA Observations data` names each station tried and why it failed
 
 ### Binary Sensors Always Off
-- Binary sensors require Config Flow setup with a valid office code and coordinates
+- The alert binary sensors only turn on while NWS has an active alert for your coordinates, and Unsafe to Swim only when the Surf Zone Forecast gives a high rip current risk. Their `alerts` and `risk_level` attributes show what they're reading
+- Meteor Shower Active, Eclipse Visible Now and Eclipse Coming Up are off most of the year by design
 
 ### Integration Fails to Load
-- Confirm Home Assistant version is **2024.9.1 or newer**
-- Check that required Python packages (`requests`, `aiohttp`) are available (they are bundled with HACS installations)
+- Confirm Home Assistant version is **2026.3.0 or newer**
 - Review Home Assistant logs for specific import or configuration errors
 
 ### "icon not available" in HACS
@@ -1427,13 +1615,13 @@ homeassistant:
 A: No. Setup requires latitude and longitude. They are pre-filled from your Home Assistant Home zone when one is set, and you can enter a different location instead. YAML setup has been removed and creates no entities (see [Legacy YAML Configuration](#legacy-yaml-configuration)).
 
 **Q: How do I find my NWS forecast office code?**
-A: Visit [weather.gov](https://www.weather.gov/) and search for your location. The three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?CityName=San+Diego&state=CA&site=ILM`).
+A: You don't need to: setup asks NWS which office covers your coordinates and pre-selects it. To look one up yourself, search for your location on [weather.gov](https://www.weather.gov/); the three-letter office code appears in the URL of your local forecast page (e.g., `forecast.weather.gov/MapClick.php?CityName=San+Diego&state=CA&site=SGX`).
 
 **Q: Why don't I see aurora predictions?**
-A: Aurora predictions are location-specific and require Config Flow setup. Also, aurora is only visible at high Kp levels for southern latitudes — check the Kp Index value and your office's magnetic latitude.
+A: The aurora sensors are on the `NOAA {OFFICE} Space` device of a weather entry. Aurora is only visible at high Kp levels for southern latitudes — check the Planetary K-index value and the `magnetic_latitude` and `required_kp` attributes of Aurora Visibility Probability.
 
 **Q: How often does data update?**
-A: Most sensors update every 10 minutes; meteor shower sensors recompute every 30 minutes.
+A: Most entities update every 10 minutes; see [Update Frequency](#update-frequency).
 
 **Q: Are UV Index readings available?**
 A: No. UV Index is not provided through NWS/NOAA APIs and cannot be included in this integration.
@@ -1455,22 +1643,35 @@ A: Please open an issue on [GitHub](https://github.com/dawg-io/noaa_it_all/issue
   - Peak times, radiant altitudes, moon phase and astronomical darkness are all computed on your
     machine using standard positional astronomy — no API call, no API key, no extra dependency,
     and it works with no internet connection at all
-- **Hurricane Data**: National Hurricane Center (NHC) and National Weather Service (NWS)
+- **Eclipses**: computed locally — lunar eclipses from first principles, solar eclipses from NASA's
+  Besselian elements for 2025–2075, bundled with the integration. *Eclipse Predictions by Fred
+  Espenak, NASA's GSFC*
+- **Hurricane Data**: National Hurricane Center (NHC) active storms and two-day outlook images,
+  and NWS hurricane and tropical storm watches and warnings
+- **Satellite Images**: GOES-19 Air Mass and GeoColor images from NOAA NESDIS STAR
 - **NWS Active Alerts**: National Weather Service weather.gov API
   - Location-specific severe weather warnings and watches
   - Flood, winter storm, and environmental alerts
   - Real-time alert monitoring with automatic filtering
-- **Rip Current/Surf Data**: Location-specific NWS Surf Zone Forecasts (SRF products)
+- **Rip Current/Surf Data**: NWS Surf Zone Forecasts (SRF products) for rip current risk,
+  water temperature from NOAA CO-OPS tide stations, and surf height from NDBC buoys
+- **Marine Forecasts**: NWS Nearshore Marine Forecasts (NSH products) from the Great Lakes offices
+- **Forecasts, Radar and Discussion**: NWS forecasts and gridpoint data (weather.gov API), NEXRAD
+  radar images from radar.weather.gov, and the office's Area Forecast Discussion (AFD)
 - **Weather Observations**: National Weather Service observation stations (weather.gov API)
   - Real-time temperature, humidity, wind, pressure, and sky conditions
   - Automatic unit conversions to US customary units
 
 ## Update Frequency
-Most sensors update every 10 minutes to provide current conditions while respecting API rate limits.
+Most entities, images included, update every 10 minutes to provide current conditions while
+respecting API rate limits.
 
 Meteor shower entities update every 30 minutes. They fetch nothing, so there is no rate limit to
 respect — but the best-of-night result is stable for hours, so a slower cadence keeps the recorder
 database smaller for no loss of accuracy.
+
+Eclipse entities fetch nothing either. They recompute hourly, every 5 minutes in the 6 hours before
+an eclipse, and every minute while one is under way.
 
 ## Changelog
 
