@@ -33,11 +33,12 @@ from .const import (
     IMAGE_FAILURE_ERROR_AFTER, IMAGE_FAILURE_WARN_AFTER,
     IMAGE_FETCH_TIMEOUT, IMAGE_MAX_BYTES,
     NWS_RADAR_BASE_URL, NWS_RADAR_LOOP_URL,
-    OFFICE_RADAR_SITES, RADAR_FRAME_DIR,
+    RADAR_FRAME_DIR,
     RADAR_LOOP_MAX_FRAMES, RADAR_LOOP_MAX_HOURS, RADAR_LOOP_MIN_FRAMES,
     USER_AGENT,
 )
 from .entry_config import resolve_entry_config
+from .offices import radar_site as entry_radar_site
 from .radar_loop import (
     RadarFrameStore, assemble_gif, parse_http_date, select_frames,
 )
@@ -139,9 +140,7 @@ async def async_discard_unused_radar_frames(hass, keep=None) -> None:
     for entry in hass.config_entries.async_entries(DOMAIN):
         if radar_loop_hours(entry) <= 0:
             continue
-        site = OFFICE_RADAR_SITES.get(
-            resolve_entry_config(entry).get(CONF_OFFICE_CODE)
-        )
+        site = entry_radar_site(resolve_entry_config(entry))
         if site:
             wanted.add(site)
 
@@ -238,7 +237,7 @@ async def async_setup_entry(
         config_entry.async_on_unload(_release_hurricane_image_ownership)
 
     # Location-specific radar image entities
-    radar_site = OFFICE_RADAR_SITES.get(office_code)
+    radar_site = entry_radar_site(resolve_entry_config(config_entry))
 
     if radar_site:
         # Add radar image entities for this location

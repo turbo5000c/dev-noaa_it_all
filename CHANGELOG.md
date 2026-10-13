@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Inland locations get their own forecast office.** Setup only listed the 36 coastal offices
+  that issue Surf Zone Forecasts, so a location like Las Vegas was offered San Diego or Los Angeles,
+  and its forecast discussion, radar and aurora estimates came from there. Setup now asks NWS which
+  office covers the location and pre-selects it (VEF for Las Vegas), with its own radar site. The
+  coastal offices are still listed, and are all that's offered if NWS can't be reached.
+- **An inland office picks a second office for surf data.** Rip current risk, surf height and water
+  temperature come from a coastal office chosen in an extra step, nearest first, so you can follow
+  the beach you visit. Each office shows whether it has water temperature and surf height as well as
+  rip current risk. **No surf data** leaves the surf entities out. Existing entries keep their
+  office and surf data.
+- **Aurora estimates work for any office.** Offices missing from the magnetic latitude table read
+  as the equator, so aurora never looked possible. Their magnetic latitude is now worked out from
+  the configured location.
 - **The weather card's forecast now updates.** New forecasts were never pushed to the card, so it
   kept showing the forecast it loaded with until the dashboard was reloaded.
 - **Errors from NWS alerts, cloud cover, the radar timestamp and the forecast discussion say why.**

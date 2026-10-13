@@ -315,3 +315,86 @@ class TestConfigSchema(unittest.TestCase):
         self.assertIsInstance(value, ast.Call)
         self.assertEqual("config_entry_only_config_schema", getattr(value.func, "attr", None))
         self.assertEqual(["DOMAIN"], [getattr(arg, "id", None) for arg in value.args])
+
+
+# Las Vegas: the VEF office issues no Surf Zone Forecast.
+_VEF = {
+    "office_code": "VEF", "radar_site": "KESX",
+    "latitude": 36.1699, "longitude": -115.1398,
+}
+
+
+class TestSurfOffice(unittest.TestCase):
+    """Surf comes from the entry's surf office, which may be another office or none."""
+
+    def _data(self, hass):
+        from noaa_it_all.const import DOMAIN
+        return hass.data[DOMAIN]["entry_1"]
+
+    def test_an_older_entry_uses_its_own_office(self):
+        _, _, coordinators = _setup(_make_entry(_ILM))
+        args = coordinators["SurfCoordinator"].call_args.args
+        self.assertEqual(args[1:], ("ILM", "8658163", "41110"))
+
+    def test_an_inland_entry_uses_its_surf_office(self):
+        _, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": "SGX"}))
+        args = coordinators["SurfCoordinator"].call_args.args
+        self.assertEqual(args[1:], ("SGX", "9410170", "46235"))
+        # Everything else still comes from the local office.
+        self.assertEqual(
+            coordinators["ForecastDiscussionCoordinator"].call_args.args[1], "VEF"
+        )
+
+    def test_no_surf_office_builds_no_surf_coordinator(self):
+        hass, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": None}))
+        coordinators["SurfCoordinator"].assert_not_called()
+        self.assertIsNone(self._data(hass)["surf_coordinator"])
+
+    def test_the_stored_radar_site_is_used(self):
+        _, _, coordinators = _setup(_make_entry({**_VEF, "surf_office_code": None}))
+        self.assertEqual(
+            coordinators["RadarTimestampCoordinator"].call_args.args[1:], ("VEF", "KESX")
+        )
+
+    def test_removing_an_inland_entry_deletes_its_stored_radar_site(self):
+        entry = MagicMock()
+        entry.entry_id = "entry_1"
+        entry.data = dict(_VEF)
+        entry.options = {}
+        removed = TestRemoveEntryCleansUpRadarFrames()._remove(
+            TestRemoveEntryCleansUpRadarFrames._hass([entry]), entry
+        )
+        self.assertEqual(["KESX"], removed)
+
+
+class TestOfficeHelpers(unittest.TestCase):
+    """offices.py: what an entry's office does not cover in the tables."""
+
+    def test_surf_office(self):
+        from noaa_it_all.offices import surf_office
+        self.assertEqual(surf_office({"office_code": "ILM"}), "ILM")
+        self.assertIsNone(surf_office({"office_code": "VEF"}))
+        self.assertEqual(surf_office({"office_code": "VEF", "surf_office_code": "SGX"}), "SGX")
+        self.assertIsNone(surf_office({"office_code": "ILM", "surf_office_code": None}))
+
+    def test_radar_site(self):
+        from noaa_it_all.offices import radar_site
+        self.assertEqual(radar_site({"office_code": "ILM"}), "KLTX")
+        self.assertEqual(radar_site({"office_code": "ILM", "radar_site": None}), "KLTX")
+        self.assertEqual(radar_site(_VEF), "KESX")
+        self.assertIsNone(radar_site({"office_code": "VEF"}))
+
+    def test_magnetic_latitude_uses_the_table_for_a_listed_office(self):
+        from noaa_it_all.offices import magnetic_latitude
+        self.assertEqual(magnetic_latitude("DLH", 36.0, -115.0), 56.8)
+
+    def test_magnetic_latitude_is_estimated_for_an_inland_office(self):
+        from noaa_it_all.offices import magnetic_latitude
+        # Las Vegas sits near 43 degrees geomagnetic, well north of its
+        # geographic latitude, and nowhere near the equator.
+        self.assertAlmostEqual(magnetic_latitude("VEF", 36.1699, -115.1398), 42.7, delta=0.5)
+
+    def test_magnetic_latitude_without_a_location_uses_the_default(self):
+        from noaa_it_all.offices import magnetic_latitude
+        self.assertEqual(magnetic_latitude("VEF"), 0.0)
+        self.assertEqual(magnetic_latitude("VEF", default=45.0), 45.0)

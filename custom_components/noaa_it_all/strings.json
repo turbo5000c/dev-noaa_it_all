@@ -12,9 +12,16 @@
       },
       "office": {
         "title": "Choose NWS Forecast Office",
-        "description": "Select the NOAA / NWS forecast office to use for {latitude}, {longitude}. The closest office is pre-selected.\n\n{warning}",
+        "description": "Select the NOAA / NWS forecast office to use for {latitude}, {longitude}. The office NWS names for this location is pre-selected, followed by the nearby coastal offices.\n\n{warning}",
         "data": {
           "office_code": "NWS Forecast Office"
+        }
+      },
+      "surf": {
+        "title": "Choose Surf Forecast Office",
+        "description": "{office} does not issue a Surf Zone Forecast, so rip current risk, surf height and water temperature come from a coastal office instead. Each office shows what it provides: every one gives rip current risk, but water temperature needs a tide station and surf height a buoy, which some don't have. The nearest is pre-selected; pick another to follow a beach you visit, or choose No surf data to leave those entities out.",
+        "data": {
+          "surf_office_code": "Surf forecast office"
         }
       }
     },
@@ -39,9 +46,16 @@
       },
       "office": {
         "title": "Choose NWS Forecast Office",
-        "description": "Select the NOAA / NWS forecast office to use for {latitude}, {longitude}. The closest office is pre-selected.\n\n{warning}",
+        "description": "Select the NOAA / NWS forecast office to use for {latitude}, {longitude}. The office NWS names for this location is pre-selected, followed by the nearby coastal offices.\n\n{warning}",
         "data": {
           "office_code": "NWS Forecast Office"
+        }
+      },
+      "surf": {
+        "title": "Choose Surf Forecast Office",
+        "description": "{office} does not issue a Surf Zone Forecast, so rip current risk, surf height and water temperature come from a coastal office instead. Each office shows what it provides: every one gives rip current risk, but water temperature needs a tide station and surf height a buoy, which some don't have. The nearest is pre-selected; pick another to follow a beach you visit, or choose No surf data to leave those entities out.",
+        "data": {
+          "surf_office_code": "Surf forecast office"
         }
       },
       "radar": {

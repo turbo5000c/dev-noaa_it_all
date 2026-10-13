@@ -2,10 +2,12 @@
 import logging
 import math
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN,
@@ -13,9 +15,17 @@ from .const import (
     CONF_LONGITUDE,
     CONF_OFFICE_CODE,
     CONF_RADAR_LOOP_HOURS,
+    CONF_RADAR_SITE,
+    CONF_SURF_OFFICE_CODE,
     DEFAULT_RADAR_LOOP_HOURS,
+    NWS_OFFICE_URL,
+    NWS_POINTS_URL,
+    OFFICE_BUOY_STATIONS,
     OFFICE_COORDINATES,
+    OFFICE_RADAR_SITES,
+    OFFICE_TIDE_STATIONS,
     RADAR_LOOP_MAX_HOURS,
+    USER_AGENT,
 )
 from .entry_config import resolve_entry_config
 
@@ -64,6 +74,12 @@ NWS_OFFICES = {
 # Maximum distance (miles) used to filter "nearby" offices.
 NEARBY_OFFICE_RADIUS_MILES = 50.0
 
+# Choice on the surf step for an inland user who wants no surf entities.
+NO_SURF_OFFICE = "none"
+
+# Seconds to wait on NWS while the setup form is open.
+_LOOKUP_TIMEOUT = 10
+
 # Earth radius in statute miles.
 _EARTH_RADIUS_MILES = 3958.7613
 
@@ -98,16 +114,120 @@ def _format_office_label(code, distance_miles):
     return f"{code} - {name} ({distance_miles:.1f} mi)"
 
 
-def _build_office_options(latitude, longitude):
-    """Return (options_dict, default_code, no_candidates_within_radius)."""
+def _format_surf_label(code, distance_miles):
+    """Build a surf dropdown label naming the surf data the office provides.
+
+    Every surf office gives rip current risk. Water temperature needs a tide
+    station and surf height a buoy, which not every office has.
+    """
+    provides = ["rip current"]
+    if code in OFFICE_TIDE_STATIONS:
+        provides.append("water temp")
+    if code in OFFICE_BUOY_STATIONS:
+        provides.append("surf height")
+    if len(provides) == 1:
+        provides[0] = "rip current only"
+    return f"{_format_office_label(code, distance_miles)} - {', '.join(provides)}"
+
+
+async def async_lookup_point(hass, latitude, longitude):
+    """Ask NWS which forecast office and radar cover a point.
+
+    Returns {"office", "name", "radar"}, or None when NWS cannot say: it is
+    unreachable, or the point is outside its coverage. The office is whichever
+    of the 120-odd offices covers the point, not only the coastal ones in
+    NWS_OFFICES.
+    """
+    if hass is None:
+        return None
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=_LOOKUP_TIMEOUT)
+    headers = {"User-Agent": USER_AGENT}
+    url = NWS_POINTS_URL.format(lat=round(latitude, 4), lon=round(longitude, 4))
+    try:
+        async with session.get(url, headers=headers, timeout=timeout) as resp:
+            resp.raise_for_status()
+            properties = (await resp.json()).get("properties") or {}
+    except Exception as err:  # noqa: BLE001 - the flow falls back to the table
+        _LOGGER.debug("Could not look up the forecast office from NWS: %s", err)
+        return None
+
+    office = properties.get("cwa") or properties.get("gridId")
+    if not isinstance(office, str) or len(office) != 3 or not office.isalpha():
+        return None
+    office = office.upper()
+    radar = properties.get("radarStation")
+
+    name = NWS_OFFICES.get(office)
+    if name is None:
+        try:
+            async with session.get(
+                NWS_OFFICE_URL.format(office=office), headers=headers, timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                name = (await resp.json()).get("name")
+        except Exception as err:  # noqa: BLE001 - the code alone still works
+            _LOGGER.debug("Could not look up the name of office %s: %s", office, err)
+        if not isinstance(name, str) or not name:
+            name = office
+
+    return {
+        "office": office,
+        "name": name,
+        "radar": radar if isinstance(radar, str) and radar else None,
+    }
+
+
+def _build_office_options(latitude, longitude, point=None):
+    """Return (options_dict, default_code, no_candidates_within_radius).
+
+    ``point`` is the async_lookup_point result. The office NWS names for the
+    location is listed first and pre-selected, then the coastal offices nearby.
+    """
     candidates = find_nearby_offices(latitude, longitude)
-    no_within_radius = not candidates
-    if no_within_radius:
+    no_within_radius = not candidates and point is None
+    if not candidates:
         # Fall back to the 5 nearest overall so the user still has a choice.
         candidates = find_nearby_offices(latitude, longitude, max_miles=None)[:5]
-    options = {code: _format_office_label(code, dist) for code, dist in candidates}
-    default_code = candidates[0][0] if candidates else None
+    options = {}
+    if point is not None:
+        options[point["office"]] = (
+            f"{point['office']} - {point['name']} (forecast office for this location)"
+        )
+    for code, dist in candidates:
+        options.setdefault(code, _format_office_label(code, dist))
+    default_code = next(iter(options), None)
     return options, default_code, no_within_radius
+
+
+def _build_surf_options(latitude, longitude):
+    """Return (options_dict, default_code) for choosing a surf office.
+
+    Every office that issues a Surf Zone Forecast, nearest first, so an inland
+    user can take the nearest coast or the one they visit.
+    """
+    candidates = find_nearby_offices(latitude, longitude, max_miles=None)
+    options = {code: _format_surf_label(code, dist) for code, dist in candidates}
+    options[NO_SURF_OFFICE] = "No surf data"
+    return options, candidates[0][0] if candidates else NO_SURF_OFFICE
+
+
+def _office_name(code, point):
+    """Return the display name of an office the user chose."""
+    if code in NWS_OFFICES:
+        return NWS_OFFICES[code]
+    if point is not None and point["office"] == code:
+        return point["name"]
+    return code
+
+
+def _radar_site_for(code, point):
+    """Return the radar site for an office, from the table or from NWS."""
+    if code in OFFICE_RADAR_SITES:
+        return OFFICE_RADAR_SITES[code]
+    if point is not None and point["office"] == code:
+        return point["radar"]
+    return None
 
 
 def _ha_home_coords(hass):
@@ -138,6 +258,8 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize transient state for the multi-step flow."""
         self._latitude = None
         self._longitude = None
+        self._point = None
+        self._office_code = None
 
     async def async_step_user(self, user_input=None):
         """Step 1: collect latitude and longitude (pre-filled from HA Home)."""
@@ -156,6 +278,9 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 self._latitude = float(latitude)
                 self._longitude = float(longitude)
+                self._point = await async_lookup_point(
+                    getattr(self, "hass", None), self._latitude, self._longitude
+                )
                 return await self.async_step_office()
 
         default_lat = ha_lat if ha_lat is not None else 0.0
@@ -177,14 +302,14 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_office(self, user_input=None):
-        """Step 2: choose the closest NWS forecast office."""
+        """Step 2: choose the NWS forecast office for the location."""
         options, default_code, no_within_radius = _build_office_options(
-            self._latitude, self._longitude
+            self._latitude, self._longitude, self._point
         )
 
         if user_input is not None:
             office_code = user_input.get(CONF_OFFICE_CODE)
-            if office_code not in NWS_OFFICES:
+            if office_code not in options:
                 # Defensive — should be enforced by the dropdown schema.
                 return self.async_show_form(
                     step_id="office",
@@ -197,20 +322,11 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     description_placeholders=self._office_placeholders(no_within_radius),
                 )
 
-            office_name = NWS_OFFICES[office_code]
-            lat_str = f"{self._latitude:.4f}".replace('.', '_').replace('-', 'n')
-            lon_str = f"{self._longitude:.4f}".replace('.', '_').replace('-', 'n')
-            await self.async_set_unique_id(f"noaa_{office_code}_{lat_str}_{lon_str}")
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=f"NOAA - {office_name}",
-                data={
-                    CONF_OFFICE_CODE: office_code,
-                    CONF_LATITUDE: self._latitude,
-                    CONF_LONGITUDE: self._longitude,
-                },
-            )
+            self._office_code = office_code
+            if office_code in NWS_OFFICES:
+                # A coastal office issues its own Surf Zone Forecast.
+                return await self._async_create(office_code)
+            return await self.async_step_surf()
 
         return self.async_show_form(
             step_id="office",
@@ -218,6 +334,48 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_OFFICE_CODE, default=default_code): vol.In(options),
             }),
             description_placeholders=self._office_placeholders(no_within_radius),
+        )
+
+    async def async_step_surf(self, user_input=None):
+        """Step 3, for an inland office only: choose an office for surf data."""
+        options, default_code = _build_surf_options(self._latitude, self._longitude)
+
+        if user_input is not None:
+            surf_code = user_input.get(CONF_SURF_OFFICE_CODE)
+            if surf_code in options:
+                return await self._async_create(
+                    None if surf_code == NO_SURF_OFFICE else surf_code
+                )
+            errors = {CONF_SURF_OFFICE_CODE: "invalid_office"}
+        else:
+            errors = {}
+
+        return self.async_show_form(
+            step_id="surf",
+            data_schema=vol.Schema({
+                vol.Required(CONF_SURF_OFFICE_CODE, default=default_code): vol.In(options),
+            }),
+            errors=errors,
+            description_placeholders={"office": self._office_code},
+        )
+
+    async def _async_create(self, surf_code):
+        """Create the entry for the chosen office and surf office."""
+        office_code = self._office_code
+        lat_str = f"{self._latitude:.4f}".replace('.', '_').replace('-', 'n')
+        lon_str = f"{self._longitude:.4f}".replace('.', '_').replace('-', 'n')
+        await self.async_set_unique_id(f"noaa_{office_code}_{lat_str}_{lon_str}")
+        self._abort_if_unique_id_configured()
+
+        return self.async_create_entry(
+            title=f"NOAA - {_office_name(office_code, self._point)}",
+            data={
+                CONF_OFFICE_CODE: office_code,
+                CONF_SURF_OFFICE_CODE: surf_code,
+                CONF_RADAR_SITE: _radar_site_for(office_code, self._point),
+                CONF_LATITUDE: self._latitude,
+                CONF_LONGITUDE: self._longitude,
+            },
         )
 
     def _office_placeholders(self, no_within_radius):
@@ -251,7 +409,9 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
         """
         self._latitude = None
         self._longitude = None
+        self._point = None
         self._office_code = None
+        self._surf_office_code = None
 
     async def async_step_init(self, user_input=None):
         """Step 1 of the options flow: latitude / longitude."""
@@ -270,6 +430,9 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 self._latitude = float(latitude)
                 self._longitude = float(longitude)
+                self._point = await async_lookup_point(
+                    getattr(self, "hass", None), self._latitude, self._longitude
+                )
                 return await self.async_step_office()
 
         # Prefer the previously configured value, then HA Home, then 0.0.
@@ -307,16 +470,25 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
     async def async_step_office(self, user_input=None):
         """Step 2 of the options flow: choose the NWS forecast office."""
         options, default_code, no_within_radius = _build_office_options(
-            self._latitude, self._longitude
+            self._latitude, self._longitude, self._point
         )
         # Prefer the existing office_code if it's still a valid candidate.
         existing_code = resolve_entry_config(self.config_entry).get(CONF_OFFICE_CODE)
+        if (
+            self._point is None
+            and existing_code
+            and existing_code not in OFFICE_COORDINATES
+        ):
+            # An inland office only ever comes from NWS. With NWS unreachable
+            # it would drop off the list, and saving would move the entry.
+            options = {existing_code: f"{existing_code} (current office)", **options}
+            no_within_radius = False
         if existing_code in options:
             default_code = existing_code
 
         if user_input is not None:
             office_code = user_input.get(CONF_OFFICE_CODE)
-            if office_code not in NWS_OFFICES:
+            if office_code not in options:
                 return self.async_show_form(
                     step_id="office",
                     data_schema=vol.Schema({
@@ -328,7 +500,10 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
                     description_placeholders=self._office_placeholders(no_within_radius),
                 )
             self._office_code = office_code
-            return await self.async_step_radar()
+            if office_code in NWS_OFFICES:
+                self._surf_office_code = office_code
+                return await self.async_step_radar()
+            return await self.async_step_surf()
 
         return self.async_show_form(
             step_id="office",
@@ -338,8 +513,37 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
             description_placeholders=self._office_placeholders(no_within_radius),
         )
 
+    async def async_step_surf(self, user_input=None):
+        """Options step for an inland office only: choose an office for surf data."""
+        options, default_code = _build_surf_options(self._latitude, self._longitude)
+        existing = resolve_entry_config(self.config_entry)
+        if CONF_SURF_OFFICE_CODE in existing:
+            saved = existing[CONF_SURF_OFFICE_CODE] or NO_SURF_OFFICE
+            if saved in options:
+                default_code = saved
+
+        if user_input is not None:
+            surf_code = user_input.get(CONF_SURF_OFFICE_CODE)
+            if surf_code in options:
+                self._surf_office_code = (
+                    None if surf_code == NO_SURF_OFFICE else surf_code
+                )
+                return await self.async_step_radar()
+            errors = {CONF_SURF_OFFICE_CODE: "invalid_office"}
+        else:
+            errors = {}
+
+        return self.async_show_form(
+            step_id="surf",
+            data_schema=vol.Schema({
+                vol.Required(CONF_SURF_OFFICE_CODE, default=default_code): vol.In(options),
+            }),
+            errors=errors,
+            description_placeholders={"office": self._office_code},
+        )
+
     async def async_step_radar(self, user_input=None):
-        """Step 3 of the options flow: how much radar history to keep.
+        """Last step of the options flow: how much radar history to keep.
 
         NOAA's own animation covers about fifty minutes and cannot be made
         longer, so anything beyond that is accumulated locally over time.  The
@@ -370,6 +574,8 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
                     title="",
                     data={
                         CONF_OFFICE_CODE: self._office_code,
+                        CONF_SURF_OFFICE_CODE: self._surf_office_code,
+                        CONF_RADAR_SITE: self._radar_site(),
                         CONF_LATITUDE: self._latitude,
                         CONF_LONGITUDE: self._longitude,
                         CONF_RADAR_LOOP_HOURS: hours,
@@ -387,6 +593,15 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={"max_hours": str(RADAR_LOOP_MAX_HOURS)},
         )
+
+    def _radar_site(self):
+        """Return the radar site to save, keeping the saved one if NWS is down."""
+        site = _radar_site_for(self._office_code, self._point)
+        if site is None:
+            existing = resolve_entry_config(self.config_entry)
+            if existing.get(CONF_OFFICE_CODE) == self._office_code:
+                site = existing.get(CONF_RADAR_SITE)
+        return site
 
     def _office_placeholders(self, no_within_radius):
         """Build description placeholders for the office step."""

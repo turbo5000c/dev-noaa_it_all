@@ -58,6 +58,14 @@ CONF_OFFICE_CODE = "office_code"
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
 CONF_RADAR_LOOP_HOURS = "radar_loop_hours"
+# The office whose Surf Zone Forecast feeds the surf entities, or None for no
+# surf data. Only a coastal office issues one, so an inland user picks a
+# second office for surf. Entries made before this key existed have none, and
+# use their own office.
+CONF_SURF_OFFICE_CODE = "surf_office_code"
+# The NEXRAD site for the radar images, from the NWS Points API at setup.
+# OFFICE_RADAR_SITES covers only the offices in the table, not inland ones.
+CONF_RADAR_SITE = "radar_site"
 
 # Default values
 DEFAULT_SCAN_INTERVAL = 10  # minutes
@@ -134,6 +142,7 @@ RADAR_FRAME_FUTURE_SLACK_MINUTES = 60
 NWS_SRF_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=SRF&format=TXT"
 NWS_API_BASE = "https://api.weather.gov"
 NWS_POINTS_URL = "https://api.weather.gov/points/{lat},{lon}"
+NWS_OFFICE_URL = "https://api.weather.gov/offices/{office}"
 NWS_OBSERVATIONS_URL = "https://api.weather.gov/stations/{station}/observations/latest"
 NWS_RADAR_BASE_URL = "https://radar.weather.gov/ridge/standard/{radar}_0.gif"
 NWS_RADAR_LOOP_URL = "https://radar.weather.gov/ridge/standard/{radar}_loop.gif"
@@ -382,6 +391,11 @@ OFFICE_MAGNETIC_LATITUDES = {
     "TAE": 30.4,  # Tallahassee, FL
     "TBW": 27.8,  # Tampa, FL
 }
+
+# Geomagnetic north pole (dipole axis, about 2025), for estimating the
+# magnetic latitude of an office missing from OFFICE_MAGNETIC_LATITUDES.
+GEOMAGNETIC_POLE_LAT = 80.8
+GEOMAGNETIC_POLE_LON = -72.8
 
 # Aurora visibility thresholds based on Kp index and magnetic latitude
 AURORA_KP_THRESHOLDS = {

@@ -364,10 +364,24 @@ class TestAsyncStepOffice(unittest.TestCase):
 
     def test_office_choice_with_negative_coords_unique_id(self):
         flow = self._make_flow(-33.8688, -117.1611)
+        flow._point = {"office": "ILM", "name": "Wilmington, NC", "radar": "KLTX"}
         _run(flow.async_step_office(user_input={"office_code": "ILM"}))
         flow.async_set_unique_id.assert_awaited_once_with(
             "noaa_ILM_n33_8688_n117_1611"
         )
+
+    def test_office_not_offered_is_rejected(self):
+        """Only an office on the list can be saved, as the dropdown enforces."""
+        flow = self._make_flow(32.7157, -117.1611)
+        result = _run(flow.async_step_office(user_input={"office_code": "GUM"}))
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(result["errors"], {"office_code": "invalid_office"})
+
+    def test_coastal_office_creates_entry_with_its_own_surf(self):
+        flow = self._make_flow(32.7157, -117.1611)
+        result = _run(flow.async_step_office(user_input={"office_code": "SGX"}))
+        self.assertEqual(result["data"]["surf_office_code"], "SGX")
+        self.assertEqual(result["data"]["radar_site"], "KNKX")
 
 
 class TestHaversineAndOfficeLookup(unittest.TestCase):
@@ -537,7 +551,10 @@ class TestAsyncStepInit(unittest.TestCase):
         self._through_to_radar(flow)
         result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 12}))
         self.assertEqual(
-            {"latitude", "longitude", "office_code", "radar_loop_hours"},
+            {
+                "latitude", "longitude", "office_code", "radar_loop_hours",
+                "surf_office_code", "radar_site",
+            },
             set(result["data"]),
         )
         self.assertEqual(result["data"]["radar_loop_hours"], 12)
@@ -652,3 +669,257 @@ class TestOptionsFlowConfigEntry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Inland offices: the office comes from NWS, surf from a second office
+# ---------------------------------------------------------------------------
+
+# Downtown Las Vegas: inside VEF, which issues no Surf Zone Forecast.
+_VEGAS = (36.1699, -115.1398)
+_VEF_POINT = {"office": "VEF", "name": "Las Vegas, NV", "radar": "KESX"}
+
+
+class _FakeResponse:
+    """Async context manager standing in for an aiohttp response."""
+
+    def __init__(self, payload=None, error=None):
+        self._payload = payload
+        self._error = error
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        if self._error:
+            raise self._error
+
+    async def json(self):
+        return self._payload
+
+
+def _session(responses):
+    """A session whose get() answers each URL from ``responses``."""
+    session = MagicMock()
+    session.get = MagicMock(side_effect=lambda url, **kw: responses[url])
+    return session
+
+
+class TestLookupPoint(unittest.TestCase):
+    """async_lookup_point reads the office and radar NWS gives for a point."""
+
+    _POINTS = "https://api.weather.gov/points/36.1699,-115.1398"
+    _OFFICE = "https://api.weather.gov/offices/VEF"
+
+    def _lookup(self, responses, hass=MagicMock()):
+        from noaa_it_all import config_flow
+        with patch.object(
+            config_flow, "async_get_clientsession", return_value=_session(responses)
+        ):
+            return _run(config_flow.async_lookup_point(hass, *_VEGAS))
+
+    def test_inland_office_and_its_name(self):
+        result = self._lookup({
+            self._POINTS: _FakeResponse(
+                {"properties": {"cwa": "VEF", "radarStation": "KESX"}}
+            ),
+            self._OFFICE: _FakeResponse({"name": "Las Vegas, NV"}),
+        })
+        self.assertEqual(result, _VEF_POINT)
+
+    def test_office_name_unavailable_falls_back_to_the_code(self):
+        result = self._lookup({
+            self._POINTS: _FakeResponse({"properties": {"cwa": "VEF"}}),
+            self._OFFICE: _FakeResponse(error=RuntimeError("503")),
+        })
+        self.assertEqual(result, {"office": "VEF", "name": "VEF", "radar": None})
+
+    def test_known_office_needs_no_second_request(self):
+        result = self._lookup({
+            self._POINTS: _FakeResponse(
+                {"properties": {"cwa": "SGX", "radarStation": "KNKX"}}
+            ),
+        })
+        self.assertEqual(result["name"], "San Diego, CA")
+
+    def test_nws_unreachable_returns_none(self):
+        result = self._lookup({self._POINTS: _FakeResponse(error=RuntimeError("404"))})
+        self.assertIsNone(result)
+
+    def test_malformed_office_returns_none(self):
+        result = self._lookup({self._POINTS: _FakeResponse({"properties": {"cwa": None}})})
+        self.assertIsNone(result)
+
+    def test_no_hass_skips_the_request(self):
+        from noaa_it_all.config_flow import async_lookup_point
+        self.assertIsNone(_run(async_lookup_point(None, *_VEGAS)))
+
+
+class TestInlandConfigFlow(unittest.TestCase):
+    """A Las Vegas setup: VEF for the forecast, a coastal office for surf."""
+
+    def _make_flow(self, point=_VEF_POINT):
+        from noaa_it_all.config_flow import NOAAConfigFlow
+        flow = NOAAConfigFlow()
+        flow.hass = MagicMock()
+        flow.async_set_unique_id = AsyncMock(return_value=None)
+        flow._abort_if_unique_id_configured = MagicMock()
+        with patch(
+            "noaa_it_all.config_flow.async_lookup_point",
+            AsyncMock(return_value=point),
+        ):
+            _reset_recorded_defaults()
+            self.office_form = _run(flow.async_step_user(user_input={
+                "latitude": _VEGAS[0], "longitude": _VEGAS[1],
+            }))
+        return flow
+
+    def test_the_nws_office_is_offered_and_preselected(self):
+        self._make_flow()
+        self.assertEqual(self.office_form["step_id"], "office")
+        self.assertEqual(_recorded_defaults()["office_code"], "VEF")
+        self.assertEqual(self.office_form["description_placeholders"]["warning"], "")
+
+    def test_without_nws_the_coastal_offices_are_offered_with_the_warning(self):
+        self._make_flow(point=None)
+        self.assertIn("50 miles", self.office_form["description_placeholders"]["warning"])
+        self.assertNotEqual(_recorded_defaults()["office_code"], "VEF")
+
+    def test_an_inland_office_asks_for_a_surf_office(self):
+        flow = self._make_flow()
+        _reset_recorded_defaults()
+        result = _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        self.assertEqual(result["step_id"], "surf")
+        # The nearest coast is pre-selected.
+        self.assertIn(_recorded_defaults()["surf_office_code"], ("LOX", "SGX"))
+
+    def test_surf_office_choice_creates_the_entry(self):
+        flow = self._make_flow()
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        result = _run(flow.async_step_surf(user_input={"surf_office_code": "MLB"}))
+        self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(result["title"], "NOAA - Las Vegas, NV")
+        self.assertEqual(result["data"]["office_code"], "VEF")
+        self.assertEqual(result["data"]["surf_office_code"], "MLB")
+        self.assertEqual(result["data"]["radar_site"], "KESX")
+        flow.async_set_unique_id.assert_awaited_once_with(
+            "noaa_VEF_36_1699_n115_1398"
+        )
+
+    def test_no_surf_is_a_choice(self):
+        flow = self._make_flow()
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        result = _run(flow.async_step_surf(user_input={"surf_office_code": "none"}))
+        self.assertEqual(result["type"], "create_entry")
+        self.assertIsNone(result["data"]["surf_office_code"])
+
+    def test_unknown_surf_office_is_rejected(self):
+        flow = self._make_flow()
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        result = _run(flow.async_step_surf(user_input={"surf_office_code": "VEF"}))
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(result["errors"], {"surf_office_code": "invalid_office"})
+
+
+class TestSurfLabels(unittest.TestCase):
+    """The surf dropdown says which surf data each office can provide."""
+
+    def _labels(self):
+        from noaa_it_all.config_flow import _build_surf_options
+        options, _ = _build_surf_options(*_VEGAS)
+        return options
+
+    def test_tide_station_and_buoy(self):
+        self.assertTrue(
+            self._labels()["SGX"].endswith(" - rip current, water temp, surf height")
+        )
+
+    def test_tide_station_only(self):
+        self.assertTrue(self._labels()["DLH"].endswith(" - rip current, water temp"))
+
+    def test_neither(self):
+        self.assertTrue(self._labels()["APX"].endswith(" - rip current only"))
+
+    def test_label_keeps_the_office_and_distance(self):
+        self.assertRegex(self._labels()["SGX"], r"^SGX - San Diego, CA \(\d+\.\d mi\) - ")
+
+    def test_buoy_only(self):
+        from noaa_it_all import config_flow
+        with patch.dict(config_flow.OFFICE_TIDE_STATIONS, clear=False) as tide:
+            tide.pop("SGX")
+            self.assertTrue(
+                config_flow._format_surf_label("SGX", 1.0).endswith(" - rip current, surf height")
+            )
+
+    def test_no_surf_label_is_unchanged(self):
+        self.assertEqual(self._labels()["none"], "No surf data")
+
+
+class TestInlandOptionsFlow(unittest.TestCase):
+    """Reconfiguring an inland entry keeps and offers its surf office."""
+
+    _SAVED = {
+        "office_code": "VEF", "surf_office_code": "SGX", "radar_site": "KESX",
+        "latitude": _VEGAS[0], "longitude": _VEGAS[1],
+    }
+
+    def _walk_to_office(self, point=_VEF_POINT, data=None):
+        from noaa_it_all.config_flow import NOAAOptionsFlow
+        entry = MagicMock()
+        entry.data = dict(self._SAVED if data is None else data)
+        entry.options = {}
+        flow = NOAAOptionsFlow()
+        flow._config_entry = entry
+        flow.hass = MagicMock()
+        with patch(
+            "noaa_it_all.config_flow.async_lookup_point",
+            AsyncMock(return_value=point),
+        ):
+            _reset_recorded_defaults()
+            _run(flow.async_step_init(user_input={
+                "latitude": _VEGAS[0], "longitude": _VEGAS[1],
+            }))
+        return flow
+
+    def test_surf_step_prefills_the_saved_surf_office(self):
+        flow = self._walk_to_office()
+        _reset_recorded_defaults()
+        result = _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        self.assertEqual(result["step_id"], "surf")
+        self.assertEqual(_recorded_defaults()["surf_office_code"], "SGX")
+
+    def test_surf_step_prefills_a_saved_none(self):
+        flow = self._walk_to_office(data={**self._SAVED, "surf_office_code": None})
+        _reset_recorded_defaults()
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        self.assertEqual(_recorded_defaults()["surf_office_code"], "none")
+
+    def test_inland_path_saves_every_key(self):
+        flow = self._walk_to_office()
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        _run(flow.async_step_surf(user_input={"surf_office_code": "TBW"}))
+        result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 6}))
+        self.assertEqual(result["data"], {
+            "office_code": "VEF", "surf_office_code": "TBW", "radar_site": "KESX",
+            "latitude": _VEGAS[0], "longitude": _VEGAS[1], "radar_loop_hours": 6,
+        })
+
+    def test_with_nws_down_the_saved_inland_office_and_radar_are_kept(self):
+        flow = self._walk_to_office(point=None)
+        self.assertEqual(_recorded_defaults()["office_code"], "VEF")
+        _run(flow.async_step_office(user_input={"office_code": "VEF"}))
+        _run(flow.async_step_surf(user_input={"surf_office_code": "SGX"}))
+        result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 6}))
+        self.assertEqual(result["data"]["office_code"], "VEF")
+        self.assertEqual(result["data"]["radar_site"], "KESX")
+
+    def test_switching_to_a_coastal_office_skips_the_surf_step(self):
+        flow = self._walk_to_office()
+        result = _run(flow.async_step_office(user_input={"office_code": "SGX"}))
+        self.assertEqual(result["step_id"], "radar")
+        result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 6}))
+        self.assertEqual(result["data"]["surf_office_code"], "SGX")
+        self.assertEqual(result["data"]["radar_site"], "KNKX")

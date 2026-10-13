@@ -56,7 +56,8 @@ For location-specific rip current, surf zone, and weather data:
 <p align="left">
 <img width="485" height="409" alt="image" src="https://github.com/user-attachments/assets/556faa39-2eee-45e7-8ba0-6771a334ef0a" />
 </p>
-4. Select your **NWS Forecast Office** from the dropdown (e.g., ILM for Wilmington, LOX for Los Angeles)
+4. Select your **NWS Forecast Office** from the dropdown. The office NWS names for your location is pre-selected (e.g., ILM for Wilmington, VEF for Las Vegas, BOU for Denver), followed by the nearby coastal offices. If NWS can't be reached, only the coastal offices are listed.
+   - **Inland offices:** only coastal offices issue Surf Zone Forecasts, so an inland office asks for a second office for rip current risk, surf height and water temperature. Each office is listed with its distance and what it provides, e.g. `SGX - San Diego, CA (260.6 mi) - rip current, water temp, surf height`. Every office gives rip current risk; water temperature needs a tide station and surf height a buoy, which some offices don't have. The nearest coast is pre-selected; pick another to follow a beach you visit, or choose **No surf data** to leave those entities out. Change it later under **Configure**.
 <p align="left">
 <img width="490" height="222" alt="image" src="https://github.com/user-attachments/assets/0c9711bc-9c7b-428d-b7de-a405e07299e8" />
 </p>

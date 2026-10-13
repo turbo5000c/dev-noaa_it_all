@@ -102,16 +102,19 @@ async def async_setup_entry(
         GeomagneticSensorInterpretation(space_coord, office_code),
         PlanetaryKIndexSensor(space_coord, office_code),
         PlanetaryKIndexSensorRating(space_coord, office_code),
-        AuroraNextTimeSensor(space_coord, office_code),
-        AuroraDurationSensor(space_coord, office_code),
-        AuroraVisibilityProbabilitySensor(space_coord, office_code),
-        SolarRadiationStormAlertsSensor(space_coord, office_code),
-
-        # Surf (office-specific, use SurfCoordinator)
-        RipCurrentRiskSensor(surf_coord, office_code),
-        SurfHeightSensor(surf_coord, office_code),
-        WaterTemperatureSensor(surf_coord, office_code),
+        AuroraNextTimeSensor(space_coord, office_code, latitude, longitude),
+        AuroraDurationSensor(space_coord, office_code, latitude, longitude),
+        AuroraVisibilityProbabilitySensor(space_coord, office_code, latitude, longitude),
+        SolarRadiationStormAlertsSensor(space_coord, office_code, latitude, longitude),
     ]
+
+    # Surf (from the surf office, absent when the entry chose none)
+    if surf_coord:
+        entities.extend([
+            RipCurrentRiskSensor(surf_coord, office_code),
+            SurfHeightSensor(surf_coord, office_code),
+            WaterTemperatureSensor(surf_coord, office_code),
+        ])
 
     # Hurricane sensors are global (NHC) and grouped under a single
     # dedicated NOAA Hurricane device. Only add them once across all

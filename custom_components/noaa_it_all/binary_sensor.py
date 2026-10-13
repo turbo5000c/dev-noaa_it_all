@@ -44,7 +44,9 @@ async def async_setup_entry(
     meteor_coord = data["meteor_coordinator"]
     eclipse_coord = data["eclipse_coordinator"]
 
-    entities = [UnsafeToSwimBinarySensor(surf_coord, office_code)]
+    entities = []
+    if surf_coord:
+        entities.append(UnsafeToSwimBinarySensor(surf_coord, office_code))
 
     if alerts_coord and latitude is not None and longitude is not None:
         entities.extend([

@@ -10,10 +10,11 @@ from .const import (
     DOMAIN, CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE,
     HURRICANE_COORDINATOR_KEY,
     HURRICANE_IMAGES_ADDED_KEY, HURRICANE_SENSORS_ADDED_KEY,
-    OFFICE_RADAR_SITES, OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
+    OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
     RADAR_FRAME_DIR,
 )
 from .entry_config import resolve_entry_config
+from .offices import radar_site as entry_radar_site, surf_office
 from .radar_loop import RadarFrameStore
 from .coordinator import (
     SpaceWeatherCoordinator,
@@ -79,13 +80,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hurricane_coord = HurricaneCoordinator(hass)
         domain_data[HURRICANE_COORDINATOR_KEY] = hurricane_coord
 
-    # Office-specific coordinators
-    tide_station = OFFICE_TIDE_STATIONS.get(office_code)
-    buoy_station = OFFICE_BUOY_STATIONS.get(office_code)
-    surf_coord = SurfCoordinator(hass, office_code, tide_station, buoy_station)
+    # Office-specific coordinators. Surf comes from the surf office, which an
+    # inland entry picks separately, or not at all.
+    surf_code = surf_office(conf)
+    surf_coord = None
+    if surf_code:
+        surf_coord = SurfCoordinator(
+            hass, surf_code,
+            OFFICE_TIDE_STATIONS.get(surf_code),
+            OFFICE_BUOY_STATIONS.get(surf_code),
+        )
     discussion_coord = ForecastDiscussionCoordinator(hass, office_code)
 
-    radar_site = OFFICE_RADAR_SITES.get(office_code)
+    radar_site = entry_radar_site(conf)
     radar_coord = (
         RadarTimestampCoordinator(hass, office_code, radar_site)
         if radar_site else None
@@ -124,9 +131,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # ---- Initial refresh (non-blocking, errors are logged) ----
     refresh_tasks = [
         space_weather_coord.async_refresh(),
-        surf_coord.async_refresh(),
         discussion_coord.async_refresh(),
     ]
+    if surf_coord:
+        refresh_tasks.append(surf_coord.async_refresh())
     # Only refresh the shared hurricane coordinator on the entry that
     # created it, to avoid redundant API calls when multiple offices
     # are configured.
@@ -212,8 +220,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     else would ever clean up, and it sits in the configuration directory, so it
     would otherwise ride along in every backup forever.
     """
-    office_code = resolve_entry_config(entry).get(CONF_OFFICE_CODE)
-    radar_site = OFFICE_RADAR_SITES.get(office_code)
+    radar_site = entry_radar_site(resolve_entry_config(entry))
     if not radar_site:
         return
 
@@ -222,8 +229,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     for other in hass.config_entries.async_entries(DOMAIN):
         if other.entry_id == entry.entry_id:
             continue
-        other_office = resolve_entry_config(other).get(CONF_OFFICE_CODE)
-        if OFFICE_RADAR_SITES.get(other_office) == radar_site:
+        if entry_radar_site(resolve_entry_config(other)) == radar_site:
             _LOGGER.debug(
                 "Keeping stored radar frames for %s; another entry still uses it",
                 radar_site,

@@ -4,6 +4,7 @@ Verifies that all location-specific sensors include the office code in
 their name and unique_id, matching the README documented format.
 """
 
+import asyncio
 import os
 import sys
 import unittest
@@ -1006,6 +1007,50 @@ class TestBinarySensorNaming(unittest.TestCase):
         for sensor in self._all_binary_sensors():
             name = type(sensor).__name__
             self.assertEqual(sensor._attr_unique_id, expected[name], f"{name} unique_id")
+
+
+class TestPlatformsWithoutSurf(unittest.TestCase):
+    """An entry with no surf office gets no surf entities, and nothing breaks."""
+
+    def _added(self, module_name, surf_coord):
+        import importlib
+        from noaa_it_all.const import DOMAIN
+        module = importlib.import_module(f"noaa_it_all.{module_name}")
+        entry = MagicMock()
+        entry.entry_id = "entry_1"
+        entry.data = {
+            "office_code": "VEF", "surf_office_code": None, "radar_site": "KESX",
+            "latitude": 36.1699, "longitude": -115.1398,
+        }
+        entry.options = {}
+        hass = MagicMock()
+        hass.data = {}
+        hass.data[DOMAIN] = {"entry_1": {
+            key: MagicMock() for key in (
+                "space_weather_coordinator", "hurricane_coordinator",
+                "observations_coordinator", "forecast_coordinator",
+                "alerts_coordinator", "cloud_cover_coordinator",
+                "radar_timestamp_coordinator", "forecast_discussion_coordinator",
+                "meteor_coordinator", "eclipse_coordinator",
+            )
+        }}
+        hass.data[DOMAIN]["entry_1"]["surf_coordinator"] = surf_coord
+        added = []
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(module.async_setup_entry(hass, entry, added.extend))
+        finally:
+            loop.close()
+        return {type(entity).__name__ for entity in added}
+
+    def test_sensors(self):
+        surf = {"RipCurrentRiskSensor", "SurfHeightSensor", "WaterTemperatureSensor"}
+        self.assertFalse(surf & self._added("sensor", None))
+        self.assertTrue(surf <= self._added("sensor", MagicMock()))
+
+    def test_binary_sensors(self):
+        self.assertNotIn("UnsafeToSwimBinarySensor", self._added("binary_sensor", None))
+        self.assertIn("UnsafeToSwimBinarySensor", self._added("binary_sensor", MagicMock()))
 
 
 if __name__ == "__main__":
