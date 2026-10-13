@@ -25,7 +25,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     REQUEST_TIMEOUT, USER_AGENT,
     NWS_POINTS_URL, NWS_OBSERVATIONS_URL, NWS_ALERTS_URL,
-    NWS_SRF_URL, NWS_AFD_URL, NWS_RADAR_BASE_URL, NWS_NSH_URL,
+    NWS_SRF_URL, NWS_AFD_URL, NWS_RADAR_BASE_URL, NWS_NSH_URL, NSH_MAX_AGE_HOURS,
     COOPS_WATER_TEMP_URL, NDBC_REALTIME_URL,
     OFFICE_STATION_IDS, OBSERVATION_STATION_CANDIDATES,
     METEOR_SCAN_INTERVAL, METEOR_UPCOMING_COUNT,
@@ -39,7 +39,7 @@ from .eclipse import build_eclipse_forecast
 from .eclipse_catalog import SOLAR_ECLIPSES
 from .parsers import (
     parse_coops_water_temperature, parse_ndbc_wave_height,
-    parse_nearshore_forecast,
+    parse_nearshore_forecast, product_is_stale,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -509,7 +509,15 @@ class MarineForecastCoordinator(DataUpdateCoordinator):
                 f"Error fetching nearshore marine forecast ({_describe(err)})"
             ) from err
 
-        text = (product or {}).get("productText") or ""
+        product = product or {}
+        issued = product.get("issuanceTime")
+        if product_is_stale(issued, datetime.now(timezone.utc), NSH_MAX_AGE_HOURS):
+            # The office has stopped issuing; NWS still serves its last one.
+            raise UpdateFailed(
+                f"The latest nearshore marine forecast from {self.office_code} "
+                f"was issued at {issued}, over {NSH_MAX_AGE_HOURS} hours ago"
+            )
+        text = product.get("productText") or ""
         forecast = parse_nearshore_forecast(text, self.marine_zone)
         if forecast is None:
             raise UpdateFailed(

@@ -156,6 +156,10 @@ NWS_NSH_URL = "https://api.weather.gov/products/types/NSH/locations/{office}/lat
 # The office's NSH products. Empty for an office that issues none, where the
 # "latest" URL above answers 500 rather than 404.
 NWS_NSH_LIST_URL = "https://api.weather.gov/products/types/NSH/locations/{office}"
+# Offices issue a nearshore marine forecast several times a day, and NWS keeps
+# the last one for about a week after an office stops. One older than this is
+# shown as unavailable rather than as the current forecast.
+NSH_MAX_AGE_HOURS = 24
 NWS_AFD_URL = "https://forecast.weather.gov/product.php?site={office}&issuedby={office}&product=AFD&format=TXT"
 
 # NOAA CO-OPS API for water temperature (Tides and Currents)

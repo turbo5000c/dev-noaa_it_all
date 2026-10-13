@@ -1236,6 +1236,17 @@ class TestLookupMarineZone(unittest.TestCase):
             result, ({"office": "LOT", "name": "Wilmette Harbor to Northerly Island IL"}, None)
         )
 
+    def test_an_office_that_has_not_issued_for_a_day(self):
+        """Its last forecast is still served, but it would show as unavailable."""
+        result = self._lookup({
+            self._ZONE: self._zone(),
+            self._LIST: self._ISSUED,
+            self._NSH: _FakeResponse({
+                "issuanceTime": "2020-04-01T14:00:00+00:00", "productText": _nsh_lot(),
+            }),
+        })
+        self.assertEqual(result, (None, "marine_forecast_stale"))
+
     def test_an_unknown_zone(self):
         self.assertEqual(
             self._lookup({self._ZONE: _FakeResponse(status=404)}),

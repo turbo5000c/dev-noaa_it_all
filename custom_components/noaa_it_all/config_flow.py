@@ -1,6 +1,7 @@
 """Config flow for NOAA Integration."""
 import logging
 import math
+from datetime import datetime, timezone
 
 import aiohttp
 import voluptuous as vol
@@ -25,6 +26,7 @@ from .const import (
     ENTRY_TYPE_SURF,
     ENTRY_TYPE_WEATHER,
     HURRICANE_ENTRY_TITLE,
+    NSH_MAX_AGE_HOURS,
     NWS_MARINE_ZONE_URL,
     NWS_NSH_LIST_URL,
     NWS_NSH_URL,
@@ -38,7 +40,7 @@ from .const import (
     USER_AGENT,
 )
 from .entry_config import resolve_entry_config
-from .parsers import normalize_marine_zone, parse_nearshore_forecast
+from .parsers import normalize_marine_zone, parse_nearshore_forecast, product_is_stale
 from .offices import (
     SURF_HEIGHT,
     WATER_TEMPERATURE,
@@ -137,7 +139,8 @@ async def async_lookup_marine_zone(hass, zone):
 
     Returns ({"office", "name"}, None), or (None, error) where error is a
     config flow error key: the zone does not exist, it is not in a nearshore
-    marine forecast, or NWS could not be reached.
+    marine forecast, its office has not issued one in a day, or NWS could not
+    be reached.
     """
     session = async_get_clientsession(hass)
     timeout = aiohttp.ClientTimeout(total=_LOOKUP_TIMEOUT)
@@ -181,11 +184,14 @@ async def async_lookup_marine_zone(hass, zone):
             NWS_NSH_URL.format(office=office), headers=headers, timeout=timeout
         ) as resp:
             resp.raise_for_status()
-            text = (await resp.json(content_type=None) or {}).get("productText") or ""
+            product = await resp.json(content_type=None) or {}
     except Exception as err:  # noqa: BLE001 - shown as a form error
         _LOGGER.debug("Could not fetch the nearshore forecast from %s: %s", office, err)
         return None, "cannot_connect"
-    if parse_nearshore_forecast(text, zone) is None:
+    issued = product.get("issuanceTime")
+    if product_is_stale(issued, datetime.now(timezone.utc), NSH_MAX_AGE_HOURS):
+        return None, "marine_forecast_stale"
+    if parse_nearshore_forecast(product.get("productText") or "", zone) is None:
         return None, "marine_zone_not_covered"
     return {"office": office, "name": name}, None
 

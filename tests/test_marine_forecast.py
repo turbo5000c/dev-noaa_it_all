@@ -7,6 +7,7 @@ sensor that publishes one marine zone. The fixture is the real Chicago
 
 import asyncio
 import os
+from datetime import datetime, timedelta, timezone
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -22,6 +23,7 @@ from parsers import (  # noqa: E402
     expand_ugc,
     normalize_marine_zone,
     parse_nearshore_forecast,
+    product_is_stale,
 )
 
 
@@ -59,6 +61,26 @@ class TestNormalizeMarineZone(unittest.TestCase):
     def test_rejects_malformed(self):
         for bad in ("", "LMZ74", "LMC741", "741", "LMZ7411", None, 741):
             self.assertIsNone(normalize_marine_zone(bad), bad)
+
+
+class TestProductIsStale(unittest.TestCase):
+
+    _NOW = datetime(2026, 10, 13, 16, 0, tzinfo=timezone.utc)
+
+    def test_older_than_the_limit(self):
+        self.assertTrue(product_is_stale("2026-10-12T15:59:00+00:00", self._NOW, 24))
+
+    def test_within_the_limit(self):
+        self.assertFalse(product_is_stale("2026-10-12T16:01:00+00:00", self._NOW, 24))
+
+    def test_other_time_zones(self):
+        # 11:00 CDT is 16:00 UTC: issued a day and an hour before now.
+        self.assertTrue(product_is_stale("2026-10-12T10:00:00-05:00", self._NOW, 24))
+        self.assertFalse(product_is_stale("2026-10-13T10:00:00-05:00", self._NOW, 24))
+
+    def test_unreadable_times_are_not_stale(self):
+        for issued in (None, "", "yesterday", 1760371200, "2026-10-01T00:00:00"):
+            self.assertFalse(product_is_stale(issued, self._NOW, 24), issued)
 
 
 class TestParseNearshoreForecast(unittest.TestCase):
@@ -310,10 +332,14 @@ class _FakeSession:
         return _FakeGet(self._result)
 
 
-def _product(text=None):
+def _hours_ago(hours):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+
+
+def _product(text=None, issued=None):
     return {
         "id": "abc-123",
-        "issuanceTime": "2026-10-10T14:51:00+00:00",
+        "issuanceTime": _hours_ago(1) if issued is None else issued,
         "productText": _fixture() if text is None else text,
     }
 
@@ -330,7 +356,8 @@ class TestMarineForecastCoordinator(unittest.TestCase):
 
     def test_fetches_the_office_nsh_product_and_parses_the_zone(self):
         coordinator = self._make()
-        session = _FakeSession(_FakeResponse(_product()))
+        product = _product()
+        session = _FakeSession(_FakeResponse(product))
         with _with_session(session):
             data = _run(coordinator._async_update_data())
 
@@ -341,8 +368,23 @@ class TestMarineForecastCoordinator(unittest.TestCase):
         self.assertIn("User-Agent", kwargs["headers"])
         self.assertEqual(len(data["forecast"]["periods"]), 4)
         self.assertEqual(data["product_id"], "abc-123")
-        self.assertEqual(data["issuance_time"], "2026-10-10T14:51:00+00:00")
+        self.assertEqual(data["issuance_time"], product["issuanceTime"])
         self.assertEqual(data["source_url"], url)
+
+    def test_a_forecast_over_a_day_old_raises_update_failed(self):
+        """NWS keeps serving an office's last forecast for a week after it stops."""
+        coordinator = self._make()
+        with _with_session(_FakeSession(_FakeResponse(_product(issued=_hours_ago(25))))):
+            with self.assertRaises(_UpdateFailed) as ctx:
+                _run(coordinator._async_update_data())
+        self.assertIn("LOT", str(ctx.exception))
+        self.assertIn("24 hours", str(ctx.exception))
+
+    def test_a_forecast_from_this_morning_is_current(self):
+        coordinator = self._make()
+        with _with_session(_FakeSession(_FakeResponse(_product(issued=_hours_ago(23))))):
+            data = _run(coordinator._async_update_data())
+        self.assertEqual(data["forecast"]["zone"], "LMZ741")
 
     def test_network_error_raises_update_failed(self):
         coordinator = self._make()

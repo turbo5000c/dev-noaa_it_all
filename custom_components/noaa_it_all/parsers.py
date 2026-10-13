@@ -5,6 +5,7 @@ making them independently unit-testable.
 """
 
 import re
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 
@@ -685,6 +686,23 @@ _NSH_ISSUED_RE = re.compile(
     r"^\d{3,4}\s+[AP]M\s+\S+\s+[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{4}(?:\s+/[^/]*/)?$"
 )
 _NSH_PERIOD_RE = re.compile(r"^\.([^.]+)\.\.\.(.*)$")
+
+
+def product_is_stale(issuance_time: Any, now: datetime, max_age_hours: float) -> bool:
+    """Return True if an NWS product was issued more than ``max_age_hours`` before ``now``.
+
+    A missing or unreadable issuance time is not stale: NWS always sends one,
+    and a forecast is better shown than dropped over a format change.
+    """
+    if not isinstance(issuance_time, str):
+        return False
+    try:
+        issued = datetime.fromisoformat(issuance_time)
+    except ValueError:
+        return False
+    if issued.tzinfo is None:
+        return False
+    return now - issued > timedelta(hours=max_age_hours)
 
 
 def normalize_marine_zone(value: Any) -> Optional[str]:

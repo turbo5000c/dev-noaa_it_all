@@ -54,7 +54,7 @@ PLATFORMS = ["sensor", "image", "binary_sensor", "weather"]
 SURF_PLATFORMS = ["sensor", "binary_sensor"]
 # The hurricane entry has the hurricane sensors and the outlook and GOES images.
 HURRICANE_PLATFORMS = ["sensor", "image"]
-# A marine entry has its zone's forecast sensor.
+# A marine entry has its zone's Period and Forecast sensors.
 MARINE_PLATFORMS = ["sensor"]
 
 

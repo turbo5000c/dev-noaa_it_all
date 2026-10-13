@@ -48,6 +48,7 @@
       "invalid_marine_zone": "Enter a marine zone ID such as LMZ741: two letters, Z, then three digits.",
       "unknown_marine_zone": "NWS has no marine zone {zone}.",
       "marine_zone_not_covered": "{zone} is not in a nearshore marine forecast. Those cover the Great Lakes zones near the shore; open-lake and ocean zones have other forecasts.",
+      "marine_forecast_stale": "{zone}'s office hasn't issued a nearshore marine forecast in the last 24 hours. Try again later.",
       "cannot_connect": "Could not reach NWS. Try again in a moment."
     },
     "abort": {
