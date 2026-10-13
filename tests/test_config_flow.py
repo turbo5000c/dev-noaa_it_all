@@ -745,13 +745,28 @@ class TestLookupPoint(unittest.TestCase):
         })
         self.assertEqual(result["name"], "San Diego, CA")
 
+    def test_a_malformed_radar_site_is_dropped(self):
+        for radar in ("../..", "/config", "KESX/../..", "kesx", "", 42):
+            with self.subTest(radar=radar):
+                result = self._lookup({
+                    self._POINTS: _FakeResponse(
+                        {"properties": {"cwa": "SGX", "radarStation": radar}}
+                    ),
+                })
+                self.assertEqual(result["office"], "SGX")
+                self.assertIsNone(result["radar"])
+
     def test_nws_unreachable_returns_none(self):
         result = self._lookup({self._POINTS: _FakeResponse(error=RuntimeError("404"))})
         self.assertIsNone(result)
 
     def test_malformed_office_returns_none(self):
-        result = self._lookup({self._POINTS: _FakeResponse({"properties": {"cwa": None}})})
-        self.assertIsNone(result)
+        for cwa in (None, "", "VE", "VEFX", "../", "VÉF", 42):
+            with self.subTest(cwa=cwa):
+                result = self._lookup(
+                    {self._POINTS: _FakeResponse({"properties": {"cwa": cwa}})}
+                )
+                self.assertIsNone(result)
 
     def test_no_hass_skips_the_request(self):
         from noaa_it_all.config_flow import async_lookup_point

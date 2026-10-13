@@ -28,6 +28,7 @@ from .const import (
     USER_AGENT,
 )
 from .entry_config import resolve_entry_config
+from .offices import is_radar_site
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,7 +154,10 @@ async def async_lookup_point(hass, latitude, longitude):
         return None
 
     office = properties.get("cwa") or properties.get("gridId")
-    if not isinstance(office, str) or len(office) != 3 or not office.isalpha():
+    if (
+        not isinstance(office, str) or len(office) != 3
+        or not office.isascii() or not office.isalpha()
+    ):
         return None
     office = office.upper()
     radar = properties.get("radarStation")
@@ -174,7 +178,9 @@ async def async_lookup_point(hass, latitude, longitude):
     return {
         "office": office,
         "name": name,
-        "radar": radar if isinstance(radar, str) and radar else None,
+        # Becomes a directory name for stored radar frames, so only a real
+        # site identifier is kept.
+        "radar": radar if is_radar_site(radar) else None,
     }
 
 

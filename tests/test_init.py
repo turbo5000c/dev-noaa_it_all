@@ -384,6 +384,22 @@ class TestOfficeHelpers(unittest.TestCase):
         self.assertEqual(radar_site(_VEF), "KESX")
         self.assertIsNone(radar_site({"office_code": "VEF"}))
 
+    def test_a_stored_radar_site_that_is_not_a_site_is_ignored(self):
+        """It names a directory that removing the entry deletes."""
+        from noaa_it_all.offices import radar_site
+        for stored in ("../..", "/config", "KESX/..", "kesx", 42):
+            with self.subTest(stored=stored):
+                self.assertIsNone(radar_site({"office_code": "VEF", "radar_site": stored}))
+                self.assertEqual(
+                    radar_site({"office_code": "ILM", "radar_site": stored}), "KLTX"
+                )
+
+    def test_every_table_radar_site_is_well_formed(self):
+        from noaa_it_all.const import OFFICE_RADAR_SITES
+        from noaa_it_all.offices import is_radar_site
+        for office, site in OFFICE_RADAR_SITES.items():
+            self.assertTrue(is_radar_site(site), f"{office}: {site}")
+
     def test_magnetic_latitude_uses_the_table_for_a_listed_office(self):
         from noaa_it_all.offices import magnetic_latitude
         self.assertEqual(magnetic_latitude("DLH", 36.0, -115.0), 56.8)

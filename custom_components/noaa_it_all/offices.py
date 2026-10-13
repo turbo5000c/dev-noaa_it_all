@@ -6,6 +6,7 @@ not cover for an inland office is stored on the entry at setup or estimated.
 """
 
 import math
+import re
 
 from .const import (
     CONF_OFFICE_CODE,
@@ -17,6 +18,17 @@ from .const import (
     OFFICE_MAGNETIC_LATITUDES,
     OFFICE_RADAR_SITES,
 )
+
+
+# A NEXRAD or TDWR site identifier, e.g. KESX. The site names a directory of
+# stored radar frames, which is deleted with the entry, so anything else (a
+# path such as "../..") is refused rather than joined onto the frames folder.
+_RADAR_SITE = re.compile(r"[A-Z]{4}")
+
+
+def is_radar_site(value):
+    """Return True if ``value`` is a well-formed radar site identifier."""
+    return isinstance(value, str) and _RADAR_SITE.fullmatch(value) is not None
 
 
 def surf_office(conf):
@@ -33,9 +45,10 @@ def surf_office(conf):
 
 def radar_site(conf):
     """Return the NEXRAD site for the entry's radar images, or None."""
-    return conf.get(CONF_RADAR_SITE) or OFFICE_RADAR_SITES.get(
-        conf.get(CONF_OFFICE_CODE)
-    )
+    stored = conf.get(CONF_RADAR_SITE)
+    if is_radar_site(stored):
+        return stored
+    return OFFICE_RADAR_SITES.get(conf.get(CONF_OFFICE_CODE))
 
 
 def geomagnetic_latitude(latitude, longitude):
