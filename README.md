@@ -403,7 +403,7 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
   - Includes reasoning behind forecast decisions
   - Updated when new forecast discussions are issued (typically 2-3 times daily)
   - State is the literal `Available` (or unknown); the text is in the `full_text` attribute,
-    and `summary` has its first 200 characters. `issue_time` says when it was issued
+    and `summary` has its first 200 characters
   - Provides insight into weather patterns and forecast confidence
 
 ### Forecast Sensors and the Weather Entity
@@ -642,467 +642,453 @@ Only fresh installations get the shorter entity IDs. If you would like an existi
 
 ## Example Automations
 
+Every example uses Home Assistant's current automation syntax (`triggers`, `conditions` and `actions`). To use one, create an automation, open **⋮ → Edit in YAML**, and paste it in. In `automations.yaml`, add it as a list item instead (`- alias: …`, with the rest indented under it).
+
+Replace `notify.mobile_app_your_phone` with your own notify action, and the light, climate, fan and speaker entities with yours. Speech uses `tts.speak` with the Google Translate text-to-speech entity, `tts.google_translate_en_com`; use any text-to-speech entity you have.
+
 ### Binary Sensor Triggers for Safety Alerts
 
 #### Rip Current Safety Alert
 ```yaml
-automation:
-  - alias: "Rip Current Warning"
-    description: "Alert when rip current conditions become dangerous"
-    trigger:
-      platform: state
-      entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-      to: 'on'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "⚠️ Beach Safety Alert"
-          message: "High rip current risk detected - swimming not recommended!"
-          data:
-            priority: high
-            tag: "rip-current-alert"
+alias: "Rip Current Warning"
+description: "Alert when rip current conditions become dangerous"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
+    to: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "⚠️ Beach Safety Alert"
+      message: >-
+        Rip current risk is {{ states('sensor.noaa_ilm_surf_rip_current_risk') }} -
+        swimming not recommended!
+      data:
+        priority: high
+        tag: rip-current-alert
 ```
 
 ### Weather Alert Notifications
 
 #### Severe Weather Alert Notification
+Sends the alert's name and description, then reads its headline out on a speaker. The binary sensor's `alerts` attribute lists only the severe alerts, so the first one is the one that turned it on.
 ```yaml
-automation:
-  - alias: "Severe Weather Alert"
-    description: "Immediate notification for severe weather warnings"
-    trigger:
-      platform: state
-      entity_id: binary_sensor.noaa_ilm_weather_severe_weather_alert
-      to: 'on'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: >-
-            ⚠️ {{ (state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts') or [{}])[0].get('event', 'Weather alert') }}
-          message: >-
-            {{ (state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts') or [{}])[0].get('description', 'See the NWS alert for details.') | replace('\r\n',' ') }}
-          data:
-            priority: high
-            notification_icon: mdi:weather-lightning-rainy
-      - service: tts.google_translate_say
-        data:
-          entity_id: media_player.home_speaker
-          message: >-
-            {{ (state_attr('binary_sensor.noaa_ilm_weather_active_alerts','alerts') or [{}])[0].get('description', 'See the NWS alert for details.') | replace('\r\n',' ') }}
+alias: "Severe Weather Alert"
+description: "Immediate notification for severe weather warnings"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_weather_severe_weather_alert
+    to: "on"
+actions:
+  - variables:
+      alert: >-
+        {{ (state_attr('binary_sensor.noaa_ilm_weather_severe_weather_alert', 'alerts') or [{}])[0] }}
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "⚠️ {{ alert.get('event', 'Severe weather alert') }}"
+      message: >-
+        {{ alert.get('description', 'See the NWS alert for details.') | replace('\n', ' ') }}
+      data:
+        priority: high
+        notification_icon: mdi:weather-lightning-rainy
+  - action: tts.speak
+    target:
+      entity_id: tts.google_translate_en_com
+    data:
+      media_player_entity_id: media_player.home_speaker
+      message: "{{ alert.get('headline', 'A severe weather alert is active.') }}"
 ```
 
 #### Winter Storm Alert with Light Flash
 ```yaml
-automation:
-  - alias: "Winter Storm Alert"
-    description: "Visual and mobile notification for winter weather"
-    trigger:
-      platform: state
-      entity_id: binary_sensor.noaa_ilm_weather_flood_winter_alert
-      to: 'on'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "❄️ Winter Weather Alert"
-          message: "Winter storm or flood warning active for your area!"
-          data:
-            notification_icon: mdi:weather-snowy-heavy
-      - service: light.turn_on
-        target:
-          entity_id: light.living_room
-        data:
-          flash: long
-          rgb_color: [0, 100, 255]
+alias: "Winter Storm Alert"
+description: "Visual and mobile notification for winter weather"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_weather_flood_winter_alert
+    to: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "❄️ Winter Weather Alert"
+      message: >-
+        {{ (state_attr('binary_sensor.noaa_ilm_weather_flood_winter_alert', 'alerts') or [{}])[0].get('event', 'Winter storm or flood alert') }}
+        is active for your area.
+      data:
+        notification_icon: mdi:weather-snowy-heavy
+  - action: light.turn_on
+    target:
+      entity_id: light.living_room
+    data:
+      flash: long
+      rgb_color: [0, 100, 255]
 ```
 
 #### Heat Advisory with Thermostat Adjustment
 ```yaml
-automation:
-  - alias: "Heat Advisory - Adjust Thermostat"
-    description: "Auto-adjust cooling when heat advisory is active"
-    trigger:
-      platform: state
-      entity_id: binary_sensor.noaa_ilm_weather_heat_air_quality_alert
-      to: 'on'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🔥 Heat Advisory"
-          message: "Heat advisory or air quality alert active!"
-      - service: climate.set_temperature
-        target:
-          entity_id: climate.home
-        data:
-          temperature: 72
-      - service: fan.turn_on
-        target:
-          entity_id: fan.bedroom
+alias: "Heat Advisory - Adjust Thermostat"
+description: "Auto-adjust cooling when a heat advisory is active"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_weather_heat_air_quality_alert
+    to: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🔥 Heat Advisory"
+      message: "Heat advisory or air quality alert active!"
+  - action: climate.set_temperature
+    target:
+      entity_id: climate.home
+    data:
+      temperature: 72
+  - action: fan.turn_on
+    target:
+      entity_id: fan.bedroom
 ```
 
 ### Space Weather Monitoring
 
 #### Aurora Alert for Northern Locations
 ```yaml
-automation:
-  - alias: "Aurora Alert - High Probability"
-    description: "Notify when aurora visibility probability is high"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.noaa_ilm_space_aurora_visibility_probability
-        above: 50
-    condition:
-      - condition: state
-        entity_id: sun.sun
-        state: below_horizon
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🌌 Aurora Alert!"
-          message: >
-            Aurora visibility probability is {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%!
-            Expected duration: {{ states('sensor.noaa_ilm_space_aurora_duration') }} hours.
-          data:
-            notification_icon: mdi:weather-night
+alias: "Aurora Alert - High Probability"
+description: "Notify when aurora visibility probability is high after dark"
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.noaa_ilm_space_aurora_visibility_probability
+    above: 50
+conditions:
+  - condition: state
+    entity_id: sun.sun
+    state: below_horizon
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🌌 Aurora Alert!"
+      message: >-
+        Aurora visibility probability is
+        {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%!
+        Expected duration: {{ states('sensor.noaa_ilm_space_aurora_duration') }} hours.
+      data:
+        notification_icon: mdi:weather-night
 ```
 
 #### Geomagnetic Storm Notification
+A Kp of 5 or more is a geomagnetic storm (G1 and up).
 ```yaml
-automation:
-  - alias: "Geomagnetic Storm Alert"
-    description: "Notify when Kp index indicates geomagnetic storm"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.noaa_ilm_space_planetary_k_index
-        above: 5
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "⚡ Geomagnetic Storm"
-          message: >
-            Kp Index: {{ states('sensor.noaa_ilm_space_planetary_k_index') }}
-            Geomagnetic Storm Level: {{ states('sensor.noaa_ilm_space_geomagnetic_storm') }}
-          data:
-            notification_icon: mdi:solar-power
+alias: "Geomagnetic Storm Alert"
+description: "Notify when the Kp index reaches storm level"
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.noaa_ilm_space_planetary_k_index
+    above: 4
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "⚡ Geomagnetic Storm"
+      message: >-
+        Kp index {{ states('sensor.noaa_ilm_space_planetary_k_index') }}:
+        {{ states('sensor.noaa_ilm_space_geomagnetic_storm_interpretation') }}
+        (Dst {{ states('sensor.noaa_ilm_space_geomagnetic_storm') }} nT).
+      data:
+        notification_icon: mdi:solar-power
 ```
 
 #### Meteor Shower Tonight
 ```yaml
-automation:
-  - alias: "Meteor Shower Tonight"
-    description: "Notify in the early evening when a shower is worth staying up for"
-    trigger:
-      - platform: time
-        at: "19:00:00"
-    condition:
-      - condition: state
-        entity_id: binary_sensor.noaa_ilm_space_meteor_shower_active
-        state: "on"
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: >
-            ☄️ {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'shower') }} tonight
-          message: >
-            Up to {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'expected_per_hour') }}
-            meteors/hour. Best viewing
-            {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'best_window_start') | as_timestamp | timestamp_custom('%-I:%M %p') }}
-            to
-            {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'best_window_end') | as_timestamp | timestamp_custom('%-I:%M %p') }}.
-            Conditions: {{ state_attr('binary_sensor.noaa_ilm_space_meteor_shower_active', 'rating') }}.
-          data:
-            notification_icon: mdi:meteor
+alias: "Meteor Shower Tonight"
+description: "Notify in the early evening when a shower is worth staying up for"
+triggers:
+  - trigger: time
+    at: "19:00:00"
+conditions:
+  - condition: state
+    entity_id: binary_sensor.noaa_ilm_space_meteor_shower_active
+    state: "on"
+actions:
+  - variables:
+      s: binary_sensor.noaa_ilm_space_meteor_shower_active
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "☄️ {{ state_attr(s, 'shower') }} tonight"
+      message: >-
+        Up to {{ state_attr(s, 'expected_per_hour') }} meteors/hour. Best viewing
+        {{ as_timestamp(state_attr(s, 'best_window_start')) | timestamp_custom('%-I:%M %p') }} to
+        {{ as_timestamp(state_attr(s, 'best_window_end')) | timestamp_custom('%-I:%M %p') }}.
+        Conditions: {{ state_attr(s, 'rating') }}.
+      data:
+        notification_icon: mdi:meteor
 ```
 
 #### Wake Me for the Peak
 ```yaml
-automation:
-  - alias: "Meteor Shower Peak Reminder"
-    description: "Alert the evening before a major shower peaks"
-    trigger:
-      - platform: time
-        at: "20:00:00"
-    condition:
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_space_next_meteor_shower
-        attribute: days_until
-        below: 1.5
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_space_next_meteor_shower
-        attribute: zhr_max
-        above: 20
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "☄️ {{ states('sensor.noaa_ilm_space_next_meteor_shower') }} peaks soon"
-          message: >
-            Peak: {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'peak_local') }}
-            — up to {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'zhr_max') }} meteors/hour
-            under ideal conditions. Radiant in
-            {{ state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'constellation') }}.
+alias: "Meteor Shower Peak Reminder"
+description: "Alert the evening before a major shower peaks"
+triggers:
+  - trigger: time
+    at: "20:00:00"
+conditions:
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_space_next_meteor_shower
+    attribute: days_until
+    below: 1.5
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_space_next_meteor_shower
+    attribute: zhr_max
+    above: 20
+actions:
+  - variables:
+      s: sensor.noaa_ilm_space_next_meteor_shower
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "☄️ {{ states(s) }} peaks soon"
+      message: >-
+        Peak {{ as_timestamp(state_attr(s, 'peak_local')) | timestamp_custom('%A %-I:%M %p') }},
+        up to {{ state_attr(s, 'zhr_max') }} meteors/hour under ideal conditions.
+        Radiant in {{ state_attr(s, 'constellation') }}.
 ```
 
 #### Go Outside, the Eclipse Is Starting
+Fires an hour before first contact. While the binary sensor is on, its attributes describe the eclipse, including the eye-safety warning.
 ```yaml
-automation:
-  - alias: "Eclipse Starting"
-    description: "Fires an hour before first contact, and reads the eye-safety warning out"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.noaa_ilm_space_eclipse_visible_now
-        to: "on"
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: >
-            🌑 {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eclipse') }}
-          message: >
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'disc_covered') }}%
-            covered from here. Watchable from
-            {{ states('sensor.noaa_ilm_space_next_eclipse_time') | as_datetime | as_local | string | truncate(16, true, '') }},
-            maximum
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'maximum_local') | as_timestamp | timestamp_custom('%-I:%M %p') }}
-            — look
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'look_towards') }}.
-            {% if state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eye_protection_required') %}
-            ⚠️ {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eye_safety') }}
-            {% endif %}
-          data:
-            notification_icon: mdi:weather-sunny-alert
+alias: "Eclipse Starting"
+description: "Fires an hour before first contact, and reads the eye-safety warning out"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_space_eclipse_visible_now
+    to: "on"
+actions:
+  - variables:
+      s: binary_sensor.noaa_ilm_space_eclipse_visible_now
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🌑 {{ state_attr(s, 'eclipse') }}"
+      message: >-
+        {{ state_attr(s, 'disc_covered') }}% covered from here. Watchable from
+        {{ as_timestamp(states('sensor.noaa_ilm_space_next_eclipse_time')) | timestamp_custom('%-I:%M %p') }},
+        maximum {{ as_timestamp(state_attr(s, 'maximum_local')) | timestamp_custom('%-I:%M %p') }}
+        — look {{ state_attr(s, 'look_towards') }}.
+        {% if state_attr(s, 'eye_protection_required') %}⚠️ {{ state_attr(s, 'eye_safety') }}{% endif %}
+      data:
+        notification_icon: mdi:weather-sunny-alert
 ```
 
 #### Order the Eclipse Glasses
 ```yaml
-automation:
-  - alias: "Eclipse Coming Up"
-    description: "Two weeks' warning for an eclipse actually worth planning around"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.noaa_ilm_space_eclipse_coming_up
-        to: "on"
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: >
-            🌑 {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'eclipse') }}
-            in {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'days_until') | round(0) | int }} days
-          message: >
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'date') }} —
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'disc_covered') }}%
-            covered from here
-            ({{ state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'rating') }}).
-            {% if state_attr('binary_sensor.noaa_ilm_space_eclipse_coming_up', 'eye_protection_required') %}
-            Order ISO 12312-2 eclipse glasses now.
-            {% endif %}
+alias: "Eclipse Coming Up"
+description: "Two weeks' warning for an eclipse actually worth planning around"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_space_eclipse_coming_up
+    to: "on"
+actions:
+  - variables:
+      s: binary_sensor.noaa_ilm_space_eclipse_coming_up
+  - action: notify.mobile_app_your_phone
+    data:
+      title: >-
+        🌑 {{ state_attr(s, 'eclipse') }} in {{ state_attr(s, 'days_until') | round(0) | int }} days
+      message: >-
+        {{ state_attr(s, 'date') }}: {{ state_attr(s, 'disc_covered') }}% covered from here
+        ({{ state_attr(s, 'rating') }}).
+        {% if state_attr(s, 'eye_protection_required') %}Order ISO 12312-2 eclipse glasses now.{% endif %}
 ```
 
 #### Remind Me an Hour Before
+A timestamp sensor can be used directly as a time trigger, offset and all — no templating, no polling. This is what the Next Eclipse Time entity is for.
 ```yaml
-automation:
-  - alias: "Eclipse Hour Warning"
-    description: >
-      A timestamp sensor can be used directly as a time trigger, offset and all — no templating,
-      no polling. This is what the Next Eclipse Time entity is for.
-    trigger:
-      - platform: time
-        at:
-          entity_id: sensor.noaa_ilm_space_next_eclipse_time
-          offset: "-01:00:00"
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🌑 Eclipse in an hour"
-          message: >
-            {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'eclipse') }} —
-            {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'disc_covered') }}% covered,
-            look {{ state_attr('sensor.noaa_ilm_space_next_eclipse_time', 'look_towards') }}.
+alias: "Eclipse Hour Warning"
+description: "An hour before the eclipse becomes watchable from here"
+triggers:
+  - trigger: time
+    at:
+      entity_id: sensor.noaa_ilm_space_next_eclipse_time
+      offset: "-01:00:00"
+actions:
+  - variables:
+      s: sensor.noaa_ilm_space_next_eclipse_time
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🌑 Eclipse in an hour"
+      message: >-
+        {{ state_attr(s, 'eclipse') }}: {{ state_attr(s, 'disc_covered') }}% covered,
+        look {{ state_attr(s, 'look_towards') }}.
 ```
 
 #### Only Bother if the Sky Is Clear
+The eclipse entities know nothing about cloud on purpose, so that the percentages stay correct for an eclipse fifty years out. Pair them with the cloud cover sensor yourself.
 ```yaml
-automation:
-  - alias: "Eclipse Worth Watching"
-    description: >
-      The eclipse entities know nothing about cloud on purpose, so that the percentages stay
-      correct for an eclipse fifty years out. Pair them with the cloud cover sensor yourself.
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.noaa_ilm_space_eclipse_visible_now
-        to: "on"
-    condition:
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_weather_cloud_cover
-        below: 40
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🌑 Clear skies for the eclipse"
-          message: >
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'eclipse') }},
-            {{ state_attr('binary_sensor.noaa_ilm_space_eclipse_visible_now', 'disc_covered') }}%
-            covered, and only {{ states('sensor.noaa_ilm_weather_cloud_cover') }}% cloud.
+alias: "Eclipse Worth Watching"
+description: "Only announce the eclipse if the sky is mostly clear"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_space_eclipse_visible_now
+    to: "on"
+conditions:
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_weather_cloud_cover
+    below: 40
+actions:
+  - variables:
+      s: binary_sensor.noaa_ilm_space_eclipse_visible_now
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🌑 Clear skies for the eclipse"
+      message: >-
+        {{ state_attr(s, 'eclipse') }}, {{ state_attr(s, 'disc_covered') }}% covered,
+        and only {{ states('sensor.noaa_ilm_weather_cloud_cover') }}% cloud.
 ```
 
-### Multi-Condition Automation with Grouping Logic
+### Multi-Condition Automations
 
 #### Safe Beach Day Notification
 ```yaml
-automation:
-  - alias: "Safe Beach Day Alert"
-    description: "Notify when conditions are perfect for beach activities"
-    trigger:
-      - platform: time
-        at: "08:00:00"
-    condition:
-      - condition: state
-        entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-        state: 'off'
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_weather_temperature
-        above: 75
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_weather_wind_speed
-        below: 15
-      - condition: state
-        entity_id: binary_sensor.noaa_ilm_weather_active_alerts
-        state: 'off'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🏖️ Perfect Beach Day!"
-          message: >
-            Great conditions for beach activities:
-            Temperature: {{ states('sensor.noaa_ilm_weather_temperature') }}°F
-            Rip Current Risk: {{ states('sensor.noaa_ilm_surf_rip_current_risk') }}
-            Surf Height: {{ states('sensor.noaa_ilm_surf_surf_height') }} ft
-            Water Temp: {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F
-          data:
-            actions:
-              - action: "VIEW_SURF_CONDITIONS"
-                title: "View Full Conditions"
+alias: "Safe Beach Day Alert"
+description: "Notify when conditions are good for the beach"
+triggers:
+  - trigger: time
+    at: "08:00:00"
+conditions:
+  - condition: state
+    entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
+    state: "off"
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_weather_temperature
+    above: 75
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_weather_wind_speed
+    below: 15
+  - condition: state
+    entity_id: binary_sensor.noaa_ilm_weather_active_alerts
+    state: "off"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "🏖️ Perfect Beach Day!"
+      message: >-
+        Temperature {{ states('sensor.noaa_ilm_weather_temperature') }}°F,
+        rip current risk {{ states('sensor.noaa_ilm_surf_rip_current_risk') }},
+        surf {{ states('sensor.noaa_ilm_surf_surf_height') }} ft,
+        water {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F.
 ```
 
 #### Severe Weather Preparation
 ```yaml
-automation:
-  - alias: "Severe Weather Preparation"
-    description: "Comprehensive preparation when multiple alerts are active"
-    trigger:
-      - platform: state
-        entity_id: 
-          - binary_sensor.noaa_ilm_weather_severe_weather_alert
-          - binary_sensor.noaa_ilm_weather_flood_winter_alert
-        to: 'on'
-    action:
-      # Close automated blinds/shades
-      - service: cover.close_cover
-        target:
-          entity_id: all
-      # Turn on weather alert lights
-      - service: light.turn_on
-        target:
-          area_id: living_room
-        data:
-          brightness: 255
-      # Send comprehensive alert
-      - service: notify.family_group
-        data:
-          title: "🚨 Severe Weather - Take Action"
-          message: >
-            Multiple severe weather alerts are active.
-            Total Alerts: {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }}
-            Types: {{ (state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alerts') or []) | map(attribute='event') | unique | join(', ') }}
-          data:
-            priority: high
-            ttl: 0
-      # Announce on speakers
-      - service: tts.google_translate_say
-        target:
-          entity_id: media_player.all_speakers
-        data:
-          message: "Attention: Multiple severe weather alerts are now active for your area."
+alias: "Severe Weather Preparation"
+description: "Close up and warn everyone when a severe or flood/winter alert starts"
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.noaa_ilm_weather_severe_weather_alert
+      - binary_sensor.noaa_ilm_weather_flood_winter_alert
+    to: "on"
+actions:
+  # Close automated blinds/shades
+  - action: cover.close_cover
+    target:
+      entity_id: all
+  # Turn on weather alert lights
+  - action: light.turn_on
+    target:
+      area_id: living_room
+    data:
+      brightness: 255
+  # Tell everyone which alerts are active
+  - action: notify.family_group
+    data:
+      title: "🚨 Severe Weather - Take Action"
+      message: >-
+        {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} NWS alert(s) active:
+        {{ (state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alerts') or []) | map(attribute='event') | unique | join(', ') }}
+      data:
+        priority: high
+        ttl: 0
+  # Announce on speakers
+  - action: tts.speak
+    target:
+      entity_id: tts.google_translate_en_com
+    data:
+      media_player_entity_id: media_player.all_speakers
+      message: "Attention: severe weather alerts are now active for your area."
 ```
 
-### Script Examples
+## Script Examples
+
+Each example is an entry for `scripts.yaml`. To use one in the script editor, create a script, open **⋮ → Edit in YAML**, and paste the part under the script's name.
 
 #### Check Current Conditions Script
 ```yaml
-script:
-  check_weather_conditions:
-    alias: "Check Current Weather Conditions"
-    description: "Announce current weather and space weather conditions"
-    sequence:
-      - service: tts.google_translate_say
-        target:
-          entity_id: media_player.home_speaker
-        data:
-          message: >
-            Current conditions: 
-            Temperature {{ states('sensor.noaa_ilm_weather_temperature') }} degrees, 
-            feels like {{ states('sensor.noaa_ilm_weather_feels_like') }} degrees.
-            {{ states('sensor.noaa_ilm_weather_sky_conditions') }} skies.
-            Wind {{ states('sensor.noaa_ilm_weather_wind_speed') }} miles per hour from the {{ state_attr('sensor.noaa_ilm_weather_wind_direction', 'cardinal_direction') }}.
-            {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}
-              Alert: {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} weather alerts are currently active.
-            {% endif %}
+check_weather_conditions:
+  alias: "Check Current Weather Conditions"
+  description: "Announce current weather conditions and alerts"
+  sequence:
+    - action: tts.speak
+      target:
+        entity_id: tts.google_translate_en_com
+      data:
+        media_player_entity_id: media_player.home_speaker
+        message: >-
+          Current conditions: temperature {{ states('sensor.noaa_ilm_weather_temperature') }} degrees,
+          feels like {{ states('sensor.noaa_ilm_weather_feels_like') }} degrees.
+          {{ states('sensor.noaa_ilm_weather_sky_conditions') }} skies.
+          Wind {{ states('sensor.noaa_ilm_weather_wind_speed') }} miles per hour from the
+          {{ state_attr('sensor.noaa_ilm_weather_wind_direction', 'cardinal_direction') }}.
+          {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}
+          {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} weather alerts are active.
+          {% endif %}
 ```
 
 #### Space Weather Report
 ```yaml
-script:
-  space_weather_report:
-    alias: "Space Weather Report"
-    description: "Get current space weather conditions"
-    sequence:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "🌌 Space Weather Report"
-          message: >
-            Kp Index: {{ states('sensor.noaa_ilm_space_planetary_k_index') }}
-            Geomagnetic Activity: {{ states('sensor.noaa_ilm_space_geomagnetic_storm') }}
-            {% if states('sensor.noaa_ilm_space_aurora_visibility_probability') | int > 0 %}
-            Aurora Visibility: {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%
-            Expected at: {{ states('sensor.noaa_ilm_space_aurora_next_time') }}
-            {% endif %}
-            Solar Radiation: {{ states('sensor.noaa_ilm_space_solar_radiation_storm_alerts') }}
+space_weather_report:
+  alias: "Space Weather Report"
+  description: "Send the current space weather conditions"
+  sequence:
+    - action: notify.mobile_app_your_phone
+      data:
+        title: "🌌 Space Weather Report"
+        message: >-
+          Kp index: {{ states('sensor.noaa_ilm_space_planetary_k_index') }}
+          ({{ states('sensor.noaa_ilm_space_planetary_k_index_rating') }}).
+          Geomagnetic storm: {{ states('sensor.noaa_ilm_space_geomagnetic_storm_interpretation') }}.
+          {% if states('sensor.noaa_ilm_space_aurora_visibility_probability') | int(0) > 0 %}
+          Aurora visibility: {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%,
+          expected at {{ states('sensor.noaa_ilm_space_aurora_next_time') }}.
+          {% endif %}
+          Solar radiation alerts: {{ states('sensor.noaa_ilm_space_solar_radiation_storm_alerts') }}.
 ```
 
 #### Morning Weather Briefing
+Phone notifications are plain text, so the briefing uses line breaks and emoji rather than markdown.
 ```yaml
-script:
-  morning_weather_briefing:
-    alias: "Morning Weather Briefing"
-    description: "Complete morning weather and alert briefing"
-    sequence:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "☀️ Good Morning - Weather Briefing"
-          message: >
-            **Current Conditions:**
-            🌡️ {{ states('sensor.noaa_ilm_weather_temperature') }}°F (feels like {{ states('sensor.noaa_ilm_weather_feels_like') }}°F)
-            💨 Wind {{ states('sensor.noaa_ilm_weather_wind_speed') }} mph
-            ☁️ {{ states('sensor.noaa_ilm_weather_sky_conditions') }}
-            
-            **Beach Conditions:**
-            🌊 Surf: {{ states('sensor.noaa_ilm_surf_surf_height') }} ft
-            🏊 Rip Current Risk: {{ states('sensor.noaa_ilm_surf_rip_current_risk') }}
-            🌡️ Water: {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F
-            
-            **Alerts:**
-            {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}
-            ⚠️ {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} active weather alerts
-            {% else %}
-            ✅ No active weather alerts
-            {% endif %}
+morning_weather_briefing:
+  alias: "Morning Weather Briefing"
+  description: "Morning weather, beach and alert briefing"
+  sequence:
+    - action: notify.mobile_app_your_phone
+      data:
+        title: "☀️ Good Morning - Weather Briefing"
+        message: |-
+          🌡️ {{ states('sensor.noaa_ilm_weather_temperature') }}°F (feels like {{ states('sensor.noaa_ilm_weather_feels_like') }}°F)
+          💨 Wind {{ states('sensor.noaa_ilm_weather_wind_speed') }} mph
+          ☁️ {{ states('sensor.noaa_ilm_weather_sky_conditions') }}
+          🌊 Surf {{ states('sensor.noaa_ilm_surf_surf_height') }} ft, rip current risk {{ states('sensor.noaa_ilm_surf_rip_current_risk') }}
+          🏊 Water {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F
+          {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') -%}
+          ⚠️ {{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} active weather alert(s)
+          {%- else -%}
+          ✅ No active weather alerts
+          {%- endif %}
 ```
 
-### Dashboard Card Examples
+## Dashboard Card Examples
 
-These examples demonstrate how to create effective dashboard cards organized by device groups.
+Each example is a card for **Edit dashboard → Add card → Manual**, and only uses cards that come with Home Assistant. The screenshots are from the Wilmington (ILM) setup; the alert and rip current cards are shown during a test Heat Advisory and high rip current risk.
 
 > **Guard against startup, or your log will fill with tracebacks.** Home Assistant renders
 > dashboard templates as soon as the frontend subscribes to them, which on a cold boot can be
 > *before* this integration has registered its entities — the config entry awaits an initial
-> refresh of ten coordinators, all making live NWS calls, before any platform is set up. Until
+> refresh of its coordinators, all making live NWS calls, before any platform is set up. Until
 > that finishes, `state_attr('sensor.noaa_…', 'periods')` returns `None` and
 > `states.sensor.noaa_…` returns `None`, so an unguarded `[0]` or `{% for %}` raises
 > `TypeError: 'NoneType' object is not iterable` or `UndefinedError: None has no element 0`.
@@ -1143,18 +1129,20 @@ entities:
     name: "Any Active Alerts"
     icon: mdi:bell-alert
 ```
+<img width="400" alt="Weather alerts card: one active alert, with the heat/air quality and any-alert rows showing Unsafe" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-weather-alerts.png" />
 
 #### Beach Conditions Card (NOAA Surf Group)
 ```yaml
 type: entities
 title: "🏖️ Beach Conditions - Wilmington"
 show_header_toggle: false
+state_color: true
 entities:
   - entity: sensor.noaa_ilm_surf_rip_current_risk
     name: "Rip Current Risk"
     icon: mdi:waves
   - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-    name: "Safe to Swim"
+    name: "Swimming"
     icon: mdi:swim
   - entity: sensor.noaa_ilm_surf_surf_height
     name: "Surf Height"
@@ -1163,60 +1151,25 @@ entities:
     name: "Water Temperature"
     icon: mdi:thermometer-water
 ```
+<img width="400" alt="Beach conditions card: rip current risk, swimming Unsafe, surf height and water temperature" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-beach.png" />
 
 #### Current Weather Card (NOAA Weather Group)
+The next three forecast periods with NWS's icons. Home Assistant's markdown card drops inline styles, so the layout is a table.
 ```yaml
-type: vertical-stack
-cards:
-  - type: markdown
-    content: |
-      {% set periods = state_attr('sensor.noaa_ilm_weather_extended_forecast','periods') or [] %}
-      {% if periods | count > 0 %}
-      {% set p = periods[0] %}
-      <div style="display:flex;align-items:center;gap:14px;">
-      <img src="{{ p.icon }}" width="56">
-      <div>
-      <b>{{ p.name }} · {{ as_timestamp(p.start_time) | timestamp_custom('%a %m/%d') }}</b><br>
-      <span style="font-size:1.4em;font-weight:700;">{{ p.temperature }}°{{ p.temperature_unit }}</span><br>
-      {{ p.detailed_forecast }}
-      </div>
-      </div>
-      {% else %}
-      _Forecast loading…_
-      {% endif %}
-  - type: markdown
-    content: |
-      {% set periods = state_attr('sensor.noaa_ilm_weather_extended_forecast','periods') or [] %}
-      {% if periods | count > 1 %}
-      {% set p = periods[1] %}
-      <div style="display:flex;align-items:center;gap:14px;">
-      <img src="{{ p.icon }}" width="56">
-      <div>
-      <b>{{ p.name }} · {{ as_timestamp(p.start_time) | timestamp_custom('%a %m/%d') }}</b><br>
-      <span style="font-size:1.4em;font-weight:700;">{{ p.temperature }}°{{ p.temperature_unit }}</span><br>
-      {{ p.detailed_forecast }}
-      </div>
-      </div>
-      {% else %}
-      _Forecast loading…_
-      {% endif %}
-  - type: markdown
-    content: |
-      {% set periods = state_attr('sensor.noaa_ilm_weather_extended_forecast','periods') or [] %}
-      {% if periods | count > 2 %}
-      {% set p = periods[2] %}
-      <div style="display:flex;align-items:center;gap:14px;">
-      <img src="{{ p.icon }}" width="56">
-      <div>
-      <b>{{ p.name }} · {{ as_timestamp(p.start_time) | timestamp_custom('%a %m/%d') }}</b><br>
-      <span style="font-size:1.4em;font-weight:700;">{{ p.temperature }}°{{ p.temperature_unit }}</span><br>
-      {{ p.detailed_forecast }}
-      </div>
-      </div>
-      {% else %}
-      _Forecast loading…_
-      {% endif %}
+type: markdown
+content: |
+  {% set periods = state_attr('sensor.noaa_ilm_weather_extended_forecast', 'periods') or [] %}
+  {% if periods | count > 0 %}
+  <table>
+  {% for p in periods[:3] %}
+  <tr><td><img src="{{ p.icon }}" width="56"></td><td><b>{{ p.name }}</b> · {{ p.temperature }}°{{ p.temperature_unit }}<br>{{ p.detailed_forecast }}</td></tr>
+  {% endfor %}
+  </table>
+  {% else %}
+  _Forecast loading…_
+  {% endif %}
 ```
+<img width="400" alt="Forecast card: This Afternoon, Tonight and Wednesday, each with an NWS icon, temperature and detailed forecast" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-current-weather.png" />
 
 #### Meteor Shower Card (NOAA Space Group)
 ```yaml
@@ -1264,6 +1217,7 @@ entities:
     attribute: days_until
     name: Days Away
 ```
+<img width="400" alt="Meteor shower card: tonight's shower, viewing score and conditions, best viewing window, moon illumination and the next shower" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-meteor.png" />
 
 To list the upcoming showers, read the `upcoming` attribute with a markdown card:
 
@@ -1273,10 +1227,10 @@ title: ☄️ Upcoming Meteor Showers
 content: |
   {% set showers = state_attr('sensor.noaa_ilm_space_next_meteor_shower', 'upcoming') or [] %}
   {% for s in showers %}
-  **{{ s.name }}** — {{ s.peak_local | as_timestamp | timestamp_custom('%b %-d') }}
-  ({{ s.days_until | round(0) | int }} days), up to {{ s.zhr_max }}/hr in {{ s.constellation }}
+  **{{ s.name }}** — {{ as_timestamp(s.peak_local) | timestamp_custom('%b %-d') }} ({{ s.days_until | round(0) | int }} days), up to {{ s.zhr_max }}/hr in {{ s.constellation }}
   {% endfor %}
 ```
+<img width="400" alt="Upcoming meteor showers: the next five with peak date, days away, rate and constellation" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-meteor-upcoming.png" />
 
 #### Eclipse Card (NOAA Space Group)
 ```yaml
@@ -1328,6 +1282,7 @@ entities:
     attribute: days_until
     name: Days Away
 ```
+<img width="400" alt="Eclipse card: next eclipse, when to go outside, coverage, viewing score, watch window, direction and height" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-eclipse.png" />
 
 To list what is coming, read the `upcoming` attribute with a markdown card. It includes eclipses
 that are *not* visible from your location, which is what stops the list from looking empty for
@@ -1339,12 +1294,10 @@ title: 🌑 Upcoming Eclipses
 content: |
   {% set eclipses = state_attr('sensor.noaa_ilm_space_next_eclipse', 'upcoming') or [] %}
   {% for e in eclipses %}
-  **{{ e.name }}** — {{ e.date }} ({{ e.days_until | round(0) | int }} days)
-  {% if e.visible %}{{ e.disc_covered }}% covered, score {{ e.viewing_score }}
-  {% else %}not visible from here
-  {% endif %}
+  **{{ e.name }}** — {{ e.date }} ({{ e.days_until | round(0) | int }} days){% if e.visible %}: {{ e.disc_covered }}% covered, score {{ e.viewing_score }}{% endif %}
   {% endfor %}
 ```
+<img width="400" alt="Upcoming eclipses: the next five, with coverage and score for the ones visible from here" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-eclipse-upcoming.png" />
 
 #### Space Weather Card (NOAA Space Group)
 ```yaml
@@ -1355,7 +1308,7 @@ entities:
   - entity: sensor.noaa_ilm_space_planetary_k_index
     name: Kp Index
     icon: mdi:chart-line
-  - entity: sensor.noaa_ilm_space_geomagnetic_storm
+  - entity: sensor.noaa_ilm_space_geomagnetic_storm_interpretation
     name: Geomagnetic Storm
     icon: mdi:earth
   - type: divider
@@ -1373,63 +1326,71 @@ entities:
     name: Solar Radiation Alerts
     icon: mdi:radioactive
 ```
+<img width="400" alt="Space weather card: Kp index, geomagnetic storm level, aurora probability, timing and duration, and solar radiation alerts" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-space-weather.png" />
 
 #### Hurricane Tracking Card (NOAA Hurricane Group)
-```yaml
-type: entities
-title: "🌀 Hurricane Activity"
-show_header_toggle: false
-entities:
-  - entity: sensor.noaa_hurricane_alerts
-    name: "Active Alerts"
-    icon: mdi:alert-octagon
-  - entity: sensor.noaa_hurricane_activity
-    name: "Activity Level"
-    icon: mdi:weather-hurricane
-```
-
-#### Comprehensive Weather Dashboard View
+Activity covers every basin the NHC tracks, so the card lists the active storms from the `storm_details` attribute (intensity is in knots) and shows both outlook maps.
 ```yaml
 type: vertical-stack
 cards:
-  # Top row - Alerts and Safety
+  - type: entities
+    title: "🌀 Hurricane Activity"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.noaa_hurricane_activity
+        name: "Activity Level"
+        icon: mdi:weather-hurricane
+      - entity: sensor.noaa_hurricane_alerts
+        name: "Watches & Warnings"
+        icon: mdi:alert-octagon
+  - type: markdown
+    content: |
+      {% for s in state_attr('sensor.noaa_hurricane_activity', 'storm_details') or [] %}
+      **{{ s.name }}** ({{ s.classification }}) — {{ s.intensity }} kt at {{ s.latitude }} {{ s.longitude }}
+      {% else %}
+      No active storms.
+      {% endfor %}
   - type: horizontal-stack
     cards:
-      - type: conditional
-        conditions:
-          - entity: binary_sensor.noaa_ilm_weather_active_alerts
-            state: 'on'
-        card:
-          type: markdown
-          content: |
-            ## ⚠️ ACTIVE WEATHER ALERTS
-            **{{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} Alert(s)**
-            {{ (state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alerts') or []) | map(attribute='event') | unique | join(', ') }}
-          card_mod:
-            style: |
-              ha-card {
-                background-color: rgba(255, 0, 0, 0.2);
-                border: 2px solid red;
-              }
-      
-      - type: conditional
-        conditions:
-          - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-            state: 'on'
-        card:
-          type: markdown
-          content: |
-            ## 🌊 BEACH SAFETY ALERT
-            **High Rip Current Risk**
-            Swimming Not Recommended
-          card_mod:
-            style: |
-              ha-card {
-                background-color: rgba(255, 165, 0, 0.2);
-                border: 2px solid orange;
-              }
-  
-  # Second row - Current conditions
+      - type: picture-entity
+        entity: image.noaa_hurricane_outlook_image
+        name: "Atlantic"
+        show_state: false
+      - type: picture-entity
+        entity: image.noaa_hurricane_pacific_outlook_image
+        name: "East Pacific"
+        show_state: false
+```
+<img width="400" alt="Hurricane card: activity level, watches and warnings, the list of active storms, and the Atlantic and East Pacific two-day outlook maps" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-hurricane.png" />
+
+#### Comprehensive Weather Dashboard View
+Alerts and beach safety at the top only while they're active, then current conditions, details and the space weather images.
+```yaml
+type: vertical-stack
+cards:
+  # Top - alerts and beach safety, only while active
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: binary_sensor.noaa_ilm_weather_active_alerts
+        state: "on"
+    card:
+      type: markdown
+      content: |
+        <ha-alert alert-type="error" title="{{ state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alert_count') }} active weather alert(s)">
+        {{ (state_attr('sensor.noaa_ilm_weather_active_nws_alerts', 'alerts') or []) | map(attribute='event') | unique | join(', ') }}
+        </ha-alert>
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
+        state: "on"
+    card:
+      type: markdown
+      content: |
+        <ha-alert alert-type="warning" title="High rip current risk">Swimming not recommended</ha-alert>
+
+  # Current conditions
   - type: horizontal-stack
     cards:
       - type: gauge
@@ -1441,7 +1402,6 @@ cards:
           green: 60
           yellow: 85
           red: 95
-      
       - type: gauge
         entity: sensor.noaa_ilm_weather_humidity
         name: "Humidity"
@@ -1451,7 +1411,6 @@ cards:
           green: 30
           yellow: 60
           red: 80
-      
       - type: gauge
         entity: sensor.noaa_ilm_space_planetary_k_index
         name: "Kp Index"
@@ -1461,30 +1420,33 @@ cards:
           green: 0
           yellow: 5
           red: 7
-  
-  # Third row - Detailed entities
+
+  # Details
   - type: entities
     title: "Weather Details"
     entities:
-      - sensor.noaa_ilm_weather_feels_like
-      - sensor.noaa_ilm_weather_wind_speed
-      - sensor.noaa_ilm_weather_barometric_pressure
-      - sensor.noaa_ilm_weather_sky_conditions
-  
-  # Fourth row - Space weather images
+      - entity: sensor.noaa_ilm_weather_feels_like
+        name: "Feels Like"
+      - entity: sensor.noaa_ilm_weather_wind_speed
+        name: "Wind Speed"
+      - entity: sensor.noaa_ilm_weather_barometric_pressure
+        name: "Pressure"
+      - entity: sensor.noaa_ilm_weather_sky_conditions
+        name: "Sky"
+
+  # Space weather images
   - type: horizontal-stack
     cards:
       - type: picture-entity
         entity: image.noaa_ilm_space_geoelectric_field_image
-        name: "Geomagnetic Field"
+        name: "Geoelectric Field"
         show_state: false
-      
       - type: picture-entity
         entity: image.noaa_ilm_space_aurora_forecast_image
         name: "Aurora Forecast"
         show_state: false
-
 ```
+<img width="400" alt="Dashboard: alert and rip current banners, temperature, humidity and Kp gauges, weather details, and the geoelectric field and aurora forecast images" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-dashboard.png" />
 
 #### Glance Card for Quick Overview
 ```yaml
@@ -1501,9 +1463,9 @@ entities:
   - entity: sensor.noaa_ilm_surf_surf_height
     name: "Surf"
   - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-    name: "Safe Swim"
+    name: "Swimming"
   - entity: sensor.noaa_ilm_space_planetary_k_index_rating
-    name: "Kp Index"
+    name: "Kp"
   - entity: binary_sensor.noaa_ilm_weather_active_alerts
     name: "Alerts"
   - entity: sensor.noaa_hurricane_activity
@@ -1511,6 +1473,7 @@ entities:
   - entity: sensor.noaa_ilm_surf_rip_current_risk
     name: "Rip Risk"
 ```
+<img width="400" alt="Glance card: temperature, wind, surf, swimming, Kp, alerts, hurricanes and rip risk" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-glance.png" />
 
 #### Mobile-Optimized Card
 ```yaml
@@ -1520,41 +1483,40 @@ cards:
     content: |
       # 📍 Wilmington Weather
       {% set t = states.sensor.noaa_ilm_weather_temperature %}
-      Updated: {{ as_timestamp(t.last_changed) | timestamp_custom('%I:%M %p') if t else '—' }}
-  
+      Updated: {{ as_timestamp(t.last_changed) | timestamp_custom('%-I:%M %p') if t else '—' }}
   - type: entities
     entities:
       - entity: sensor.noaa_ilm_weather_temperature
-        name: "🌡️ Temperature"
+        name: "Temperature"
       - entity: sensor.noaa_ilm_weather_feels_like
-        name: "🤒 Feels Like"
+        name: "Feels Like"
       - entity: sensor.noaa_ilm_weather_sky_conditions
-        name: "☁️ Conditions"
-  
+        name: "Conditions"
   - type: conditional
     conditions:
-      - entity: binary_sensor.noaa_ilm_weather_active_alerts
-        state: 'on'
+      - condition: state
+        entity: binary_sensor.noaa_ilm_weather_active_alerts
+        state: "on"
     card:
-      type: button
+      type: tile
+      entity: sensor.noaa_ilm_weather_active_nws_alerts
       name: "View Active Alerts"
       icon: mdi:alert-circle
-      tap_action:
-        action: more-info
-        entity: sensor.noaa_ilm_weather_active_nws_alerts
-      hold_action:
-        action: none
+      color: red
 ```
+<img width="400" alt="Mobile card: Wilmington Weather header with update time, temperature, feels like and conditions, and a View Active Alerts tile" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-mobile.png" />
 
 #### Forecast Discussion Card
+The discussion keeps NWS's line breaks in a code block. It's long, so give it a view or a popup of its own.
 ```yaml
 type: markdown
 title: "📝 Forecast Discussion"
 content: |
-  **{{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'office_code') }}** - Updated {{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'issue_time') }}
-
+  ~~~
   {{ state_attr('sensor.noaa_ilm_weather_forecast_discussion', 'full_text') or 'No discussion yet.' }}
+  ~~~
 ```
+<img width="400" alt="Forecast discussion card showing the start of the NWS Wilmington Area Forecast Discussion in monospace" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-discussion.png" />
 
 #### Marine Forecast Card (NOAA Marine Group)
 ```yaml
@@ -1569,6 +1531,7 @@ content: |
   **{{ p.name }}**: {{ p.detailed_forecast }}
   {% endfor %}
 ```
+<img width="400" alt="Marine forecast card: Rest Of Today, Tonight, Wednesday and Wednesday Night forecasts for the LMZ741 zone" src="https://raw.githubusercontent.com/dawg-io/noaa_it_all/main/docs/images/card-marine.png" />
 
 ## Troubleshooting & FAQ
 

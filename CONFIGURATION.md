@@ -163,20 +163,19 @@ And two that follow the rule but read oddly:
 
 ### Customizing Entity Properties
 
-You can customize friendly names, icons, and other properties in `customize.yaml`:
+The easiest way to rename an entity or change its icon is in its settings: click the entity, then
+the ⚙️ icon. To do it in YAML instead, add `customize` to `configuration.yaml` and restart:
 
 ```yaml
-# customize.yaml
+# configuration.yaml
 homeassistant:
   customize:
     sensor.noaa_ilm_weather_temperature:
       friendly_name: "Wilmington Temperature"
       icon: mdi:thermometer
-    
     binary_sensor.noaa_ilm_surf_unsafe_to_swim:
       friendly_name: "Beach Safety"
       icon: mdi:swim
-    
     sensor.noaa_ilm_space_planetary_k_index:
       friendly_name: "Geomagnetic Activity"
       icon: mdi:earth
@@ -287,35 +286,30 @@ configure, and carry **no office code**.
 
 ### Creating Custom Groups
 
-You can create additional groups combining entities from different devices:
+A binary sensor group gives you one entity that's on while any of its members is: a single
+"something's unsafe" switch for automations and dashboards. Create it under **Settings → Devices &
+services → Helpers → Create helper → Group → Binary sensor group**, or in YAML:
 
 ```yaml
-# groups.yaml
-noaa_safety_alerts:
-  name: "NOAA Safety Alerts"
-  entities:
-    - binary_sensor.noaa_ilm_weather_severe_weather_alert
-    - binary_sensor.noaa_ilm_weather_flood_winter_alert
-    - binary_sensor.noaa_ilm_weather_heat_air_quality_alert
-    - binary_sensor.noaa_ilm_surf_unsafe_to_swim
-
-noaa_current_conditions:
-  name: "Current Weather"
-  entities:
-    - sensor.noaa_ilm_weather_temperature
-    - sensor.noaa_ilm_weather_humidity
-    - sensor.noaa_ilm_weather_wind_speed
-    - sensor.noaa_ilm_weather_barometric_pressure
-
-noaa_space_weather:
-  name: "Space Weather"
-  entities:
-    - sensor.noaa_ilm_space_planetary_k_index
-    - sensor.noaa_ilm_space_geomagnetic_storm
-    - sensor.noaa_ilm_space_aurora_visibility_probability
+# configuration.yaml
+binary_sensor:
+  - platform: group
+    name: "NOAA Safety Alerts"
+    device_class: safety
+    entities:
+      - binary_sensor.noaa_ilm_weather_severe_weather_alert
+      - binary_sensor.noaa_ilm_weather_flood_winter_alert
+      - binary_sensor.noaa_ilm_weather_heat_air_quality_alert
+      - binary_sensor.noaa_ilm_surf_unsafe_to_swim
 ```
 
+This creates `binary_sensor.noaa_safety_alerts`. To group sensors for display, put them on one
+dashboard card instead; see below.
+
 ## Dashboard Card Examples
+
+Each example is a card for **Edit dashboard → Add card → Manual**. The [README](README.md#dashboard-card-examples)
+has more, with screenshots.
 
 ### Basic Weather Card
 ```yaml
@@ -355,9 +349,10 @@ entities:
 ```yaml
 type: entities
 title: "Beach Conditions"
+state_color: true
 entities:
   - entity: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-    name: "Safe to Swim"
+    name: "Swimming"
   - entity: sensor.noaa_ilm_surf_rip_current_risk
     name: "Rip Current Risk"
   - entity: sensor.noaa_ilm_surf_surf_height
@@ -373,10 +368,12 @@ cards:
   - type: entities
     title: "Space Weather"
     entities:
-      - sensor.noaa_ilm_space_planetary_k_index
-      - sensor.noaa_ilm_space_geomagnetic_storm
-      - sensor.noaa_ilm_space_aurora_visibility_probability
-  
+      - entity: sensor.noaa_ilm_space_planetary_k_index
+        name: "Kp Index"
+      - entity: sensor.noaa_ilm_space_geomagnetic_storm_interpretation
+        name: "Geomagnetic Storm"
+      - entity: sensor.noaa_ilm_space_aurora_visibility_probability
+        name: "Aurora Probability"
   - type: picture-entity
     entity: image.noaa_ilm_space_aurora_forecast_image
     name: "Aurora Forecast"
@@ -388,9 +385,12 @@ cards:
 type: entities
 title: "Meteor Showers"
 entities:
-  - binary_sensor.noaa_ilm_space_meteor_shower_active
-  - sensor.noaa_ilm_space_meteor_shower_activity
-  - sensor.noaa_ilm_space_meteor_viewing_score
+  - entity: binary_sensor.noaa_ilm_space_meteor_shower_active
+    name: "Worth Going Outside"
+  - entity: sensor.noaa_ilm_space_meteor_shower_activity
+    name: "Active Now"
+  - entity: sensor.noaa_ilm_space_meteor_viewing_score
+    name: "Viewing Score"
   - type: attribute
     entity: sensor.noaa_ilm_space_meteor_viewing_score
     attribute: expected_per_hour
@@ -399,7 +399,8 @@ entities:
     entity: sensor.noaa_ilm_space_meteor_viewing_score
     attribute: best_window_start
     name: "Best Viewing From"
-  - sensor.noaa_ilm_space_next_meteor_shower
+  - entity: sensor.noaa_ilm_space_next_meteor_shower
+    name: "Next Shower"
 ```
 
 ### Eclipse Card
@@ -407,12 +408,18 @@ entities:
 type: entities
 title: "Eclipses"
 entities:
-  - binary_sensor.noaa_ilm_space_eclipse_visible_now
-  - binary_sensor.noaa_ilm_space_eclipse_coming_up
-  - sensor.noaa_ilm_space_next_eclipse
-  - sensor.noaa_ilm_space_next_eclipse_time
-  - sensor.noaa_ilm_space_eclipse_coverage
-  - sensor.noaa_ilm_space_eclipse_viewing_score
+  - entity: binary_sensor.noaa_ilm_space_eclipse_visible_now
+    name: "Go Outside Now"
+  - entity: binary_sensor.noaa_ilm_space_eclipse_coming_up
+    name: "Worth Planning For"
+  - entity: sensor.noaa_ilm_space_next_eclipse
+    name: "Next Eclipse"
+  - entity: sensor.noaa_ilm_space_next_eclipse_time
+    name: "Go Outside At"
+  - entity: sensor.noaa_ilm_space_eclipse_coverage
+    name: "Coverage"
+  - entity: sensor.noaa_ilm_space_eclipse_viewing_score
+    name: "Viewing Score"
   - type: attribute
     entity: sensor.noaa_ilm_space_eclipse_viewing_score
     attribute: rating
@@ -425,117 +432,120 @@ entities:
 
 ## Automation Examples
 
+Each example uses Home Assistant's current automation syntax. Create an automation, open
+**⋮ → Edit in YAML** and paste it in, or add it to `automations.yaml` as a list item. Replace the
+notify action and the light and speaker entities with your own.
+
 ### Binary Sensor Alert Automation
 ```yaml
-automation:
-  - alias: "Unsafe Swimming Conditions"
-    description: "Alert when rip currents make swimming dangerous"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-        to: 'on'
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "Beach Safety Alert"
-          message: "High rip current risk - swimming not recommended"
+alias: "Unsafe Swimming Conditions"
+description: "Alert when rip currents make swimming dangerous"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
+    to: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "Beach Safety Alert"
+      message: "High rip current risk - swimming not recommended"
 ```
 
 ### Multi-Condition Weather Automation
 ```yaml
-automation:
-  - alias: "Perfect Beach Day"
-    description: "Notify when conditions are ideal for beach activities"
-    trigger:
-      - platform: time
-        at: "08:00:00"
-    condition:
-      - condition: state
-        entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
-        state: 'off'
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_weather_temperature
-        above: 75
-      - condition: numeric_state
-        entity_id: sensor.noaa_ilm_weather_wind_speed
-        below: 15
-    action:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "Perfect Beach Day!"
-          message: >
-            Temperature: {{ states('sensor.noaa_ilm_weather_temperature') }}°F
-            Surf: {{ states('sensor.noaa_ilm_surf_surf_height') }} ft
-            Water: {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F
+alias: "Perfect Beach Day"
+description: "Notify when conditions are ideal for beach activities"
+triggers:
+  - trigger: time
+    at: "08:00:00"
+conditions:
+  - condition: state
+    entity_id: binary_sensor.noaa_ilm_surf_unsafe_to_swim
+    state: "off"
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_weather_temperature
+    above: 75
+  - condition: numeric_state
+    entity_id: sensor.noaa_ilm_weather_wind_speed
+    below: 15
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "Perfect Beach Day!"
+      message: >-
+        Temperature {{ states('sensor.noaa_ilm_weather_temperature') }}°F,
+        surf {{ states('sensor.noaa_ilm_surf_surf_height') }} ft,
+        water {{ states('sensor.noaa_ilm_surf_water_temperature') }}°F.
 ```
 
 ### Severe Weather Response
 ```yaml
-automation:
-  - alias: "Severe Weather Actions"
-    description: "Automated responses to severe weather"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.noaa_ilm_weather_severe_weather_alert
-        to: 'on'
-    action:
-      # Close blinds
-      - service: cover.close_cover
-        target:
-          entity_id: all
-      # Turn on emergency lights
-      - service: light.turn_on
-        target:
-          entity_id: light.emergency_lights
-        data:
-          brightness: 255
-      # Send notification
-      - service: notify.family
-        data:
-          title: "Severe Weather Alert"
-          message: "Tornado or severe thunderstorm warning active!"
-          data:
-            priority: high
+alias: "Severe Weather Actions"
+description: "Automated responses to severe weather"
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.noaa_ilm_weather_severe_weather_alert
+    to: "on"
+actions:
+  # Close blinds
+  - action: cover.close_cover
+    target:
+      entity_id: all
+  # Turn on emergency lights
+  - action: light.turn_on
+    target:
+      entity_id: light.emergency_lights
+    data:
+      brightness: 255
+  # Send a notification naming the alert
+  - action: notify.family
+    data:
+      title: "Severe Weather Alert"
+      message: >-
+        {{ (state_attr('binary_sensor.noaa_ilm_weather_severe_weather_alert', 'alerts') or [{}])[0].get('event', 'Severe weather alert') }}
+        is active for your area!
+      data:
+        priority: high
 ```
 
 ## Script Examples
 
+Each example is an entry for `scripts.yaml`. In the script editor, paste the part under the
+script's name into **⋮ → Edit in YAML**.
+
 ### Weather Report Script
 ```yaml
-script:
-  weather_report:
-    alias: "Get Weather Report"
-    sequence:
-      - service: notify.mobile_app_your_phone
-        data:
-          title: "Weather Report"
-          message: >
-            Temperature: {{ states('sensor.noaa_ilm_weather_temperature') }}°F
-            Conditions: {{ states('sensor.noaa_ilm_weather_sky_conditions') }}
-            Wind: {{ states('sensor.noaa_ilm_weather_wind_speed') }} mph
-            Humidity: {{ states('sensor.noaa_ilm_weather_humidity') }}%
-            {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}
-            ⚠️ Weather alerts active!
-            {% endif %}
+weather_report:
+  alias: "Get Weather Report"
+  sequence:
+    - action: notify.mobile_app_your_phone
+      data:
+        title: "Weather Report"
+        message: >-
+          Temperature: {{ states('sensor.noaa_ilm_weather_temperature') }}°F.
+          Conditions: {{ states('sensor.noaa_ilm_weather_sky_conditions') }}.
+          Wind: {{ states('sensor.noaa_ilm_weather_wind_speed') }} mph.
+          Humidity: {{ states('sensor.noaa_ilm_weather_humidity') }}%.
+          {% if is_state('binary_sensor.noaa_ilm_weather_active_alerts', 'on') %}⚠️ Weather alerts active!{% endif %}
 ```
 
 ### Space Weather Check Script
 ```yaml
-script:
-  space_weather_check:
-    alias: "Check Space Weather"
-    sequence:
-      - service: tts.google_translate_say
-        target:
-          entity_id: media_player.living_room
-        data:
-          message: >
-            Space weather report.
-            K P index is {{ states('sensor.noaa_ilm_space_planetary_k_index') }}.
-            Geomagnetic activity: {{ states('sensor.noaa_ilm_space_geomagnetic_storm') }}.
-            {% if states('sensor.noaa_ilm_space_aurora_visibility_probability') | int > 50 %}
-            Aurora visibility probability is high at {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }} percent.
-            {% endif %}
+space_weather_check:
+  alias: "Check Space Weather"
+  sequence:
+    - action: tts.speak
+      target:
+        entity_id: tts.google_translate_en_com
+      data:
+        media_player_entity_id: media_player.living_room
+        message: >-
+          Space weather report. K P index is {{ states('sensor.noaa_ilm_space_planetary_k_index') }}.
+          Geomagnetic storm level: {{ states('sensor.noaa_ilm_space_geomagnetic_storm_interpretation') }}.
+          {% if states('sensor.noaa_ilm_space_aurora_visibility_probability') | int(0) > 50 %}
+          Aurora visibility probability is high at
+          {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }} percent.
+          {% endif %}
 ```
 
 ## Best Practices
