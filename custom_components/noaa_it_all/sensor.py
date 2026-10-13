@@ -12,10 +12,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
+    CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, CONF_MARINE_ZONE, DOMAIN,
 )
 from .entry_config import resolve_entry_config
-from .offices import SURF_HEIGHT, WATER_TEMPERATURE, is_hurricane_entry, is_surf_entry
+from .offices import (
+    SURF_HEIGHT, WATER_TEMPERATURE, is_hurricane_entry, is_marine_entry, is_surf_entry,
+)
 
 # Re-export every sensor class so that existing code that imports
 # directly from ``sensor`` continues to work.
@@ -29,6 +31,7 @@ from .sensors import (  # noqa: F401
     RipCurrentRiskSensor,
     SurfHeightSensor,
     WaterTemperatureSensor,
+    MarineForecastSensor,
     AuroraNextTimeSensor,
     AuroraDurationSensor,
     AuroraVisibilityProbabilitySensor,
@@ -86,6 +89,12 @@ async def async_setup_entry(
         async_add_entities([
             HurricaneAlertsSensor(hurricane_coord),
             HurricaneActivitySensor(hurricane_coord),
+        ])
+        return
+    if is_marine_entry(conf):
+        marine_coord = data["marine_forecast_coordinator"]
+        async_add_entities([
+            MarineForecastSensor(marine_coord, conf[CONF_OFFICE_CODE], conf[CONF_MARINE_ZONE]),
         ])
         return
 

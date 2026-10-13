@@ -16,6 +16,19 @@ from ..parsers import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Home Assistant turns a state longer than this into "unknown".
+_MAX_STATE_LENGTH = 255
+
+
+def _fit_state(text):
+    """Shorten text to a state's length, at a word, ending with "…"."""
+    if len(text) <= _MAX_STATE_LENGTH:
+        return text
+    cut = text[:_MAX_STATE_LENGTH - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" .,;") + "…"
+
 
 class RipCurrentRiskSensor(CoordinatorEntity):
     """Representation of Rip Current Risk sensor for specific NWS office location.
@@ -225,5 +238,87 @@ class WaterTemperatureSensor(CoordinatorEntity):
         return DeviceInfo(
             identifiers={(DOMAIN, f"noaa_{self._office_code}_surf")},
             name=f"NOAA {self._office_code} Surf",
+            manufacturer="NOAA"
+        )
+
+
+class MarineForecastSensor(CoordinatorEntity):
+    """Nearshore marine forecast (NWS NSH product) for one marine zone.
+
+    The state is the first period's forecast (for example "West winds 10 to
+    20 kt. Waves 1 to 2 ft."), shortened if it is too long for a state, and
+    the ``period`` attribute names it ("Rest Of Today"). Every period is in
+    the ``periods`` attribute as ``{"name", "detailed_forecast"}``. Each zone has its own marine entry and
+    device, "NOAA LMZ741 Marine", so entity IDs look like
+    ``sensor.noaa_lmz741_marine_forecast``.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, office_code, marine_zone):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._office_code = office_code
+        self._marine_zone = marine_zone
+        self._attr_unique_id = f"noaa_{marine_zone}_marine_forecast"
+
+    @property
+    def name(self):
+        """Return the local name of the sensor."""
+        return "Forecast"
+
+    def _forecast(self):
+        data = self.coordinator.data
+        if not data:
+            return None
+        return data.get("forecast")
+
+    def _first_period(self):
+        forecast = self._forecast()
+        if not forecast or not forecast.get("periods"):
+            return None
+        return forecast["periods"][0]
+
+    @property
+    def state(self):
+        """Return the first period's forecast."""
+        period = self._first_period()
+        if period is None or not period["detailed_forecast"]:
+            return None
+        return _fit_state(period["detailed_forecast"])
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return "mdi:sail-boat"
+
+    @property
+    def extra_state_attributes(self):
+        """Return every period plus zone and issuance details."""
+        forecast = self._forecast()
+        if not forecast:
+            return {"periods": []}
+        data = self.coordinator.data
+        period = self._first_period()
+        return {
+            "period": period["name"] if period else None,
+            "zone": forecast.get("zone"),
+            "zone_name": forecast.get("zone_name"),
+            "office_code": self._office_code,
+            "issued": forecast.get("issued"),
+            "issuance_time": data.get("issuance_time"),
+            "product_id": data.get("product_id"),
+            "headlines": forecast.get("headlines", []),
+            "period_count": len(forecast.get("periods", [])),
+            "periods": forecast.get("periods", []),
+            "forecast_source": data.get("source_url", ""),
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information to group this entity."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"noaa_{self._marine_zone}_marine")},
+            name=f"NOAA {self._marine_zone} Marine",
             manufacturer="NOAA"
         )
