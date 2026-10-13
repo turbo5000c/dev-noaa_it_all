@@ -2,7 +2,7 @@
 import asyncio
 import logging
 
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     config_validation as cv,
@@ -19,6 +19,7 @@ from .const import (
     OFFICE_TIDE_STATIONS, OFFICE_BUOY_STATIONS,
     RADAR_FRAME_DIR,
 )
+from .config_flow import add_entry_by_import
 from .entry_config import resolve_entry_config
 from .offices import (
     ALL_SURF_ENTITIES,
@@ -60,15 +61,6 @@ def _platforms(conf):
     if is_hurricane_entry(conf):
         return HURRICANE_PLATFORMS
     return PLATFORMS
-
-
-def _async_add_entry(hass: HomeAssistant, data: dict) -> None:
-    """Start adding a surf or hurricane entry; one that exists already is kept."""
-    hass.async_create_task(
-        hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": SOURCE_IMPORT}, data=data
-        )
-    )
 
 
 # YAML setup was removed: the sensor and image platforms have no
@@ -130,8 +122,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     if surf:
-        _async_add_entry(hass, {CONF_ENTRY_TYPE: ENTRY_TYPE_SURF, CONF_OFFICE_CODE: surf})
-    _async_add_entry(hass, {CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE})
+        add_entry_by_import(hass, {CONF_ENTRY_TYPE: ENTRY_TYPE_SURF, CONF_OFFICE_CODE: surf})
+    # Only the first entry to upgrade adds hurricanes. One that was disabled
+    # upgrades when it is enabled, maybe long after the hurricane entry was
+    # deleted on purpose.
+    if not any(
+        other.version >= 2
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    ):
+        add_entry_by_import(hass, {CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE})
     _LOGGER.info(
         "Moved %s to a weather entry%s", entry.title,
         f" and its surf to a surf entry for {surf}" if surf else "",
@@ -155,32 +155,40 @@ def _async_release_surf_device(hass: HomeAssistant, entry: ConfigEntry, office: 
         )
 
 
-def _async_adopt_entities(
-    hass: HomeAssistant, entry: ConfigEntry, device_key: str, keep, drop=()
-) -> None:
+def _async_adopt_entities(hass: HomeAssistant, entry: ConfigEntry, device_key: str, entities) -> None:
     """Take over a device and the entities a weather entry used to have.
 
-    ``keep`` and ``drop`` are (platform, unique ID) pairs. Kept entities are
-    moved to this entry rather than recreated, so they keep their entity IDs
-    and history; dropped ones, which this entry no longer creates, are
-    removed. The order matters: Home Assistant deletes a device's entities
-    that still belong to an entry the device is taken off, so the entities
-    move before the old entry lets go of the device. Once done there is
-    nothing left to do, so it runs on every setup.
+    ``entities`` are (platform, unique ID) pairs: every entity the device can
+    have. They are moved to this entry rather than recreated, so they keep
+    their entity IDs and history. The order matters: Home Assistant deletes a
+    device's entities that still belong to an entry the device is taken off,
+    so the entities move before the old entry lets go of the device, and one
+    left out of ``entities`` would go with it. Once done there is nothing left
+    to do, so it runs on every setup.
+
+    Home Assistant only clears "disabled by its config entry" when that entry
+    is enabled, which this one already is, so the flag is cleared here for
+    anything that came from a disabled entry.
     """
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
     device = dev_reg.async_get_device(identifiers={(DOMAIN, device_key)})
     if device is not None and entry.entry_id not in device.config_entries:
         dev_reg.async_update_device(device.id, add_config_entry_id=entry.entry_id)
+        if device.disabled_by is dr.DeviceEntryDisabler.CONFIG_ENTRY:
+            dev_reg.async_update_device(device.id, disabled_by=None)
 
-    for platform, unique_id in drop:
-        if entity_id := ent_reg.async_get_entity_id(platform, DOMAIN, unique_id):
-            ent_reg.async_remove(entity_id)
-    for platform, unique_id in keep:
+    for platform, unique_id in entities:
         entity_id = ent_reg.async_get_entity_id(platform, DOMAIN, unique_id)
-        if entity_id and ent_reg.async_get(entity_id).config_entry_id != entry.entry_id:
-            ent_reg.async_update_entity(entity_id, config_entry_id=entry.entry_id)
+        if not entity_id:
+            continue
+        registered = ent_reg.async_get(entity_id)
+        if registered.config_entry_id == entry.entry_id:
+            continue
+        changes = {"config_entry_id": entry.entry_id}
+        if registered.disabled_by is er.RegistryEntryDisabler.CONFIG_ENTRY:
+            changes["disabled_by"] = None
+        ent_reg.async_update_entity(entity_id, **changes)
 
     if device is not None:
         for other in set(device.config_entries) - {entry.entry_id}:
@@ -208,16 +216,34 @@ async def _async_setup_hurricane_entry(hass: HomeAssistant, entry: ConfigEntry, 
     return True
 
 
+def _surf_entities_to_create(hass: HomeAssistant, entry: ConfigEntry, office: str):
+    """Return the surf entities a surf entry creates.
+
+    What the office has data for, plus any it already has: a surf entity
+    carried over from before 0.8.0 stays, with its history, even where the
+    office has no station for it. Some read the value from the forecast text.
+    """
+    entities = surf_entities(office)
+    try:
+        ent_reg = er.async_get(hass)
+        for platform, suffix in ALL_SURF_ENTITIES:
+            if (platform, suffix) in entities:
+                continue
+            entity_id = ent_reg.async_get_entity_id(platform, DOMAIN, f"noaa_{office}_{suffix}")
+            if entity_id and ent_reg.async_get(entity_id).config_entry_id == entry.entry_id:
+                entities.append((platform, suffix))
+    except Exception:  # noqa: BLE001 - fall back to what the office has data for
+        _LOGGER.exception("Could not read the existing surf entities for %s", office)
+    return entities
+
+
 async def _async_setup_surf_entry(hass: HomeAssistant, entry: ConfigEntry, conf: dict) -> bool:
     """Set up a surf entry: one coastal office's Surf Zone Forecast."""
     office_code = conf[CONF_OFFICE_CODE]
     _LOGGER.info("Setting up NOAA surf for %s", office_code)
-    made = surf_entities(office_code)
-    pairs = [(platform, f"noaa_{office_code}_{suffix}") for platform, suffix in ALL_SURF_ENTITIES]
     _async_adopt_safely(
         hass, entry, f"{office_code} surf", f"noaa_{office_code}_surf",
-        [pair for pair, spec in zip(pairs, ALL_SURF_ENTITIES) if spec in made],
-        [pair for pair, spec in zip(pairs, ALL_SURF_ENTITIES) if spec not in made],
+        [(platform, f"noaa_{office_code}_{suffix}") for platform, suffix in ALL_SURF_ENTITIES],
     )
 
     surf_coord = SurfCoordinator(
@@ -229,6 +255,7 @@ async def _async_setup_surf_entry(hass: HomeAssistant, entry: ConfigEntry, conf:
     hass.data[DOMAIN][entry.entry_id] = {
         "config": conf,
         "surf_coordinator": surf_coord,
+        "surf_entities": _surf_entities_to_create(hass, entry, office_code),
     }
     await hass.config_entries.async_forward_entry_setups(entry, SURF_PLATFORMS)
     return True

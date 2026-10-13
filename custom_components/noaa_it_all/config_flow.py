@@ -26,21 +26,22 @@ from .const import (
     NWS_OFFICE_URL,
     NWS_POINTS_URL,
     NWS_SRF_PRODUCTS_URL,
-    OFFICE_BUOY_STATIONS,
     OFFICE_COORDINATES,
     OFFICE_ISSUING_IDS,
     OFFICE_RADAR_SITES,
-    OFFICE_TIDE_STATIONS,
     RADAR_LOOP_MAX_HOURS,
     USER_AGENT,
 )
 from .entry_config import resolve_entry_config
 from .offices import (
+    SURF_HEIGHT,
+    WATER_TEMPERATURE,
     entry_type,
     is_hurricane_entry,
     is_radar_site,
     is_surf_entry,
     is_weather_entry,
+    surf_entities,
 )
 
 # The hurricane entry's unique ID: there is only one.
@@ -143,10 +144,11 @@ def _format_surf_label(code, distance_miles, issuing=None, added=False):
         label = f"{code} - {NWS_OFFICES.get(code, 'Unknown')}"
     else:
         label = _format_office_label(code, distance_miles)
+    made = surf_entities(code)
     provides = ["rip current"]
-    if code in OFFICE_TIDE_STATIONS:
+    if WATER_TEMPERATURE in made:
         provides.append("water temp")
-    if code in OFFICE_BUOY_STATIONS:
+    if SURF_HEIGHT in made:
         provides.append("surf height")
     if len(provides) == 1:
         provides[0] = "rip current only"
@@ -301,12 +303,25 @@ def _office_name(code, point):
 
 
 def _radar_site_for(code, point):
-    """Return the radar site for an office, from the table or from NWS."""
+    """Return the radar site to save on an entry: only one that came from NWS.
+
+    An office in OFFICE_RADAR_SITES saves none and keeps reading the table, so
+    a later fix to the table reaches it.
+    """
     if code in OFFICE_RADAR_SITES:
-        return OFFICE_RADAR_SITES[code]
+        return None
     if point is not None and point["office"] == code:
         return point["radar"]
     return None
+
+
+def add_entry_by_import(hass, data):
+    """Start adding a surf or hurricane entry; one that exists already is kept."""
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=data
+        )
+    )
 
 
 def _ha_home_coords(hass):
@@ -335,8 +350,9 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     the surf forecast of one coastal office, or the one hurricane entry (NHC
     feeds and satellite images). A location flow ends by offering a surf
     office, which it adds as a separate surf entry through the import step, or
-    shares when that office already has one. The first weather entry also adds
-    the hurricane entry, as every install had hurricane entities before.
+    shares when that office already has one. A location set up as the
+    integration's first entry also adds the hurricane entry, as every install
+    had hurricane entities before.
     """
 
     # 2: entries have an entry type; surf and hurricanes moved into their own.
@@ -424,6 +440,8 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             self._office_code = office_code
+            # Refused here, before the surf step, if the location is set up.
+            await self._async_set_weather_unique_id()
             return await self.async_step_surf()
 
         return self.async_show_form(
@@ -460,17 +478,15 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif not location_flow:
                 return await self._async_create_surf(surf_code)
             else:
-                # Aborts here if the location is already set up, before any
-                # other entry is added for it.
-                await self._async_set_weather_unique_id()
+                first_entry = not self._entries()
                 if surf_code != NO_SURF_OFFICE and surf_code not in configured:
-                    self._add_entry({
+                    add_entry_by_import(self.hass, {
                         CONF_ENTRY_TYPE: ENTRY_TYPE_SURF, CONF_OFFICE_CODE: surf_code,
                     })
-                if not any(is_weather_entry(e.data) for e in self._entries()):
-                    # The first weather entry: hurricanes come with it. Once
-                    # the hurricane entry is deleted, later ones leave it out.
-                    self._add_entry({CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE})
+                if first_entry:
+                    # The integration's first entry: hurricanes come with it.
+                    # Once the hurricane entry is deleted, nothing adds it back.
+                    add_entry_by_import(self.hass, {CONF_ENTRY_TYPE: ENTRY_TYPE_HURRICANE})
                 return self._create_weather()
 
         return self.async_show_form(
@@ -499,14 +515,6 @@ class NOAAConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _entries(self):
         """Return this integration's entries, leaving out ignored ones."""
         return self._async_current_entries(include_ignore=False)
-
-    def _add_entry(self, data):
-        """Start adding a surf or hurricane entry; one that exists already is kept."""
-        self.hass.async_create_task(
-            self.hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=data
-            )
-        )
 
     def _configured_surf_offices(self):
         """Return the offices that already have a surf entry."""
@@ -746,7 +754,7 @@ class NOAAOptionsFlow(config_entries.OptionsFlow):
     def _radar_site(self):
         """Return the radar site to save, keeping the saved one if NWS is down."""
         site = _radar_site_for(self._office_code, self._point)
-        if site is None:
+        if site is None and self._office_code not in OFFICE_RADAR_SITES:
             existing = resolve_entry_config(self.config_entry)
             if existing.get(CONF_OFFICE_CODE) == self._office_code:
                 site = existing.get(CONF_RADAR_SITE)

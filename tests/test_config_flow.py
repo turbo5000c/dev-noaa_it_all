@@ -401,8 +401,10 @@ class TestAsyncStepOffice(unittest.TestCase):
             "noaa_SGX_32_7157_n117_1611"
         )
         flow._abort_if_unique_id_configured.assert_called_once()
+        # SGX is in the radar table, so no site is saved: a later fix to the
+        # table reaches the entry.
         self.assertEqual(result["data"], {
-            "entry_type": "weather", "office_code": "SGX", "radar_site": "KNKX",
+            "entry_type": "weather", "office_code": "SGX", "radar_site": None,
             "latitude": 32.7157, "longitude": -117.1611,
         })
 
@@ -759,12 +761,12 @@ class TestLookupPoint(unittest.TestCase):
     _POINTS = "https://api.weather.gov/points/36.1699,-115.1398"
     _OFFICE = "https://api.weather.gov/offices/VEF"
 
-    def _lookup(self, responses, hass=MagicMock()):
+    def _lookup(self, responses, hass=None):
         from noaa_it_all import config_flow
         with patch.object(
             config_flow, "async_get_clientsession", return_value=_session(responses)
         ):
-            return _run(config_flow.async_lookup_point(hass, *_VEGAS))
+            return _run(config_flow.async_lookup_point(hass or MagicMock(), *_VEGAS))
 
     def test_inland_office_and_its_name(self):
         result = self._lookup({
@@ -905,8 +907,8 @@ class TestSurfLabels(unittest.TestCase):
         self.assertRegex(self._labels()["SGX"], r"^SGX - San Diego, CA \(\d+\.\d mi\) - ")
 
     def test_buoy_only(self):
-        from noaa_it_all import config_flow
-        with patch.dict(config_flow.OFFICE_TIDE_STATIONS, clear=False) as tide:
+        from noaa_it_all import config_flow, offices
+        with patch.dict(offices.OFFICE_TIDE_STATIONS, clear=False) as tide:
             tide.pop("SGX")
             self.assertTrue(
                 config_flow._format_surf_label("SGX", 1.0).endswith(" - rip current, surf height")
@@ -964,12 +966,23 @@ class TestInlandOptionsFlow(unittest.TestCase):
         self.assertEqual(result["data"]["office_code"], "VEF")
         self.assertEqual(result["data"]["radar_site"], "KESX")
 
-    def test_switching_to_a_coastal_office_takes_its_radar(self):
+    def test_switching_to_a_coastal_office_takes_its_radar_from_the_table(self):
+        from noaa_it_all.offices import radar_site
         flow = self._walk_to_office()
         _run(flow.async_step_office(user_input={"office_code": "SGX"}))
         result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 6}))
         self.assertEqual(result["data"]["office_code"], "SGX")
-        self.assertEqual(result["data"]["radar_site"], "KNKX")
+        self.assertIsNone(result["data"]["radar_site"])
+        self.assertEqual(radar_site({**self._SAVED, **result["data"]}), "KNKX")
+
+    def test_a_coastal_office_drops_a_radar_site_saved_before(self):
+        """An entry saved with the table's site lets go of it on the next save."""
+        flow = self._walk_to_office(data={
+            **self._SAVED, "office_code": "SGX", "radar_site": "KNKX",
+        })
+        _run(flow.async_step_office(user_input={"office_code": "SGX"}))
+        result = _run(flow.async_step_radar(user_input={"radar_loop_hours": 6}))
+        self.assertIsNone(result["data"]["radar_site"])
 
 
 # ---------------------------------------------------------------------------
@@ -1005,16 +1018,23 @@ class TestLocationFlowAddsOtherEntries(unittest.TestCase):
         self.assertEqual(result["type"], "create_entry")
         return _added_entries(flow)
 
-    def test_the_first_weather_entry_adds_surf_and_hurricanes(self):
+    def test_the_first_entry_adds_surf_and_hurricanes(self):
         self.assertEqual(self._finish(), [
             {"entry_type": "surf", "office_code": "ILM"},
             {"entry_type": "hurricane"},
         ])
 
-    def test_a_later_weather_entry_does_not_add_hurricanes_back(self):
+    def test_a_later_location_does_not_add_hurricanes_back(self):
         """Deleting the hurricane entry is not undone by the next location."""
         added = self._finish(entries=[_entry({"entry_type": "weather", "office_code": "VEF"})])
         self.assertEqual(added, [{"entry_type": "surf", "office_code": "ILM"}])
+
+    def test_nor_does_the_first_location_after_a_surf_entry(self):
+        """A surf entry on its own, with hurricanes deleted, is not a fresh install."""
+        added = self._finish(
+            surf="none", entries=[_entry({"entry_type": "surf", "office_code": "SGX"})],
+        )
+        self.assertEqual(added, [])
 
     def test_an_entry_from_before_0_8_0_counts_as_weather(self):
         added = self._finish(entries=[_entry({"office_code": "SGX"})])
@@ -1024,13 +1044,16 @@ class TestLocationFlowAddsOtherEntries(unittest.TestCase):
         added = self._finish(entries=[_entry({"entry_type": "surf", "office_code": "ILM"})])
         self.assertNotIn({"entry_type": "surf", "office_code": "ILM"}, added)
 
-    def test_an_already_configured_location_adds_nothing(self):
+    def test_an_already_configured_location_is_refused_at_the_office_step(self):
+        """Before the surf step, its NWS request, or any entry being added."""
         flow = _flow()
+        flow._issuing_checked = False
         flow._latitude, flow._longitude = _WILMINGTON
         flow._abort_if_unique_id_configured = MagicMock(side_effect=RuntimeError("abort"))
-        _run(flow.async_step_office(user_input={"office_code": "ILM"}))
-        with self.assertRaises(RuntimeError):
-            _run(flow.async_step_surf(user_input={"surf_office_code": "ILM"}))
+        with patch("noaa_it_all.config_flow.async_issuing_surf_offices") as issuing:
+            with self.assertRaises(RuntimeError):
+                _run(flow.async_step_office(user_input={"office_code": "ILM"}))
+        issuing.assert_not_called()
         self.assertEqual(_added_entries(flow), [])
 
     def test_already_added_offices_are_labelled(self):
@@ -1098,7 +1121,7 @@ class TestImportAndHurricaneSteps(unittest.TestCase):
     def test_import_creates_the_hurricane_entry(self):
         flow = _flow()
         result = _run(flow.async_step_import({"entry_type": "hurricane"}))
-        self.assertEqual(result["title"], "NOAA - Hurricane")
+        self.assertEqual(result["title"], "NOAA Hurricane")
         self.assertEqual(result["data"], {"entry_type": "hurricane"})
         flow.async_set_unique_id.assert_awaited_once_with("noaa_hurricane")
         flow._abort_if_unique_id_configured.assert_called_once_with(
@@ -1116,7 +1139,7 @@ class TestImportAndHurricaneSteps(unittest.TestCase):
 
     def test_the_hurricane_menu_choice_creates_the_entry(self):
         result = _run(_flow().async_step_hurricane())
-        self.assertEqual(result["title"], "NOAA - Hurricane")
+        self.assertEqual(result["title"], "NOAA Hurricane")
 
 
 class TestIssuingSurfOffices(unittest.TestCase):

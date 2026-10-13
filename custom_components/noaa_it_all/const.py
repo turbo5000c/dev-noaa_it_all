@@ -52,7 +52,7 @@ ENTRY_TYPE_WEATHER = "weather"
 ENTRY_TYPE_SURF = "surf"
 # The national hurricane feeds and satellite images, in one entry of their own.
 ENTRY_TYPE_HURRICANE = "hurricane"
-HURRICANE_ENTRY_TITLE = "NOAA - Hurricane"
+HURRICANE_ENTRY_TITLE = "NOAA Hurricane"
 # The surf office chosen on the surf step. A 0.8.0 test build also saved it on
 # weather entries, before surf became its own entry; that copy is only read
 # when migrating them.

@@ -18,15 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Weather, surf and hurricanes are separate entries.** A location is now `NOAA Weather - <office>`
   (forecast, alerts, radar and space), each surf office is `NOAA Surf - <office>`, and the hurricane
-  and satellite entities are in `NOAA - Hurricane`. Locations that use the same surf office share
-  its entry, and the first location adds the hurricane entry; delete it and later locations won't
-  add it back. **Add entry** asks which kind to add. Configure is only on weather entries.
-- **A surf entry only has the entities its office has data for.** Water Temperature needs a tide
-  station and Surf Height a buoy; an office without one no longer gets an entity stuck at unknown.
+  and satellite entities are in `NOAA Hurricane`. Locations that use the same surf office share
+  its entry. A location set up as the integration's first entry adds the hurricane entry; delete it
+  and nothing adds it back. **Add entry** asks which kind to add. Configure is only on weather
+  entries.
+- **A new surf entry only has the entities its office has data for.** Water Temperature needs a
+  tide station and Surf Height a buoy; an office without one no longer gets an entity stuck at
+  unknown.
 - **Upgrading splits existing entries once.** Each becomes a weather entry, and its surf and the
-  hurricane entities move to their own entries, keeping their entity IDs and history. Water
-  Temperature and Surf Height are removed where the office has no tide station or buoy. Going back
-  to 0.7.x afterwards needs the integration removed and added again.
+  hurricane entities move to their own entries, keeping their entity IDs and history. Every surf
+  entity is kept, including ones that read the forecast text where the office has no station.
+  Reload the Home Assistant page afterwards so the new setup screens show. Going back to 0.7.x
+  afterwards needs the integration removed and added again.
 
 ### Fixed
 - **Inland locations get their own forecast office.** Setup only listed the 36 coastal offices

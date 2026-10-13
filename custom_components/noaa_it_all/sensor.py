@@ -15,9 +15,7 @@ from .const import (
     CONF_OFFICE_CODE, CONF_LATITUDE, CONF_LONGITUDE, DOMAIN,
 )
 from .entry_config import resolve_entry_config
-from .offices import (
-    SURF_HEIGHT, WATER_TEMPERATURE, is_hurricane_entry, is_surf_entry, surf_entities,
-)
+from .offices import SURF_HEIGHT, WATER_TEMPERATURE, is_hurricane_entry, is_surf_entry
 
 # Re-export every sensor class so that existing code that imports
 # directly from ``sensor`` continues to work.
@@ -95,9 +93,9 @@ async def async_setup_entry(
     latitude = conf.get(CONF_LATITUDE)
     longitude = conf.get(CONF_LONGITUDE)
     if is_surf_entry(conf):
-        # Only what this office has data for, so nothing sits at unknown.
+        # What the office has data for, plus any carried over from 0.7.x.
         surf_coord = data["surf_coordinator"]
-        made = surf_entities(office_code)
+        made = data["surf_entities"]
         entities = [RipCurrentRiskSensor(surf_coord, office_code)]
         if WATER_TEMPERATURE in made:
             entities.append(WaterTemperatureSensor(surf_coord, office_code))

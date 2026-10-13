@@ -1015,7 +1015,7 @@ class TestPlatformsByEntryType(unittest.TestCase):
     _HURRICANE = {"HurricaneAlertsSensor", "HurricaneActivitySensor"}
     _SURF = {"RipCurrentRiskSensor", "SurfHeightSensor", "WaterTemperatureSensor"}
 
-    def _added(self, module_name, data):
+    def _added(self, module_name, data, carried=()):
         import importlib
         from noaa_it_all.const import DOMAIN
         module = importlib.import_module(f"noaa_it_all.{module_name}")
@@ -1033,6 +1033,11 @@ class TestPlatformsByEntryType(unittest.TestCase):
                 "meteor_coordinator", "eclipse_coordinator", "surf_coordinator",
             )
         }}}
+        if data.get("entry_type") == "surf":
+            from noaa_it_all.offices import surf_entities
+            hass.data[DOMAIN]["entry_1"]["surf_entities"] = (
+                surf_entities(data["office_code"]) + list(carried)
+            )
         added = []
         loop = asyncio.new_event_loop()
         try:
@@ -1065,6 +1070,14 @@ class TestPlatformsByEntryType(unittest.TestCase):
         dlh = {"entry_type": "surf", "office_code": "DLH"}  # tide station, no buoy
         self.assertEqual(
             self._added("sensor", dlh), {"RipCurrentRiskSensor", "WaterTemperatureSensor"}
+        )
+
+    def test_a_surf_entry_keeps_entities_carried_over_from_0_7(self):
+        from noaa_it_all.offices import WATER_TEMPERATURE
+        mfr = {"entry_type": "surf", "office_code": "MFR"}  # no tide station
+        self.assertEqual(
+            self._added("sensor", mfr, carried=[WATER_TEMPERATURE]),
+            {"RipCurrentRiskSensor", "WaterTemperatureSensor"},
         )
 
     def test_the_hurricane_entry_has_only_hurricanes(self):
