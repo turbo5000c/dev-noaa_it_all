@@ -12,13 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other observation sensors, and the weather entity, kept going `unavailable` or `unknown` for ten
   minutes at a time, leaving gaps in their history. 0.7.2 only covered the nearest station not
   answering. Now:
-  - A refresh where every station fails keeps showing the last observation for up to an hour, as
-    Home Assistant's own NWS integration does, instead of making every observation entity
-    unavailable until the next refresh. The outage is logged once, and so is its end.
-  - A field NWS left empty in the newest observation, such as humidity or wind, is taken from the
-    newest observation in the last two hours that has it, instead of reading `unknown`. Each
-    sensor's `timestamp` attribute says when its own value was observed. Wind chill and heat index
-    are not carried forward, since they are empty whenever they don't apply.
+  - A refresh where every station fails keeps showing the last observation for up to an hour after
+    the last successful refresh, as Home Assistant's own NWS integration does, instead of making
+    every observation entity unavailable until the next refresh. The outage is logged once, and so
+    is its end.
+  - A field NWS left empty in the newest observation, such as temperature, humidity or wind, is
+    taken from the newest observation in the last two hours that has it, instead of reading
+    `unknown`. Each sensor's `timestamp` attribute says when its own value was observed. Wind
+    direction, wind chill and heat index come from the same observation as the wind speed or
+    temperature they go with, since NWS leaves them empty for variable wind or when they don't
+    apply.
 - **A station that stops reporting but keeps answering is skipped.** Observations now come from
   the last two hours, so a station with nothing in that time is passed over for the next nearest
   instead of serving its last reading indefinitely. (#42)

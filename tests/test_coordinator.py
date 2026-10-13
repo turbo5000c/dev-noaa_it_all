@@ -286,7 +286,11 @@ class TestObservationStationFailover(unittest.TestCase):
 
     STATIONS_URL = "https://api.weather.gov/gridpoints/ILM/1,2/stations"
     POINTS = {"properties": {"observationStations": STATIONS_URL}}
-    OBSERVATION = _observations({"temperature": {"value": 20.0}})
+
+    @staticmethod
+    def _observation():
+        # Built per test: dated at import, it could age out of the window.
+        return _observations({"temperature": {"value": 20.0}})
 
     def _make(self, latitude=34.2, longitude=-77.9):
         from noaa_it_all.coordinator import ObservationsCoordinator
@@ -324,7 +328,7 @@ class TestObservationStationFailover(unittest.TestCase):
         coordinator = self._make()
         session = self._session({
             "KAAA": self._not_found(),
-            "KBBB": _FakeResponse(self.OBSERVATION),
+            "KBBB": _FakeResponse(self._observation()),
         })
 
         data = self._refresh(coordinator, session)
@@ -341,10 +345,10 @@ class TestObservationStationFailover(unittest.TestCase):
         coordinator = self._make()
         self._refresh(coordinator, self._session({
             "KAAA": self._not_found(),
-            "KBBB": _FakeResponse(self.OBSERVATION),
+            "KBBB": _FakeResponse(self._observation()),
         }))
 
-        recovered = self._session({"KAAA": _FakeResponse(self.OBSERVATION)})
+        recovered = self._session({"KAAA": _FakeResponse(self._observation())})
         data = self._refresh(coordinator, recovered)
 
         self.assertEqual(data["station_id"], "KAAA")
@@ -375,7 +379,7 @@ class TestObservationStationFailover(unittest.TestCase):
     def test_keeps_only_the_nearest_valid_stations(self):
         coordinator = self._make()
         session = self._session(
-            {"KAAA": _FakeResponse(self.OBSERVATION)},
+            {"KAAA": _FakeResponse(self._observation())},
             features=[
                 {"properties": {"stationIdentifier": "KAAA"}},
                 # Malformed entries are skipped, not fatal to the lookup.
@@ -398,7 +402,7 @@ class TestObservationStationFailover(unittest.TestCase):
 
     def test_null_station_list_settles_on_the_office_station(self):
         coordinator = self._make()
-        session = self._session({"KILM": _FakeResponse(self.OBSERVATION)})
+        session = self._session({"KILM": _FakeResponse(self._observation())})
         session._by_url["/gridpoints/ILM/1,2/stations"] = _FakeResponse(
             {"features": None}
         )
@@ -413,7 +417,7 @@ class TestObservationStationFailover(unittest.TestCase):
         coordinator = self._make()
         session = self._session({
             "KAAA": _FakeResponse(["not", "an", "object"]),
-            "KBBB": _FakeResponse(self.OBSERVATION),
+            "KBBB": _FakeResponse(self._observation()),
         })
 
         data = self._refresh(coordinator, session)
@@ -424,7 +428,7 @@ class TestObservationStationFailover(unittest.TestCase):
         coordinator = self._make()
         down = {
             "KAAA": self._not_found(),
-            "KBBB": _FakeResponse(self.OBSERVATION),
+            "KBBB": _FakeResponse(self._observation()),
         }
 
         with self.assertLogs("noaa_it_all.coordinator", level="INFO") as logs:
@@ -432,7 +436,7 @@ class TestObservationStationFailover(unittest.TestCase):
             self._refresh(coordinator, self._session(down))
             self._refresh(
                 coordinator,
-                self._session({"KAAA": _FakeResponse(self.OBSERVATION)}),
+                self._session({"KAAA": _FakeResponse(self._observation())}),
             )
 
         warnings = [r for r in logs.records if r.levelname == "WARNING"]
@@ -444,7 +448,7 @@ class TestObservationStationFailover(unittest.TestCase):
 
     def test_office_station_is_used_without_coordinates(self):
         coordinator = self._make(latitude=None, longitude=None)
-        session = self._session({"KILM": _FakeResponse(self.OBSERVATION)})
+        session = self._session({"KILM": _FakeResponse(self._observation())})
 
         data = self._refresh(coordinator, session)
 
@@ -459,7 +463,7 @@ class TestObservationStationFailover(unittest.TestCase):
 
     def test_office_station_is_used_when_the_lookup_fails(self):
         coordinator = self._make()
-        session = self._session({"KILM": _FakeResponse(self.OBSERVATION)})
+        session = self._session({"KILM": _FakeResponse(self._observation())})
         session._by_url["/points/"] = OSError("Network unreachable")
 
         data = self._refresh(coordinator, session)
@@ -541,6 +545,58 @@ class TestObservationGaps(unittest.TestCase):
 
         self.assertIsNone(data["properties"]["heatIndex"]["value"])
         self.assertIsNone(data["properties"]["windChill"]["value"])
+
+    def test_variable_wind_keeps_no_direction(self):
+        # NWS leaves the direction empty for variable wind but still gives a
+        # speed. That empty direction is the reading, not a gap.
+        coordinator = self._make()
+        response = _observations(
+            {"windSpeed": {"value": 5.6}, "windDirection": {"value": None}},
+            {"windSpeed": {"value": 9.3}, "windDirection": {"value": 270}},
+        )
+        data = self._refresh(coordinator, self._session({"KAAA": _FakeResponse(response)}))
+
+        self.assertEqual(data["properties"]["windSpeed"]["value"], 5.6)
+        self.assertIsNone(data["properties"]["windDirection"]["value"])
+        self.assertNotIn("windDirection", data["field_times"])
+
+    def test_missing_wind_takes_speed_and_direction_together(self):
+        coordinator = self._make()
+        response = _observations(
+            {"windSpeed": {"value": None}, "windDirection": {"value": None}},
+            {"windSpeed": {"value": 9.3}, "windDirection": {"value": 270}},
+        )
+        data = self._refresh(coordinator, self._session({"KAAA": _FakeResponse(response)}))
+
+        older = response["features"][1]["properties"]["timestamp"]
+        self.assertEqual(data["properties"]["windSpeed"]["value"], 9.3)
+        self.assertEqual(data["properties"]["windDirection"]["value"], 270)
+        self.assertEqual(data["field_times"]["windDirection"], older)
+
+    def test_wind_chill_and_heat_index_come_with_a_carried_temperature(self):
+        # NWS works them out from the temperature, so an observation without a
+        # temperature has neither. They come from where the temperature does.
+        coordinator = self._make()
+        response = _observations(
+            {"temperature": {"value": None}, "windChill": {"value": None}, "heatIndex": {"value": None}},
+            {"temperature": {"value": 0.0}, "windChill": {"value": -7.0}, "heatIndex": {"value": None}},
+        )
+        data = self._refresh(coordinator, self._session({"KAAA": _FakeResponse(response)}))
+
+        older = response["features"][1]["properties"]["timestamp"]
+        self.assertEqual(data["properties"]["temperature"]["value"], 0.0)
+        self.assertEqual(data["properties"]["windChill"]["value"], -7.0)
+        self.assertEqual(data["field_times"]["windChill"], older)
+        self.assertIsNone(data["properties"]["heatIndex"]["value"])
+
+    def test_request_start_is_rounded_so_nws_can_cache_it(self):
+        coordinator = self._make()
+        session = self._session({"KAAA": _FakeResponse(_observations({"temperature": {"value": 20.0}}))})
+        self._refresh(coordinator, session)
+
+        start = next(kw["params"]["start"] for url, kw in session.calls if url.endswith("/observations"))
+        when = datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual((when.minute % 10, when.second), (0, 0))
 
     def test_empty_sky_description_is_taken_from_the_previous_observation(self):
         coordinator = self._make()

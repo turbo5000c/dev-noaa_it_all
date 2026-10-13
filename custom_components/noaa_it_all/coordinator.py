@@ -213,12 +213,20 @@ class NWSAlertsCoordinator(DataUpdateCoordinator):
 
 # Fields every observation should have. When the newest leaves one empty, NWS
 # just did not publish it that time, so the newest earlier observation that
-# has it stands in. Wind chill and heat index are left out: they are empty
-# whenever they do not apply, and an hour-old heat index would be wrong.
+# has it stands in.
 _CARRIED_OBSERVATION_FIELDS = (
     "temperature", "dewpoint", "relativeHumidity", "windSpeed",
-    "windDirection", "barometricPressure", "visibility", "textDescription",
+    "barometricPressure", "visibility", "textDescription",
 )
+# Fields that go with another, so they come from the observation it came from.
+# Wind direction is empty for calm or variable wind, and wind chill and heat
+# index whenever they do not apply: there, empty is the reading. Carried on
+# their own, an old bearing or heat index would show as current.
+_PAIRED_OBSERVATION_FIELDS = {
+    "windDirection": "windSpeed",
+    "windChill": "temperature",
+    "heatIndex": "temperature",
+}
 
 
 def _observation_time(properties: dict) -> Optional[datetime]:
@@ -245,8 +253,9 @@ def merge_observations(features, since: datetime) -> Optional[tuple[dict, dict]]
 
     Returns ``(properties, field_times)``: the newest observation's properties,
     with each carried field that it left empty taken from the newest earlier
-    observation that has it, and the time each carried field was observed.
-    Returns None if no observation is that recent.
+    observation that has it, each paired field taken from wherever its partner
+    came from, and the time each of those fields was observed. Returns None if
+    no observation is that recent.
     """
     recent = []
     for feature in features if isinstance(features, list) else []:
@@ -260,14 +269,23 @@ def merge_observations(features, since: datetime) -> Optional[tuple[dict, dict]]
         return None
     recent.sort(key=lambda item: item[0], reverse=True)
 
-    merged = dict(recent[0][1])
+    newest = recent[0][1]
+    merged = dict(newest)
     field_times = {}
+    sources = {}
     for field in _CARRIED_OBSERVATION_FIELDS:
         for _, properties in recent:
             if _has_reading(properties.get(field)):
                 merged[field] = properties[field]
                 field_times[field] = properties.get("timestamp")
+                sources[field] = properties
                 break
+    for field, partner in _PAIRED_OBSERVATION_FIELDS.items():
+        source = sources.get(partner, newest)
+        if field in source:
+            merged[field] = source[field]
+        if _has_reading(source.get(field)):
+            field_times[field] = source.get("timestamp")
     return merged, field_times
 
 
@@ -344,7 +362,10 @@ class ObservationsCoordinator(DataUpdateCoordinator):
             )
 
         now = datetime.now(timezone.utc)
+        # Rounded down to ten minutes, so successive refreshes ask for the same
+        # URL and NWS can answer from its cache.
         since = now - timedelta(hours=OBSERVATION_WINDOW_HOURS)
+        since = since.replace(minute=since.minute - since.minute % 10, second=0, microsecond=0)
         params = {
             "start": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "limit": OBSERVATION_LIMIT,
