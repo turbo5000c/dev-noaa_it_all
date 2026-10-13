@@ -380,8 +380,33 @@ class TestMarineForecastSensor(unittest.TestCase):
         coord.data = data
         return MarineForecastSensor(coord, "LOT", "LMZ741")
 
-    def test_state_is_the_first_period_label(self):
-        self.assertEqual(self._make().state, "Rest Of Today")
+    def test_state_is_the_first_period_forecast(self):
+        sensor = self._make()
+        self.assertEqual(
+            sensor.state,
+            "South winds 15 to 20 kt becoming southeast. Partly cloudy. Waves 2 to 4 ft.",
+        )
+        self.assertEqual(sensor.extra_state_attributes["period"], "Rest Of Today")
+
+    def test_long_forecast_is_shortened_at_a_word(self):
+        """Home Assistant would make a state over 255 characters unknown."""
+        words = "Northeast gales to 35 kt with occasional gusts to 45 kt."
+        text = " ".join([words] * 6)
+        sensor = self._make(data={"forecast": {"periods": [
+            {"name": "Tonight", "detailed_forecast": text},
+        ]}})
+        state = sensor.state
+        self.assertLessEqual(len(state), 255)
+        self.assertTrue(state.endswith("…"))
+        self.assertTrue(text.startswith(state[:-1]))
+        self.assertIn(text[len(state) - 1], " .")
+        self.assertEqual(sensor.extra_state_attributes["periods"][0]["detailed_forecast"], text)
+
+    def test_period_without_text_has_no_state(self):
+        sensor = self._make(data={"forecast": {"periods": [
+            {"name": "Tonight", "detailed_forecast": ""},
+        ]}})
+        self.assertIsNone(sensor.state)
 
     def test_attributes_carry_every_period(self):
         attrs = self._make().extra_state_attributes
