@@ -113,9 +113,8 @@ tracked_entity: person.alex
 
 The followed location is sent to `api.weather.gov` in request URLs, in the same way the home
 coordinates already are, rounded to four decimal places (about 11 m). Entity attributes only show
-it to about 1 km. Routine log lines leave it out, along with the stations and gridpoints near it,
-but a failed NWS request can still be logged with its URL or coordinates, so check before sharing a
-log publicly.
+it to about 1 km. Log lines leave it out, along with the stations and gridpoints near it, including
+the messages for failed NWS requests; only debug logging includes it.
 
 ### Hours of radar history
 

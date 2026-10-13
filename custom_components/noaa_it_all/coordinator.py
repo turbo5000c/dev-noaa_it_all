@@ -45,8 +45,8 @@ DEFAULT_UPDATE_INTERVAL = timedelta(minutes=DEFAULT_SCAN_INTERVAL)
 
 
 # aiohttp's ClientResponseError ends its message with the request URL. For
-# the location lookups that URL holds the coordinates, and the status and
-# reason already say what went wrong.
+# the location lookups that URL holds the coordinates -- a followed person's,
+# when following one -- and the status and reason already say what went wrong.
 _URL_SUFFIX = re.compile(r",\s*url=.*$", re.DOTALL)
 
 
