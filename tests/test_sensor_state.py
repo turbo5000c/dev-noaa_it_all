@@ -754,7 +754,7 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
     ones for the rest of the day (3.67 at 06:00 and 09:00, then 2.67, 3.0,
     3.33 and 3.33) and predicted ones to 2026-10-17 00:00 (at most 3.33).
     Without its own location, Duluth (DLH) uses the office's coordinates; it
-    is dark there from about 01:00 to 10:45 UTC.
+    is dark there, the Sun 12 degrees down, from about 00:29 to 11:20 UTC.
     """
 
     NOW = "2026-10-14 08:05"
@@ -805,24 +805,85 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
         self.assertEqual(value, datetime(2026, 10, 15, 3, tzinfo=timezone.utc))
         self.assertEqual(attrs["predicted_kp"], 3.33)
 
+    NIGHTFALL_15TH = [
+        {"time_tag": "2026-10-15T00:00:00", "kp": 5.0, "observed": "predicted", "noaa_scale": "G1"},
+        {"time_tag": "2026-10-15T03:00:00", "kp": 1.0, "observed": "predicted", "noaa_scale": None},
+    ]
+
     def test_a_period_that_gets_dark_counts_from_nightfall(self):
-        """#85: the 00:00 to 03:00 period gets dark in Duluth at about 01:04."""
-        from noaa_it_all.astro import find_dark_window
-        forecast = [{"time_tag": "2026-10-15T00:00:00", "kp": 4.0, "observed": "predicted", "noaa_scale": None}]
-        value, attrs = self._value(self._sensor("DLH", forecast=forecast), "2026-10-14 20:00")
-        nightfall, _, _ = find_dark_window(date(2026, 10, 14), 46.8369, -92.1833)
-        self.assertEqual(value, nightfall)
-        self.assertTrue(datetime(2026, 10, 15, 1, tzinfo=timezone.utc) < value
-                        < datetime(2026, 10, 15, 1, 10, tzinfo=timezone.utc))
-        self.assertEqual(attrs["predicted_kp"], 4.0)
+        """#85: the 00:00 to 03:00 period gets dark in Duluth, the Sun 12 degrees down, at 00:29 (7:29 PM)."""
+        from noaa_it_all.astro import find_window_below
+        value, attrs = self._value(self._sensor("DLH", forecast=self.NIGHTFALL_15TH), "2026-10-14 20:00")
+        nightfall, _ = find_window_below(date(2026, 10, 14), 46.8369, -92.1833, -12)
+        self.assertTrue(nightfall <= value < nightfall + timedelta(minutes=1), (nightfall, value))
+        self.assertEqual(value, datetime(2026, 10, 15, 0, 29, tzinfo=timezone.utc))
+        self.assertEqual(attrs["predicted_kp"], 5.0)
+
+    def test_nightfall_is_a_whole_minute(self):
+        value, _ = self._value(self._sensor("DLH", forecast=self.NIGHTFALL_15TH), "2026-10-14 20:00")
+        self.assertEqual((value.second, value.microsecond), (0, 0))
+
+    def test_nightfall_in_a_period_under_way_stays_until_it_comes(self):
+        """Once the 00:00 period begins, its nightfall is still ahead; it goes once nightfall has come."""
+        sensor = self._sensor("DLH", forecast=self.NIGHTFALL_15TH)
+        before, _ = self._value(sensor, "2026-10-14 23:50")
+        self.assertEqual(self._value(sensor, "2026-10-15 00:10")[0], before)
+        self.assertIsNone(self._value(sensor, "2026-10-15 00:40")[0])
 
     def test_the_entrys_own_location_decides_when_it_is_dark(self):
-        """At 15:00 UTC it is day in Duluth but night in Guam."""
+        """At 15:00 UTC it is day at the Duluth office but night at an entry in Guam with that office."""
         forecast = [{"time_tag": "2026-10-14T15:00:00", "kp": 9.0, "observed": "predicted", "noaa_scale": "G5"}]
-        duluth, _ = self._value(self._sensor("DLH", forecast=forecast, lat=46.8369, lon=-92.1833))
-        guam, _ = self._value(self._sensor("GUM", forecast=forecast, lat=13.48, lon=144.79))
-        self.assertIsNone(duluth)
+        office, _ = self._value(self._sensor("DLH", forecast=forecast))
+        guam, _ = self._value(self._sensor("DLH", forecast=forecast, lat=13.48, lon=144.79))
+        self.assertIsNone(office)
         self.assertEqual(guam, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+
+    def test_without_any_location_daylight_isnt_known(self):
+        """An office outside the table, with no location, can't tell day from night: the period start counts."""
+        forecast = [{"time_tag": "2026-10-14T15:00:00", "kp": 9.0, "observed": "predicted", "noaa_scale": "G5"}]
+        value, _ = self._value(self._sensor("XYZ", forecast=forecast))
+        self.assertEqual(value, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+
+    def test_darkness_changes_smoothly_with_latitude(self):
+        """On a June night Seattle and Bellingham, a degree apart, get dark within minutes of each other."""
+        forecast = [{"time_tag": f"2026-06-21T{hour:02d}:00:00", "kp": 9.0, "observed": "predicted",
+                     "noaa_scale": "G5"} for hour in (3, 6)]
+        seattle, _ = self._value(self._sensor("SEW", forecast=forecast, lat=47.61, lon=-122.33), "2026-06-20 20:00")
+        bellingham, _ = self._value(self._sensor("SEW", forecast=forecast, lat=48.75, lon=-122.48),
+                                    "2026-06-20 20:00")
+        # About 05:48 and 06:00. Astronomical night, with a nautical fallback where there is
+        # none, would give Seattle 07:19 and Bellingham 05:59.
+        self.assertLess(abs(bellingham - seattle), timedelta(minutes=30))
+        self.assertTrue(datetime(2026, 6, 21, 5, 30, tzinfo=timezone.utc) < seattle
+                        < datetime(2026, 6, 21, 6, tzinfo=timezone.utc), seattle)
+
+    def test_unknown_when_the_darkness_cant_be_worked_out(self):
+        """A failure reads unknown, not a time that may be in daylight."""
+        from noaa_it_all.sensors import space_weather
+        space_weather._dark_windows.cache_clear()
+        with patch.object(space_weather, "find_window_below", side_effect=ValueError("math domain error")):
+            value, attrs = self._value(self._sensor("DLH"))
+        self.assertIsNone(value)
+        self.assertIsNone(attrs["predicted_kp"])
+
+    def test_the_nights_are_worked_out_once_a_day(self):
+        from noaa_it_all import astro
+        from noaa_it_all.sensors import space_weather
+        space_weather._dark_windows.cache_clear()
+        with patch.object(space_weather, "find_window_below", wraps=astro.find_window_below) as search:
+            self._value(self._sensor("DLH"))
+            self._value(self._sensor("DLH"), "2026-10-14 09:55")
+        self.assertEqual(search.call_count, len(space_weather._AURORA_NIGHTS))
+
+    def test_the_state_and_predicted_kp_describe_the_same_period(self):
+        """The attributes reuse the period the state was worked out from, whatever the time when they're read."""
+        sensor = self._sensor("DLH")
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at("2026-10-14 08:59")):
+            value = sensor.native_value
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at("2026-10-14 09:01")):
+            attrs = sensor.extra_state_attributes
+        self.assertEqual(value, datetime(2026, 10, 14, 9, tzinfo=timezone.utc))
+        self.assertEqual(attrs["predicted_kp"], 3.67)
 
     def test_unknown_where_it_never_gets_dark(self):
         """Fairbanks has no night in June, so even a Kp 9 forecast doesn't count."""

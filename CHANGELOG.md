@@ -27,10 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5.75 mph rather than 5.7.
 - **Aurora Next Time skips daylight.** It named the next 3-hour period in SWPC's Kp forecast with
   enough Kp even in the middle of the day, such as 10 AM in Duluth. Now only the part of a period
-  that is dark at your location counts: the Sun at least 18° below the horizon, or 12° on summer
-  nights at high latitude that never get darker, as for the meteor showers. A period that gets
-  dark partway through gives the time of nightfall, such as 8:04 PM, and one in daylight is
-  skipped. Where it doesn't get dark at all, as in Fairbanks in June, it reads `unknown`.
+  that is dark at your location counts: the Sun at least 12° below the horizon, from nautical dusk
+  to dawn. A period that gets dark partway through gives the time of nightfall, to the minute, such
+  as 7:29 PM in Duluth, and one in daylight is skipped. Where it doesn't get that dark, as in
+  Fairbanks in June, it reads `unknown`.
 
 Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
 and ft again, whatever unit they had, so in a metric install their history mixes the two.
