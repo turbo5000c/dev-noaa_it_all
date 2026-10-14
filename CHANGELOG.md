@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to dawn. A period that gets dark partway through gives the time of nightfall, to the minute, such
   as 7:29 PM in Duluth, and one in daylight is skipped. Where it doesn't get that dark, as in
   Fairbanks in June, it reads `unknown`.
+- **Space weather is fetched faster and rides out a bad response from SWPC.** The four SWPC feeds
+  were fetched one after another, so a slow SWPC could hold up adding a Space entry for up to two
+  minutes; they are now fetched together. A feed whose response doesn't parse, which SWPC served
+  twice in one day while 0.10.3 was tested, is fetched once more two seconds later, rather than
+  its entities reading `unknown` until the next update ten minutes on. A feed that still fails
+  reads `unknown`, as before.
 
 Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
 and ft again, whatever unit they had, so in a metric install their history mixes the two.

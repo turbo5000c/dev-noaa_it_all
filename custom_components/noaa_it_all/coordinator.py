@@ -8,6 +8,7 @@ centralises caching, error handling and rate-limit control.
 See https://developers.home-assistant.io/docs/integration_fetching_data/
 """
 
+import asyncio
 import logging
 import re
 import aiohttp
@@ -70,6 +71,9 @@ _KP_INDEX_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 _SPACE_ALERTS_URL = "https://services.swpc.noaa.gov/products/alerts.json"
 # SWPC's 3-day forecast of the planetary K-index, in 3-hour periods.
 _KP_FORECAST_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
+# SWPC now and then serves a body that doesn't parse, such as a document with
+# more after it. Such a feed is fetched once more after this many seconds.
+_BAD_JSON_RETRY_DELAY = 2
 
 # Hurricane API endpoints
 _HURRICANE_ALERTS_URL = (
@@ -82,6 +86,13 @@ _CURRENT_STORMS_URL = "https://www.nhc.noaa.gov/CurrentStorms.json"
 # -------------------------------------------------------------------
 # Space Weather
 # -------------------------------------------------------------------
+
+async def _get_json(session, url, headers, timeout):
+    """Fetch a URL and return its JSON. A body that doesn't parse raises ValueError."""
+    async with session.get(url, headers=headers, timeout=timeout) as resp:
+        resp.raise_for_status()
+        return await resp.json()
+
 
 class SpaceWeatherCoordinator(DataUpdateCoordinator):
     """Fetch geomagnetic DST, planetary K-index and its forecast, and SWPC alerts."""
@@ -98,8 +109,6 @@ class SpaceWeatherCoordinator(DataUpdateCoordinator):
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         headers = {"User-Agent": USER_AGENT}
-        data: dict = {}
-        errors: list[str] = []
 
         endpoints = (
             ("dst", "DST", _DST_URL),
@@ -107,17 +116,15 @@ class SpaceWeatherCoordinator(DataUpdateCoordinator):
             ("space_alerts", "space weather alerts", _SPACE_ALERTS_URL),
             ("kp_forecast", "K-index forecast", _KP_FORECAST_URL),
         )
-        for key, label, url in endpoints:
-            try:
-                async with session.get(
-                    url, headers=headers, timeout=timeout
-                ) as resp:
-                    resp.raise_for_status()
-                    data[key] = await resp.json()
-            except Exception as err:
-                _LOGGER.warning("Error fetching %s data: %s", label, err)
-                errors.append(f"{label} ({_describe(err)})")
-                data[key] = None
+        # Fetched together, so a slow feed doesn't hold up the others: the
+        # first refresh, which a Space entry waits for, takes the time of the
+        # slowest rather than of all four.
+        results = await asyncio.gather(*(
+            self._fetch(session, label, url, headers, timeout)
+            for _, label, url in endpoints
+        ))
+        data = {key: value for (key, _, _), (value, _) in zip(endpoints, results)}
+        errors = [error for _, error in results if error]
 
         if all(v is None for v in data.values()):
             raise UpdateFailed(
@@ -125,6 +132,24 @@ class SpaceWeatherCoordinator(DataUpdateCoordinator):
             )
 
         return data
+
+    @staticmethod
+    async def _fetch(session, label, url, headers, timeout):
+        """Return a feed's JSON and no error, or None and why it failed.
+
+        A body that doesn't parse is fetched once more after a short wait; a
+        feed that still fails is None, so its entities read unknown.
+        """
+        try:
+            try:
+                return await _get_json(session, url, headers, timeout), None
+            except ValueError as err:
+                _LOGGER.debug("Fetching %s again, its JSON didn't parse: %s", label, err)
+                await asyncio.sleep(_BAD_JSON_RETRY_DELAY)
+                return await _get_json(session, url, headers, timeout), None
+        except Exception as err:
+            _LOGGER.warning("Error fetching %s data: %s", label, err)
+            return None, f"{label} ({_describe(err)})"
 
 
 # -------------------------------------------------------------------

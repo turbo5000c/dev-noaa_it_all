@@ -12,7 +12,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CC = os.path.join(_REPO, "custom_components")
@@ -712,6 +712,100 @@ class TestUserAgentIsAlwaysSent(unittest.TestCase):
     def test_hurricane_sends_user_agent(self):
         from noaa_it_all.coordinator import HurricaneCoordinator
         self._assert_user_agent(HurricaneCoordinator(HASS), 2)
+
+
+class _BadJSONResponse(_FakeResponse):
+    """A response whose body doesn't parse, as SWPC served twice on 2026-10-14."""
+
+    async def json(self):
+        raise ValueError("unexpected content after document: line 1 column 4904 (char 4903)")
+
+
+class _ResultsInTurn(_FakeSession):
+    """Serves, for a URL containing ``fragment``, one result per call in turn."""
+
+    def __init__(self, fragment, results, default):
+        super().__init__(default=default)
+        self._fragment = fragment
+        self._results = list(results)
+
+    def get(self, url, **kwargs):
+        if self._fragment in url:
+            self.calls.append((url, kwargs))
+            return _FakeGet(self._results.pop(0))
+        return super().get(url, **kwargs)
+
+
+class _InFlightSession(_FakeSession):
+    """Counts how many requests are open at once."""
+
+    def __init__(self, default):
+        super().__init__(default=default)
+        self.open = self.most_open = 0
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        session, result = self, self._default
+
+        class _Get:
+            async def __aenter__(self):
+                session.open += 1
+                session.most_open = max(session.most_open, session.open)
+                await asyncio.sleep(0)
+                return result
+
+            async def __aexit__(self, *exc_info):
+                session.open -= 1
+                return False
+
+        return _Get()
+
+
+class TestSpaceWeatherFeeds(unittest.TestCase):
+    """#86: the four SWPC feeds are fetched together, and a body that doesn't parse is fetched again."""
+
+    def _update(self, session):
+        from noaa_it_all.coordinator import SpaceWeatherCoordinator
+        with _with_session(session), patch("noaa_it_all.coordinator._BAD_JSON_RETRY_DELAY", 0):
+            return _run(SpaceWeatherCoordinator(HASS)._async_update_data())
+
+    def test_the_feeds_are_fetched_together(self):
+        """One after another, a slow SWPC made the first refresh take up to four timeouts."""
+        session = _InFlightSession(_FakeResponse([{"ok": True}]))
+        data = self._update(session)
+        self.assertEqual(session.most_open, 4)
+        self.assertEqual(set(data), {"dst", "kp_index", "space_alerts", "kp_forecast"})
+
+    def test_a_body_that_does_not_parse_is_fetched_once_more(self):
+        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _FakeResponse([{"dst": -5}])],
+                                 default=_FakeResponse([{"ok": True}]))
+        data = self._update(session)
+        self.assertEqual(data["dst"], [{"dst": -5}])
+        self.assertEqual(sum("geospace_dst" in url for url, _ in session.calls), 2)
+
+    def test_the_second_try_waits_first(self):
+        from noaa_it_all.coordinator import SpaceWeatherCoordinator, _BAD_JSON_RETRY_DELAY
+        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _FakeResponse([{"dst": -5}])],
+                                 default=_FakeResponse([{"ok": True}]))
+        with _with_session(session), patch("noaa_it_all.coordinator.asyncio.sleep", new=AsyncMock()) as wait:
+            _run(SpaceWeatherCoordinator(HASS)._async_update_data())
+        wait.assert_awaited_once_with(_BAD_JSON_RETRY_DELAY)
+
+    def test_a_body_that_still_does_not_parse_reads_unknown(self):
+        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _BadJSONResponse()],
+                                 default=_FakeResponse([{"ok": True}]))
+        with self.assertLogs("noaa_it_all.coordinator", "WARNING") as logs:
+            data = self._update(session)
+        self.assertIsNone(data["dst"])
+        self.assertEqual(data["kp_index"], [{"ok": True}])
+        self.assertIn("Error fetching DST data: unexpected content after document", logs.output[0])
+
+    def test_other_failures_are_not_fetched_again(self):
+        session = _ResultsInTurn("geospace_dst", [OSError("Temporary failure in name resolution")],
+                                 default=_FakeResponse([{"ok": True}]))
+        data = self._update(session)
+        self.assertIsNone(data["dst"])
+        self.assertEqual(sum("geospace_dst" in url for url, _ in session.calls), 1)
 
 
 class TestFailureMessagesNameTheCause(unittest.TestCase):
