@@ -1,9 +1,7 @@
 [
-  {"time_tag": "2026-10-14T16:47:00", "kp_index": 1, "estimated_kp": 1.33, "kp": "1P"},
-  {"time_tag": "2026-10-14T16:48:00", "kp_index": 1, "estimated_kp": 1.33, "kp": "1P"},
-  {"time_tag": "2026-10-14T16:49:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
-  {"time_tag": "2026-10-14T16:50:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
-  {"time_tag": "2026-10-14T16:51:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
-  {"time_tag": "2026-10-14T16:52:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
-  {"time_tag": "2026-10-14T16:53:00", "kp_index": 2, "estimated_kp": 2.0, "kp": "2Z"}
+  {"time_tag": "2026-10-14T16:43:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
+  {"time_tag": "2026-10-14T16:44:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
+  {"time_tag": "2026-10-14T16:45:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
+  {"time_tag": "2026-10-14T16:46:00", "kp_index": 2, "estimated_kp": 1.67, "kp": "2M"},
+  {"time_tag": "2026-10-14T16:47:00", "kp_index": 1, "estimated_kp": 1.33, "kp": "1P"}
 ]

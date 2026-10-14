@@ -171,16 +171,22 @@ class TestPlanetaryKIndexSensor(unittest.TestCase):
         return PlanetaryKIndexSensor(coord, OFFICE)
 
     def test_state_returns_latest_kp(self):
-        """SWPC lists the samples oldest first; the state is the newest, 16:53's Kp 2, not 16:47's 1."""
+        """SWPC lists the samples oldest first; the state is the newest, 16:47's Kp 1."""
         kp_data = _load_fixture("space_weather_kp.json")
-        sensor = self._make(kp_data)
-        self.assertEqual(sensor.state, 2)
-        self.assertNotEqual(kp_data[0]["kp_index"], 2)
+        newest = kp_data[-1]["kp_index"]
+        # So that reading any other sample, or the newest one's estimated_kp, fails.
+        self.assertNotIn(newest, [s["kp_index"] for s in kp_data[:-1]])
+        self.assertNotEqual(kp_data[-1]["estimated_kp"], newest)
+        self.assertEqual(self._make(kp_data).state, 1)
 
     def test_the_fixture_is_in_the_feed_order(self):
-        """planetary_k_index_1m.json is oldest first (358 samples, 11:02 to 16:59 on 2026-10-14)."""
+        """Five samples of the live planetary_k_index_1m.json, 2026-10-14 16:43 to 16:47 UTC.
+
+        The feed held 358 samples that day, 11:02 to 16:59, oldest first.
+        """
         tags = [s["time_tag"] for s in _load_fixture("space_weather_kp.json")]
-        self.assertEqual(tags, sorted(tags))
+        self.assertGreater(len(tags), 1)
+        self.assertTrue(all(a < b for a, b in zip(tags, tags[1:])), tags)
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import PlanetaryKIndexSensor
@@ -201,6 +207,38 @@ class TestPlanetaryKIndexSensor(unittest.TestCase):
         info = sensor.device_info
         ids = list(info["identifiers"])[0]
         self.assertIn("space", ids[1])
+
+
+class TestEveryKpReaderUsesTheNewestSample(unittest.TestCase):
+    """#84: each sensor that reads the 1-minute Kp feed takes its last, newest sample.
+
+    A storm sample (Kp 7) before the fixture's newest (Kp 1) gives each of them
+    a different reading if it read the oldest instead.
+    """
+
+    def _readings(self, kp_data):
+        from noaa_it_all.sensors.space_weather import (
+            AuroraDurationSensor, AuroraNextTimeSensor, AuroraVisibilityProbabilitySensor,
+            PlanetaryKIndexSensor, PlanetaryKIndexSensorRating,
+        )
+        coord = _make_coordinator({"kp_index": kp_data, "kp_forecast": []})
+        return {
+            "Planetary K-index": PlanetaryKIndexSensor(coord, "DLH").state,
+            "Planetary K-index Rating": PlanetaryKIndexSensorRating(coord, "DLH").state,
+            "Aurora Duration": AuroraDurationSensor(coord, "DLH").state,
+            "Aurora Visibility Probability": AuroraVisibilityProbabilitySensor(coord, "DLH").state,
+            "Aurora Next Time current_kp": AuroraNextTimeSensor(coord, "DLH").extra_state_attributes["current_kp"],
+        }
+
+    def test_each_reads_the_newest_sample(self):
+        samples = _load_fixture("space_weather_kp.json")
+        storm = dict(samples[0], kp_index=7, estimated_kp=7.0, kp="7Z")
+        readings = self._readings([storm, samples[-1]])
+        newest, oldest = self._readings([samples[-1]]), self._readings([storm])
+        for name, reading in readings.items():
+            with self.subTest(name):
+                self.assertEqual(reading, newest[name])
+                self.assertNotEqual(reading, oldest[name])
 
 
 class TestPlanetaryKIndexSensorRating(unittest.TestCase):
