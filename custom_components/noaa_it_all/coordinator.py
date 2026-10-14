@@ -87,11 +87,27 @@ _CURRENT_STORMS_URL = "https://www.nhc.noaa.gov/CurrentStorms.json"
 # Space Weather
 # -------------------------------------------------------------------
 
+class _BadBody(Exception):
+    """A response whose body isn't a JSON document: it doesn't parse, is empty or was cut off."""
+
+
 async def _get_json(session, url, headers, timeout):
-    """Fetch a URL and return its JSON. A body that doesn't parse raises ValueError."""
+    """Fetch a URL and return its JSON, raising _BadBody for a body that isn't any."""
     async with session.get(url, headers=headers, timeout=timeout) as resp:
         resp.raise_for_status()
-        return await resp.json()
+        try:
+            body = await resp.json()
+        except (ValueError, aiohttp.ClientPayloadError) as err:
+            raise _BadBody(_describe(err)) from err
+    if body is None:
+        # aiohttp gives None for an empty body rather than raising.
+        raise _BadBody("the body is empty")
+    return body
+
+
+def _reason(err: Exception) -> str:
+    """Describe a failed fetch: a bad body by what was wrong with it."""
+    return str(err) if isinstance(err, _BadBody) else _describe(err)
 
 
 class SpaceWeatherCoordinator(DataUpdateCoordinator):
@@ -137,19 +153,23 @@ class SpaceWeatherCoordinator(DataUpdateCoordinator):
     async def _fetch(session, label, url, headers, timeout):
         """Return a feed's JSON and no error, or None and why it failed.
 
-        A body that doesn't parse is fetched once more after a short wait; a
-        feed that still fails is None, so its entities read unknown.
+        A body that isn't JSON is fetched once more after a short wait, asking
+        any cache on the way for a fresh copy; other failures aren't. A feed
+        that still fails is None, so its entities read unknown.
         """
         try:
             try:
                 return await _get_json(session, url, headers, timeout), None
-            except ValueError as err:
-                _LOGGER.debug("Fetching %s again, its JSON didn't parse: %s", label, err)
-                await asyncio.sleep(_BAD_JSON_RETRY_DELAY)
-                return await _get_json(session, url, headers, timeout), None
+            except _BadBody as err:
+                reason = str(err)
+            # Out of the except block, so the bad response isn't kept alive.
+            _LOGGER.debug("Fetching %s again: %s", label, reason)
+            await asyncio.sleep(_BAD_JSON_RETRY_DELAY)
+            fresh = {**headers, "Cache-Control": "no-cache"}
+            return await _get_json(session, url, fresh, timeout), None
         except Exception as err:
-            _LOGGER.warning("Error fetching %s data: %s", label, err)
-            return None, f"{label} ({_describe(err)})"
+            _LOGGER.warning("Error fetching %s data: %s", label, _reason(err))
+            return None, f"{label} ({_reason(err)})"
 
 
 # -------------------------------------------------------------------

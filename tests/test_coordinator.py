@@ -12,7 +12,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CC = os.path.join(_REPO, "custom_components")
@@ -48,6 +48,8 @@ _ha_coordinator.UpdateFailed = _UpdateFailed
 # cannot appear in an ``except`` clause. The coordinators only catch bare
 # Exception, but ClientTimeout still has to be callable.
 _aiohttp.ClientTimeout = lambda **kwargs: kwargs
+# Raised by a response's json() when its body doesn't arrive whole.
+_aiohttp.ClientPayloadError = type("ClientPayloadError", (Exception,), {})
 
 _MOCK_MODULES = {
     "homeassistant": MagicMock(),
@@ -721,18 +723,34 @@ class _BadJSONResponse(_FakeResponse):
         raise ValueError("unexpected content after document: line 1 column 4904 (char 4903)")
 
 
-class _ResultsInTurn(_FakeSession):
-    """Serves, for a URL containing ``fragment``, one result per call in turn."""
+class _EmptyResponse(_FakeResponse):
+    """A response with an empty body, for which aiohttp's json() gives None."""
 
-    def __init__(self, fragment, results, default):
+    async def json(self):
+        return None
+
+
+class _CutOffResponse(_FakeResponse):
+    """A response whose body stops part way."""
+
+    async def json(self):
+        raise _aiohttp.ClientPayloadError("Response payload is not completed")
+
+
+class _ResultsInTurn(_FakeSession):
+    """Serves, for a URL containing a fragment, one result per call in turn."""
+
+    def __init__(self, by_turn, default):
         super().__init__(default=default)
-        self._fragment = fragment
-        self._results = list(results)
+        self._by_turn = {fragment: list(results) for fragment, results in by_turn.items()}
+        self.events = []
 
     def get(self, url, **kwargs):
-        if self._fragment in url:
-            self.calls.append((url, kwargs))
-            return _FakeGet(self._results.pop(0))
+        self.events.append(("get", url))
+        for fragment, results in self._by_turn.items():
+            if fragment in url:
+                self.calls.append((url, kwargs))
+                return _FakeGet(results.pop(0))
         return super().get(url, **kwargs)
 
 
@@ -761,51 +779,114 @@ class _InFlightSession(_FakeSession):
         return _Get()
 
 
+DST, KP_FORECAST = "geospace_dst", "k-index-forecast"
+GOOD = _FakeResponse([{"ok": True}])
+
+
 class TestSpaceWeatherFeeds(unittest.TestCase):
-    """#86: the four SWPC feeds are fetched together, and a body that doesn't parse is fetched again."""
+    """#86: the four SWPC feeds are fetched together, and a body that isn't JSON is fetched again."""
 
     def _update(self, session):
         from noaa_it_all.coordinator import SpaceWeatherCoordinator
         with _with_session(session), patch("noaa_it_all.coordinator._BAD_JSON_RETRY_DELAY", 0):
             return _run(SpaceWeatherCoordinator(HASS)._async_update_data())
 
+    def _gets(self, session, fragment):
+        return sum(fragment in url for url, _ in session.calls)
+
     def test_the_feeds_are_fetched_together(self):
         """One after another, a slow SWPC made the first refresh take up to four timeouts."""
-        session = _InFlightSession(_FakeResponse([{"ok": True}]))
+        session = _InFlightSession(GOOD)
         data = self._update(session)
         self.assertEqual(session.most_open, 4)
         self.assertEqual(set(data), {"dst", "kp_index", "space_alerts", "kp_forecast"})
 
     def test_a_body_that_does_not_parse_is_fetched_once_more(self):
-        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _FakeResponse([{"dst": -5}])],
-                                 default=_FakeResponse([{"ok": True}]))
+        session = _ResultsInTurn({DST: [_BadJSONResponse(), _FakeResponse([{"dst": -5}])]}, GOOD)
         data = self._update(session)
         self.assertEqual(data["dst"], [{"dst": -5}])
-        self.assertEqual(sum("geospace_dst" in url for url, _ in session.calls), 2)
+        self.assertEqual(self._gets(session, DST), 2)
 
-    def test_the_second_try_waits_first(self):
+    def test_an_empty_or_cut_off_body_is_fetched_once_more(self):
+        for bad in (_EmptyResponse(), _CutOffResponse()):
+            with self.subTest(type(bad).__name__):
+                session = _ResultsInTurn({DST: [bad, _FakeResponse([{"dst": -5}])]}, GOOD)
+                self.assertEqual(self._update(session)["dst"], [{"dst": -5}])
+
+    def test_two_feeds_that_do_not_parse_in_one_refresh(self):
+        """As on 2026-10-14, when Dst and the K-index forecast both came back bad."""
+        session = _ResultsInTurn({
+            DST: [_BadJSONResponse(), _FakeResponse([{"dst": -5}])],
+            KP_FORECAST: [_BadJSONResponse(), _FakeResponse([{"kp": 3.0}])],
+        }, GOOD)
+        data = self._update(session)
+        self.assertEqual((data["dst"], data["kp_forecast"]), ([{"dst": -5}], [{"kp": 3.0}]))
+
+    def test_the_second_try_waits_and_asks_for_a_fresh_copy(self):
         from noaa_it_all.coordinator import SpaceWeatherCoordinator, _BAD_JSON_RETRY_DELAY
-        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _FakeResponse([{"dst": -5}])],
-                                 default=_FakeResponse([{"ok": True}]))
-        with _with_session(session), patch("noaa_it_all.coordinator.asyncio.sleep", new=AsyncMock()) as wait:
+        session = _ResultsInTurn({DST: [_BadJSONResponse(), _FakeResponse([{"dst": -5}])]}, GOOD)
+
+        async def wait(seconds):
+            session.events.append(("wait", seconds))
+
+        with _with_session(session), patch("noaa_it_all.coordinator.asyncio.sleep", side_effect=wait):
             _run(SpaceWeatherCoordinator(HASS)._async_update_data())
-        wait.assert_awaited_once_with(_BAD_JSON_RETRY_DELAY)
+        dst_events = [event for event in session.events if event[0] == "wait" or DST in event[1]]
+        self.assertEqual([kind for kind, _ in dst_events], ["get", "wait", "get"])
+        self.assertEqual(dst_events[1][1], _BAD_JSON_RETRY_DELAY)
+        (_, first), (_, second) = [call for call in session.calls if DST in call[0]]
+        self.assertNotIn("Cache-Control", first["headers"])
+        self.assertEqual(second["headers"]["Cache-Control"], "no-cache")
+
+    def test_a_retry_does_not_hold_up_the_other_feeds(self):
+        """While the bad feed waits to try again, the other three are fetched."""
+        from noaa_it_all.coordinator import SpaceWeatherCoordinator
+        session = _ResultsInTurn({DST: [_BadJSONResponse(), _FakeResponse([{"dst": -5}])]}, GOOD)
+        requested_before_the_wait = []
+        real_sleep = asyncio.sleep
+
+        async def wait(seconds):
+            await real_sleep(0)
+            requested_before_the_wait.extend(url for kind, url in session.events if kind == "get")
+
+        with _with_session(session), patch("noaa_it_all.coordinator.asyncio.sleep", side_effect=wait):
+            _run(SpaceWeatherCoordinator(HASS)._async_update_data())
+        self.assertEqual(len(set(requested_before_the_wait)), 4)
 
     def test_a_body_that_still_does_not_parse_reads_unknown(self):
-        session = _ResultsInTurn("geospace_dst", [_BadJSONResponse(), _BadJSONResponse()],
-                                 default=_FakeResponse([{"ok": True}]))
+        session = _ResultsInTurn({DST: [_BadJSONResponse(), _BadJSONResponse()]}, GOOD)
         with self.assertLogs("noaa_it_all.coordinator", "WARNING") as logs:
             data = self._update(session)
         self.assertIsNone(data["dst"])
         self.assertEqual(data["kp_index"], [{"ok": True}])
-        self.assertIn("Error fetching DST data: unexpected content after document", logs.output[0])
+        self.assertIn("Error fetching DST data: ValueError: unexpected content after document", logs.output[0])
+
+    def test_all_four_still_failing_names_each_cause(self):
+        from noaa_it_all.coordinator import SpaceWeatherCoordinator
+        session = _ResultsInTurn({"swpc": [_BadJSONResponse()] * 8}, GOOD)
+        with _with_session(session), patch("noaa_it_all.coordinator._BAD_JSON_RETRY_DELAY", 0), \
+                self.assertRaises(Exception) as failed:
+            _run(SpaceWeatherCoordinator(HASS)._async_update_data())
+        message = str(failed.exception)
+        self.assertIn("All space weather API requests failed", message)
+        for label in ("DST", "K-index", "space weather alerts", "K-index forecast"):
+            self.assertIn(f"{label} (ValueError: unexpected content after document", message)
 
     def test_other_failures_are_not_fetched_again(self):
-        session = _ResultsInTurn("geospace_dst", [OSError("Temporary failure in name resolution")],
-                                 default=_FakeResponse([{"ok": True}]))
-        data = self._update(session)
-        self.assertIsNone(data["dst"])
-        self.assertEqual(sum("geospace_dst" in url for url, _ in session.calls), 1)
+        """A connection error, or one that is also a ValueError, such as a certificate that fails."""
+        import ssl
+        for error in (OSError("Temporary failure in name resolution"),
+                      ssl.SSLCertVerificationError("certificate verify failed")):
+            with self.subTest(type(error).__name__):
+                session = _ResultsInTurn({DST: [error]}, GOOD)
+                self.assertIsNone(self._update(session)["dst"])
+                self.assertEqual(self._gets(session, DST), 1)
+
+    def test_a_failure_without_a_message_still_names_its_cause(self):
+        session = _ResultsInTurn({DST: [asyncio.TimeoutError()]}, GOOD)
+        with self.assertLogs("noaa_it_all.coordinator", "WARNING") as logs:
+            self._update(session)
+        self.assertIn("Error fetching DST data: TimeoutError", logs.output[0])
 
 
 class TestFailureMessagesNameTheCause(unittest.TestCase):
