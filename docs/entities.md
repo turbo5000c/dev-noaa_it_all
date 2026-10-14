@@ -9,14 +9,14 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 | Entity ID | State |
 |---|---|
 | `weather.noaa_ilm_weather` | Weather entity: condition, temperature and forecasts |
-| `sensor.noaa_ilm_weather_temperature` | °F |
-| `sensor.noaa_ilm_weather_feels_like` | °F, heat index or wind chill |
+| `sensor.noaa_ilm_weather_temperature` | °F (°C)* |
+| `sensor.noaa_ilm_weather_feels_like` | °F (°C)*, heat index or wind chill |
 | `sensor.noaa_ilm_weather_humidity` | % |
-| `sensor.noaa_ilm_weather_dewpoint` | °F |
-| `sensor.noaa_ilm_weather_wind_speed` | mph |
+| `sensor.noaa_ilm_weather_dewpoint` | °F (°C)* |
+| `sensor.noaa_ilm_weather_wind_speed` | mph (km/h)* |
 | `sensor.noaa_ilm_weather_wind_direction` | Degrees; `cardinal_direction` attribute |
-| `sensor.noaa_ilm_weather_barometric_pressure` | inHg |
-| `sensor.noaa_ilm_weather_visibility` | mi |
+| `sensor.noaa_ilm_weather_barometric_pressure` | inHg (hPa)* |
+| `sensor.noaa_ilm_weather_visibility` | mi (km)* |
 | `sensor.noaa_ilm_weather_sky_conditions` | Text, e.g. `Mostly Clear` |
 | `sensor.noaa_ilm_weather_cloud_cover` | % |
 | `sensor.noaa_ilm_weather_extended_forecast` | Number of periods, e.g. `14 periods` |
@@ -30,6 +30,8 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 | `binary_sensor.noaa_ilm_weather_active_alerts` | On (Unsafe) during any alert |
 | `image.noaa_ilm_weather_radar_base_reflectivity` | Time of the image |
 | `image.noaa_ilm_weather_radar_loop` | Time of the image |
+
+\* The unit in a metric Home Assistant. See **Units** under [Current Weather Conditions](#current-weather-conditions).
 
 **NOAA {OFFICE} Space** (20)
 
@@ -125,17 +127,19 @@ Each has `alert_count` and an `alerts` list with each alert's `event`, `headline
 
 ## Current Weather Conditions
 Real-time weather observations from your local NWS observation station *(NOAA Weather)*:
-- **Temperature**: Current temperature in °F *(sensor.noaa_{office}_weather_temperature)*
+- **Temperature**: Current temperature in °F (°C) *(sensor.noaa_{office}_weather_temperature)*
 - **Humidity**: Relative humidity percentage *(sensor.noaa_{office}_weather_humidity)*
-- **Wind Speed**: Wind speed in mph *(sensor.noaa_{office}_weather_wind_speed)*
+- **Wind Speed**: Wind speed in mph (km/h) *(sensor.noaa_{office}_weather_wind_speed)*
 - **Wind Direction**: Wind direction in degrees with cardinal direction *(sensor.noaa_{office}_weather_wind_direction)*
-- **Barometric Pressure**: Barometric pressure in inHg *(sensor.noaa_{office}_weather_barometric_pressure)*
-- **Dewpoint**: Dewpoint temperature in °F *(sensor.noaa_{office}_weather_dewpoint)*
-- **Visibility**: Visibility distance in miles *(sensor.noaa_{office}_weather_visibility)*
+- **Barometric Pressure**: Barometric pressure in inHg (hPa) *(sensor.noaa_{office}_weather_barometric_pressure)*
+- **Dewpoint**: Dewpoint temperature in °F (°C) *(sensor.noaa_{office}_weather_dewpoint)*
+- **Visibility**: Visibility distance in miles (km) *(sensor.noaa_{office}_weather_visibility)*
 - **Sky Conditions**: Current sky conditions description (Clear, Cloudy, Fog, etc.) *(sensor.noaa_{office}_weather_sky_conditions)*
 - **Feels Like**: Apparent temperature incorporating wind chill or heat index *(sensor.noaa_{office}_weather_feels_like)*
 
-> **Note**: Weather observations update every 10 minutes from the NWS observation station nearest your configured coordinates. If that station stops answering, or has nothing from the last two hours, the next nearest (of up to three) is used until it comes back; the `station_id` attribute shows which one. Data includes automatic unit conversions to US customary units.
+> **Note**: Weather observations update every 10 minutes from the NWS observation station nearest your configured coordinates. If that station stops answering, or has nothing from the last two hours, the next nearest (of up to three) is used until it comes back; the `station_id` attribute shows which one.
+>
+> **Units**: NWS reports observations in metric units, and Home Assistant shows them in your unit system: °F, mph, inHg and miles in a US customary install, °C, km/h, hPa and km in a metric one. You can pick another unit in an entity's settings. A sensor added before 0.10.3 keeps the unit it had, which was always US customary, until you change it there. The state has every decimal of the conversion and is rounded for display, so in templates use `states('sensor.noaa_ilm_weather_temperature', rounded=True)`, which gives `72.0` rather than `71.96000000000001`, and `with_unit=True` to add the unit.
 >
 > A missed reading doesn't blank a sensor. If NWS leaves a field such as humidity or wind out of the newest observation, it comes from the newest one in the last two hours that has it, and that sensor's `timestamp` attribute says when it was observed. If every station fails, the last observation stays for up to an hour after the last successful refresh before the observation entities go `unavailable`. Wind direction, wind chill and heat index come from the same observation as the wind speed or temperature they go with: NWS leaves direction empty for calm or variable wind, and wind chill and heat index whenever they don't apply.
 

@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2027.8, as does moving a device between entries when upgrading from an older release. It now
   uses the newer device registry calls where Home Assistant has them, from 2026.8, and the older
   ones before that, so 2026.3 is still the minimum.
+- **The observation sensors follow Home Assistant's unit system.** Temperature, Feels Like,
+  Dewpoint, Wind Speed, Barometric Pressure and Visibility were always in °F, mph, inHg and miles,
+  even in a metric Home Assistant, whose weather entity showed °C, km/h and hPa. They now report
+  NWS's metric values and Home Assistant converts them. A US customary install shows the same units
+  and decimals as before. In a metric one, these sensors added from now on show °C, km/h, hPa and
+  km. Ones you already have keep the units they had, as Home Assistant keeps an existing sensor's
+  unit; pick another in the entity's settings. Changing the unit system, with its option to update
+  existing entities, converts them too. These sensors keep no long-term statistics, so no
+  statistics repair comes up. Their state now has every decimal of Home Assistant's conversion,
+  such as `71.96000000000001` for 22.2 °C, and is only rounded for display: a template that prints
+  one, such as `states('sensor.noaa_ilm_weather_temperature')`, needs `rounded=True` to get `72.0`.
 
 Going back to 0.10.2 needs nothing removed first.
 

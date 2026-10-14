@@ -13,34 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # Unit conversion helpers
 # ---------------------------------------------------------------------------
 
-def celsius_to_fahrenheit(celsius: Optional[float]) -> Optional[float]:
-    """Convert Celsius to Fahrenheit."""
-    if celsius is None:
-        return None
-    return round((celsius * 9 / 5) + 32, 1)
-
-
-def kmh_to_mph(kmh: Optional[float]) -> Optional[float]:
-    """Convert km/h to mph."""
-    if kmh is None:
-        return None
-    return round(kmh * 0.621371, 1)
-
-
-def pascals_to_inhg(pascals: Optional[float]) -> Optional[float]:
-    """Convert Pascals to inches of mercury."""
-    if pascals is None:
-        return None
-    return round(pascals * 0.00029530, 2)
-
-
-def meters_to_miles(meters: Optional[float]) -> Optional[float]:
-    """Convert meters to miles."""
-    if meters is None:
-        return None
-    return round(meters * 0.000621371, 1)
-
-
 def degrees_to_cardinal(degrees: Union[int, float]) -> str:
     """Convert degrees to cardinal direction."""
     directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
