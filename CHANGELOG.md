@@ -5,6 +5,18 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3]
+
+### Fixed
+- **The daily forecast no longer lists today twice between midnight and 6 AM.** After midnight,
+  NWS starts its forecast with an Overnight period, which got an entry of its own for today, with
+  the current temperature as its high, before the entry for Today. Each date now has one entry,
+  from its day and the night after it. The current temperature is no longer shown as a forecast
+  high: in the evening, today's entry has only tonight's low, so a template reading its
+  `temperature` gets nothing.
+
+Going back to 0.10.2 needs nothing removed first.
+
 ## [0.10.2]
 
 ### Changed

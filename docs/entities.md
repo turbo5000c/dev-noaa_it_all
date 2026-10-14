@@ -238,6 +238,9 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
 - **Weather**: A full Home Assistant weather entity backed by NWS observations and forecasts
   *(weather.noaa_{office}_weather)* — use this with the standard Weather Forecast card, and with
   `weather.get_forecasts` in templates. Note the single `weather` in the ID, not `_weather_weather`.
+  Its daily forecast has one entry per date, with the day's high and the following night's low.
+  In the evening, when NWS no longer forecasts today's high, today's entry has only tonight's low
+  and its `temperature` is empty.
 
 ## Derived Space Weather Sensors
 
