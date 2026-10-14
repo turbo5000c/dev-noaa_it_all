@@ -42,7 +42,7 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 | `sensor.noaa_ilm_space_geomagnetic_storm` | Dst index in nT, e.g. `-13.2` |
 | `sensor.noaa_ilm_space_geomagnetic_storm_interpretation` | `No Storm (Quiet conditions)`, `Minor Storm`, `Moderate Storm`, `Strong Storm` or `Severe Storm` |
 | `sensor.noaa_ilm_space_aurora_visibility_probability` | % |
-| `sensor.noaa_ilm_space_aurora_next_time` | Timestamp: start of the next forecast period with enough Kp here, or `unknown` |
+| `sensor.noaa_ilm_space_aurora_next_time` | Timestamp: the next time it is dark here in a forecast period with enough Kp, or `unknown` |
 | `sensor.noaa_ilm_space_aurora_duration` | Hours |
 | `sensor.noaa_ilm_space_solar_radiation_storm_alerts` | Number of solar radiation storm warnings and alerts in effect |
 | `sensor.noaa_ilm_space_meteor_shower_activity` | Shower most worth watching now, or `None` |
@@ -149,7 +149,7 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 
 ## Aurora Visibility Alerts
 Location-aware aurora visibility predictions *(NOAA Space)*:
-- **Aurora Next Time**: When aurora may next be visible at your location, from SWPC's 3-day Kp forecast *(sensor.noaa_{office}_space_aurora_next_time)*. The state is the start of the next 3-hour forecast period whose forecast Kp reaches the Kp your location needs; the period in progress doesn't count, as Aurora Visibility Probability goes by the Kp measured now. It is `unknown` when no period in the forecast reaches it, or the forecast can't be fetched. The forecast doesn't know about daylight, so a period during the day means after dark at the earliest. Attributes: `predicted_kp` (that period's forecast Kp), `required_kp`, `current_kp` and `magnetic_latitude`
+- **Aurora Next Time**: When aurora may next be visible at your location, from SWPC's 3-day Kp forecast *(sensor.noaa_{office}_space_aurora_next_time)*. The state is the start of the next 3-hour forecast period whose forecast Kp reaches the Kp your location needs, counting only the part of it that is dark there: a period that gets dark partway through counts from nightfall, and one entirely in daylight doesn't count. Dark means the Sun at least 18° below the horizon, or 12° on summer nights at high latitude that never get darker, as for the meteor showers. The period in progress doesn't count, as Aurora Visibility Probability goes by the Kp measured now. It is `unknown` when no period in the forecast reaches it after dark, or the forecast can't be fetched. Attributes: `predicted_kp` (that period's forecast Kp), `required_kp`, `current_kp` and `magnetic_latitude`
 - **Aurora Duration**: Estimated length of aurora visibility in hours based on geomagnetic conditions *(sensor.noaa_{office}_space_aurora_duration)*
 - **Aurora Visibility Probability**: Percentage chance of aurora visibility from your specific location *(sensor.noaa_{office}_space_aurora_visibility_probability)*
 

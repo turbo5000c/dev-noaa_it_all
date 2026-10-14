@@ -1,6 +1,7 @@
 """Unit tests for parsers.py — pure functions, no Home Assistant dependency."""
 
 import unittest
+from datetime import datetime, timezone
 
 from parsers import (
     degrees_to_cardinal,
@@ -13,6 +14,7 @@ from parsers import (
     calculate_aurora_probability,
     get_visibility_class,
     get_required_kp,
+    next_aurora_period,
     extract_storm_scale,
     extract_time_from_message,
     calculate_alert_duration,
@@ -64,6 +66,50 @@ class TestUnitConversions(unittest.TestCase):
         self.assertEqual(meters_to_kilometers(402.34), 0.40234)
         self.assertIsNone(pascals_to_hectopascals(None))
         self.assertIsNone(meters_to_kilometers(None))
+
+
+# ---------------------------------------------------------------
+# Aurora Next Time: the Kp forecast after dark (#85)
+# ---------------------------------------------------------------
+
+def _utc(hour, minute=0, day=15):
+    return datetime(2026, 10, day, hour, minute, tzinfo=timezone.utc)
+
+
+class TestNextAuroraPeriodAfterDark(unittest.TestCase):
+    """A 3-hour period counts only for its dark part, from its start or nightfall."""
+
+    NOW = _utc(12, day=14)
+
+    def _next(self, start_hour, dark):
+        forecast = [{"time_tag": f"2026-10-15T{start_hour:02d}:00:00", "kp": 5.0, "observed": "predicted"}]
+        found = next_aurora_period(forecast, 5, self.NOW, dark)
+        return found["start"] if found else None
+
+    def test_without_dark_windows_the_period_start_counts(self):
+        self.assertEqual(self._next(15, None), _utc(15))
+
+    def test_a_period_entirely_in_daylight_doesnt_count(self):
+        self.assertIsNone(self._next(15, [(_utc(1, 4), _utc(10, 45))]))
+        self.assertIsNone(self._next(15, []))
+
+    def test_a_period_that_gets_dark_counts_from_nightfall(self):
+        self.assertEqual(self._next(0, [(_utc(1, 4), _utc(10, 45))]), _utc(1, 4))
+
+    def test_a_period_already_dark_counts_from_its_start(self):
+        self.assertEqual(self._next(3, [(_utc(1, 4), _utc(10, 45))]), _utc(3))
+
+    def test_dark_that_ends_as_the_period_starts_doesnt_count(self):
+        self.assertIsNone(self._next(9, [(_utc(1, 4), _utc(9))]))
+        self.assertIsNone(self._next(0, [(_utc(3), _utc(10, 45))]))
+
+    def test_the_earliest_dark_moment_wins_across_periods(self):
+        forecast = [
+            {"time_tag": "2026-10-15T03:00:00", "kp": 5.0, "observed": "predicted"},
+            {"time_tag": "2026-10-15T00:00:00", "kp": 5.0, "observed": "predicted"},
+        ]
+        found = next_aurora_period(forecast, 5, self.NOW, [(_utc(1, 4), _utc(10, 45))])
+        self.assertEqual(found, {"start": _utc(1, 4), "kp": 5.0})
 
 
 # ---------------------------------------------------------------

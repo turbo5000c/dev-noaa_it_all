@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import StrEnum
 from unittest.mock import MagicMock, patch
 
@@ -753,6 +753,8 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
     2026-10-14 08:05 UTC, oldest first: observed periods to 03:00, estimated
     ones for the rest of the day (3.67 at 06:00 and 09:00, then 2.67, 3.0,
     3.33 and 3.33) and predicted ones to 2026-10-17 00:00 (at most 3.33).
+    Without its own location, Duluth (DLH) uses the office's coordinates; it
+    is dark there from about 01:00 to 10:45 UTC.
     """
 
     NOW = "2026-10-14 08:05"
@@ -786,15 +788,48 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
         self.assertEqual(value, datetime(2026, 10, 14, 9, tzinfo=timezone.utc))
 
     def test_periods_below_the_threshold_are_skipped(self):
-        """After 09:00 the next period at 3 or more is 15:00 (3.0)."""
-        value, _ = self._value(self._sensor("DLH"), "2026-10-14 09:30")
-        self.assertEqual(value, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+        """At 21:30 the next period, 00:00 on the 15th, is forecast at 2.67; 03:00 (3.33) is the next at 3."""
+        value, _ = self._value(self._sensor("DLH"), "2026-10-14 21:30")
+        self.assertEqual(value, datetime(2026, 10, 15, 3, tzinfo=timezone.utc))
 
     def test_observed_periods_never_count(self):
+        """Without 09:00, the next period at 3 or more after dark is 03:00 on the 15th."""
         forecast = [dict(p, observed="observed") if p["time_tag"] == "2026-10-14T09:00:00" else p
                     for p in _load_fixture("space_weather_kp_forecast.json")]
         value, _ = self._value(self._sensor("DLH", forecast=forecast))
-        self.assertEqual(value, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+        self.assertEqual(value, datetime(2026, 10, 15, 3, tzinfo=timezone.utc))
+
+    def test_periods_in_daylight_are_skipped(self):
+        """#85: 15:00, 18:00 and 21:00 (3.0 to 3.33) are 10 AM to 7 PM in Duluth; 03:00 on the 15th is after dark."""
+        value, attrs = self._value(self._sensor("DLH"), "2026-10-14 09:30")
+        self.assertEqual(value, datetime(2026, 10, 15, 3, tzinfo=timezone.utc))
+        self.assertEqual(attrs["predicted_kp"], 3.33)
+
+    def test_a_period_that_gets_dark_counts_from_nightfall(self):
+        """#85: the 00:00 to 03:00 period gets dark in Duluth at about 01:04."""
+        from noaa_it_all.astro import find_dark_window
+        forecast = [{"time_tag": "2026-10-15T00:00:00", "kp": 4.0, "observed": "predicted", "noaa_scale": None}]
+        value, attrs = self._value(self._sensor("DLH", forecast=forecast), "2026-10-14 20:00")
+        nightfall, _, _ = find_dark_window(date(2026, 10, 14), 46.8369, -92.1833)
+        self.assertEqual(value, nightfall)
+        self.assertTrue(datetime(2026, 10, 15, 1, tzinfo=timezone.utc) < value
+                        < datetime(2026, 10, 15, 1, 10, tzinfo=timezone.utc))
+        self.assertEqual(attrs["predicted_kp"], 4.0)
+
+    def test_the_entrys_own_location_decides_when_it_is_dark(self):
+        """At 15:00 UTC it is day in Duluth but night in Guam."""
+        forecast = [{"time_tag": "2026-10-14T15:00:00", "kp": 9.0, "observed": "predicted", "noaa_scale": "G5"}]
+        duluth, _ = self._value(self._sensor("DLH", forecast=forecast, lat=46.8369, lon=-92.1833))
+        guam, _ = self._value(self._sensor("GUM", forecast=forecast, lat=13.48, lon=144.79))
+        self.assertIsNone(duluth)
+        self.assertEqual(guam, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+
+    def test_unknown_where_it_never_gets_dark(self):
+        """Fairbanks has no night in June, so even a Kp 9 forecast doesn't count."""
+        forecast = [{"time_tag": f"2026-06-21T{hour:02d}:00:00", "kp": 9.0, "observed": "predicted",
+                     "noaa_scale": "G5"} for hour in range(0, 24, 3)]
+        value, _ = self._value(self._sensor("AFG", forecast=forecast, lat=64.84, lon=-147.72), "2026-06-20 23:00")
+        self.assertIsNone(value)
 
     def test_the_earliest_period_wins_whatever_the_feed_order(self):
         forecast = list(reversed(_load_fixture("space_weather_kp_forecast.json")))
@@ -834,13 +869,13 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
 
     def test_a_null_or_missing_kp_is_skipped(self):
         forecast = [
-            {"time_tag": "2026-10-14T09:00:00", "kp": None, "observed": "estimated", "noaa_scale": None},
-            {"time_tag": "2026-10-14T12:00:00", "observed": "predicted", "noaa_scale": None},
-            {"time_tag": "2026-10-14T15:00:00", "kp": "5", "observed": "predicted", "noaa_scale": None},
-            {"time_tag": "2026-10-14T18:00:00", "kp": 4.0, "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-15T00:00:00", "kp": None, "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-15T03:00:00", "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-15T06:00:00", "kp": "5", "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-15T09:00:00", "kp": 4.0, "observed": "predicted", "noaa_scale": None},
         ]
         value, _ = self._value(self._sensor("DLH", forecast=forecast))
-        self.assertEqual(value, datetime(2026, 10, 14, 18, tzinfo=timezone.utc))
+        self.assertEqual(value, datetime(2026, 10, 15, 9, tzinfo=timezone.utc))
 
     def test_no_data_at_all_is_unknown(self):
         from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor

@@ -6,13 +6,15 @@ solar radiation storm alerts.
 
 import logging
 import math
+from functools import lru_cache
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from datetime import datetime, timedelta, timezone
 
+from ..astro import find_dark_window
 from ..const import (
-    AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES, DOMAIN,
+    AURORA_KP_THRESHOLDS, OFFICE_COORDINATES, SOLAR_RADIATION_STORM_SCALES, DOMAIN,
 )
 from ..offices import magnetic_latitude
 from ..parsers import (
@@ -37,6 +39,22 @@ _LOGGER = logging.getLogger(__name__)
 
 # A newest Dst older than this means the feed has stopped updating.
 _DST_STALE_AFTER = timedelta(hours=2)
+
+# The nights Aurora Next Time looks at, from the day before today (a night
+# still under way) to past the end of SWPC's 3-day Kp forecast.
+_AURORA_NIGHTS = range(-1, 5)
+
+
+@lru_cache(maxsize=64)
+def _dark_window(night_of, latitude, longitude):
+    """Return the night's dark window as ``(start, end)`` in UTC, or None if it never gets dark.
+
+    Dark is the Sun 18 degrees below the horizon, or 12 on summer nights at high
+    latitude that never get darker, as for the meteor showers. It only depends
+    on the date and place, so each night is worked out once.
+    """
+    start, end, _ = find_dark_window(night_of, latitude, longitude)
+    return (start, end) if start is not None else None
 
 
 def _newest_dst(coordinator):
@@ -291,8 +309,9 @@ class AuroraNextTimeSensor(CoordinatorEntity, SensorEntity):
     """When aurora may next be visible here, from SWPC's 3-day Kp forecast.
 
     The state is the start of the next 3-hour forecast period whose Kp
-    reaches the Kp this location needs, or unknown when none in the forecast
-    does or the forecast can't be fetched.
+    reaches the Kp this location needs, or nightfall when that comes later
+    in the period. Periods in daylight don't count. It is unknown when none
+    in the forecast does or the forecast can't be fetched.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
     automatically combines the device name with the entity name to
@@ -327,12 +346,24 @@ class AuroraNextTimeSensor(CoordinatorEntity, SensorEntity):
         office_lat = magnetic_latitude(self._office_code, self._latitude, self._longitude)
         return get_required_kp(office_lat, AURORA_KP_THRESHOLDS)
 
+    def _dark(self, now):
+        """Return the dark windows of the nights around the forecast, or None without a location."""
+        if self._latitude is not None and self._longitude is not None:
+            latitude, longitude = self._latitude, self._longitude
+        elif self._office_code in OFFICE_COORDINATES:
+            latitude, longitude = OFFICE_COORDINATES[self._office_code]
+        else:
+            return None
+        windows = (_dark_window(now.date() + timedelta(days=days), latitude, longitude) for days in _AURORA_NIGHTS)
+        return [window for window in windows if window is not None]
+
     def _next_period(self):
         """Return the next forecast period aurora may be visible in, or None."""
         if self.coordinator.data is None:
             return None
+        now = datetime.now(timezone.utc)
         return next_aurora_period(
-            self.coordinator.data.get("kp_forecast"), self._required_kp(), datetime.now(timezone.utc)
+            self.coordinator.data.get("kp_forecast"), self._required_kp(), now, self._dark(now)
         )
 
     @property

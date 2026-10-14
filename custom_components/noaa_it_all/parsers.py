@@ -170,20 +170,31 @@ def get_required_kp(
     return 9
 
 
+# The length of a period in SWPC's Kp forecast.
+_KP_FORECAST_PERIOD = timedelta(hours=3)
+
+
 def next_aurora_period(
     forecast: Optional[List[Dict[str, Any]]],
     required_kp: float,
     now: datetime,
+    dark: Optional[List[Tuple[datetime, datetime]]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Return the first forecast Kp period starting after ``now`` whose Kp reaches ``required_kp``.
+    """Return the first forecast Kp period after ``now`` that reaches ``required_kp`` while dark.
 
     ``forecast`` is SWPC's noaa-planetary-k-index-forecast.json: 3-hour
     periods, each ``observed``, ``estimated`` or ``predicted``. Estimated
     periods cover the rest of today and predicted ones the next two days, so
     both are forecasts. The period in progress is left out: part of it is
     already measured, and the current Kp says more about it than its
-    forecast. A period without a numeric Kp is skipped. Returns
-    ``{"start": datetime, "kp": float}``, or None when no period does.
+    forecast. A period without a numeric Kp is skipped.
+
+    ``dark``, when given, lists the ``(start, end)`` times it is dark enough
+    to see aurora. A period then counts only for the part of it that is dark,
+    and its time is the first dark moment in it: its start, or nightfall when
+    that comes later in it. A period entirely in daylight doesn't count.
+
+    Returns ``{"start": datetime, "kp": float}``, or None when no period does.
     """
     found = None
     for period in forecast or []:
@@ -198,9 +209,23 @@ def next_aurora_period(
             continue
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
-        if start > now and (found is None or start < found["start"]):
+        if start <= now:
+            continue
+        if dark is not None:
+            start = _first_dark_moment(start, start + _KP_FORECAST_PERIOD, dark)
+            if start is None:
+                continue
+        if found is None or start < found["start"]:
             found = {"start": start, "kp": kp}
     return found
+
+
+def _first_dark_moment(
+    start: datetime, end: datetime, dark: List[Tuple[datetime, datetime]]
+) -> Optional[datetime]:
+    """Return the first moment from ``start`` to ``end`` inside one of the ``dark`` windows, or None."""
+    moments = [max(start, dark_start) for dark_start, dark_end in dark if dark_start < end and dark_end > start]
+    return min(moments, default=None)
 
 
 # ---------------------------------------------------------------------------
