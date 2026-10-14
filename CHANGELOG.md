@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing entities: those switch to °C and m when you upgrade. Pick another unit in the entity's
   settings. Changing the unit system, with that option, converts them too. A converted state has
   every decimal of the conversion, so a template that prints one needs `rounded=True`.
+- **The weather entity's current conditions match the observation sensors in a metric Home
+  Assistant.** It converted NWS's metric observations to °F, inHg, mph and miles and rounded them,
+  and Home Assistant then converted them back, so the weather card could show 1018.29 hPa next to
+  a Barometric Pressure of 1018.3 hPa. It now reports NWS's values as they are, and converts the
+  forecast, which NWS gives in °F and mph, to °C and km/h; Home Assistant converts both to your unit
+  system once. A US customary install shows the same temperatures and pressure as before. Wind
+  speed and visibility now have Home Assistant's two decimals, such as 5.75 mph rather than 5.7.
 
 Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
 and ft again, whatever unit they had, so in a metric install their history mixes the two.
