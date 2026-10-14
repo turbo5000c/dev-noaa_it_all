@@ -4,6 +4,7 @@ This module contains pure functions with no Home Assistant dependency,
 making them independently unit-testable.
 """
 
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -589,7 +590,11 @@ def parse_coops_water_temperature(data: Dict[str, Any]) -> Optional[float]:
         value = records[-1].get("v")
         if value is None or value == "":
             return None
-        return round(float(value), 1)
+        value = float(value)
+        # "NaN" or "inf" would parse; Home Assistant rejects them as a state.
+        if not math.isfinite(value):
+            return None
+        return round(value, 1)
     except (TypeError, ValueError, IndexError, KeyError):
         return None
 
@@ -619,10 +624,14 @@ def parse_ndbc_wave_height(text: str) -> Optional[float]:
             # Missing value for this observation; try the next line.
             continue
         try:
-            return round(float(wvht) * _M_TO_FT, 1)
+            height = float(wvht)
         except (ValueError, TypeError):
             # Invalid numeric value; try the next line.
             continue
+        if not math.isfinite(height):
+            # "nan" or "inf" parse as floats but are no reading either.
+            continue
+        return round(height * _M_TO_FT, 1)
     return None
 
 

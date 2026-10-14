@@ -12,11 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   °F and feet, even in a metric Home Assistant, as the observation sensors were before 0.10.3. A US
   customary install shows the same units and decimals as before. In a metric one, these sensors
   added from now on show °C and m. Ones you already have keep °F and ft, as Home Assistant keeps
-  an existing sensor's unit; pick another in the entity's settings. Changing the unit system, with
-  its option to update existing entities, converts them too. A converted state has every decimal
-  of the conversion, so a template that prints one needs `rounded=True`.
+  an existing sensor's unit, unless the unit system was changed before with its option to update
+  existing entities: those switch to °C and m when you upgrade. Pick another unit in the entity's
+  settings. Changing the unit system, with that option, converts them too. A converted state has
+  every decimal of the conversion, so a template that prints one needs `rounded=True`.
 
-Going back to 0.10.3 needs nothing removed first.
+Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
+and ft again, whatever unit they had, so in a metric install their history mixes the two.
 
 ## [0.10.3]
 

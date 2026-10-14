@@ -322,6 +322,13 @@ class TestCoopsWaterTemperature(unittest.TestCase):
     def test_empty_dict_input(self):
         self.assertIsNone(parse_coops_water_temperature({}))
 
+    def test_a_value_that_is_not_finite_is_no_reading(self):
+        """float() takes "NaN" and "inf", which Home Assistant rejects as a temperature."""
+        for value in ("NaN", "inf", "-Infinity"):
+            with self.subTest(value):
+                data = {"data": [{"t": "2026-03-30 23:06", "v": value, "f": "0,0,0"}]}
+                self.assertIsNone(parse_coops_water_temperature(data))
+
 
 class TestNdbcWaveHeight(unittest.TestCase):
     """Tests for NDBC real-time wave height text parsing."""
@@ -365,6 +372,18 @@ class TestNdbcWaveHeight(unittest.TestCase):
         result = parse_ndbc_wave_height(text)
         self.assertIsNotNone(result)
         self.assertAlmostEqual(result, 3.3, places=1)
+
+    def test_a_height_that_is_not_finite_is_skipped_like_mm(self):
+        """float() takes "nan" and "inf", which Home Assistant rejects as a distance."""
+        for value in ("nan", "inf"):
+            with self.subTest(value):
+                text = (
+                    "#YY  MM DD hh mm WDIR WSPD GST  WVHT   DPD   APD MWD\n"
+                    "#yr  mo dy hr mn degT m/s  m/s     m   sec   sec degT\n"
+                    f"2026 03 31 02 30  MM   MM   MM   {value}     6   4.8 127\n"
+                    "2026 03 31 02 00  90   10   12   1.0     7   5.0 090\n"
+                )
+                self.assertEqual(parse_ndbc_wave_height(text), 3.3)
 
 
 # ---------------------------------------------------------------

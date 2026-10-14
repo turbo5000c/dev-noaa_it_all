@@ -3,9 +3,10 @@
 Covers rip current risk, surf height and water temperature from NWS
 Surf Zone Forecasts (SRF product).
 
-Water temperature is in °F and surf height in feet, as the sources give them,
-with a device class, so Home Assistant converts them to the unit system of the
-install, or to the unit chosen in an entity's settings.
+Water temperature is in °F, as CO-OPS and the SRF text give it, and surf height
+in feet, as the SRF text gives it and NDBC's metres are converted to in
+parsers.py. With a device class, Home Assistant converts them to the unit
+system of the install, or to the unit chosen in an entity's settings.
 """
 
 import logging

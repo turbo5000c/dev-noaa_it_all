@@ -286,9 +286,10 @@ class TestSurfHeightSensor(unittest.TestCase):
     def test_state_from_fixture(self):
         text = _load_fixture("surf_srf.txt")
         sensor = self._make(text)
-        # Should parse "3 TO 5 FEET" as numeric
-        state = sensor.native_value
-        self.assertIsNotNone(state)
+        # "3 TO 5 FEET" averages to 4 ft. With a device class Home Assistant
+        # rejects a state that isn't a number, so a range string would break it.
+        self.assertEqual(sensor.native_value, 4.0)
+        self.assertIsInstance(sensor.native_value, float)
 
     def test_state_from_ndbc(self):
         from noaa_it_all.sensors.surf import SurfHeightSensor
@@ -319,6 +320,11 @@ class TestWaterTemperatureSensor(unittest.TestCase):
         coord = _make_coordinator(None)
         sensor = WaterTemperatureSensor(coord, OFFICE)
         self.assertIsNone(sensor.native_value)
+
+    def test_state_from_srf_is_a_number(self):
+        sensor = self._make("WATER TEMPERATURE.......IN THE MID 60S.")
+        self.assertEqual(sensor.native_value, 65.0)
+        self.assertIsInstance(sensor.native_value, float)
 
 
 class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
