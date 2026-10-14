@@ -5,6 +5,19 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4]
+
+### Fixed
+- **Water Temperature and Surf Height follow Home Assistant's unit system.** They were always in
+  °F and feet, even in a metric Home Assistant, as the observation sensors were before 0.10.3. A US
+  customary install shows the same units and decimals as before. In a metric one, these sensors
+  added from now on show °C and m. Ones you already have keep °F and ft, as Home Assistant keeps
+  an existing sensor's unit; pick another in the entity's settings. Changing the unit system, with
+  its option to update existing entities, converts them too. A converted state has every decimal
+  of the conversion, so a template that prints one needs `rounded=True`.
+
+Going back to 0.10.3 needs nothing removed first.
+
 ## [0.10.3]
 
 ### Fixed

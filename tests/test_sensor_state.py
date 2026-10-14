@@ -30,7 +30,9 @@ _ha_entity.DeviceInfo = dict
 _ha_sensor = MagicMock()
 _ha_sensor.SensorEntity = type("SensorEntity", (), {})
 # Str enums, like Home Assistant's.
-_ha_sensor.SensorDeviceClass = StrEnum("SensorDeviceClass", {"TIMESTAMP": "timestamp"})
+_ha_sensor.SensorDeviceClass = StrEnum("SensorDeviceClass", {
+    "TIMESTAMP": "timestamp", "TEMPERATURE": "temperature", "DISTANCE": "distance",
+})
 _ha_sensor.SensorStateClass = StrEnum("SensorStateClass", {"MEASUREMENT": "measurement"})
 
 _MOCK_MODULES = {
@@ -285,8 +287,13 @@ class TestSurfHeightSensor(unittest.TestCase):
         text = _load_fixture("surf_srf.txt")
         sensor = self._make(text)
         # Should parse "3 TO 5 FEET" as numeric
-        state = sensor.state
+        state = sensor.native_value
         self.assertIsNotNone(state)
+
+    def test_state_from_ndbc(self):
+        from noaa_it_all.sensors.surf import SurfHeightSensor
+        coord = _make_coordinator({"forecast_text": "", "source_url": "", "wave_height_ft": 2.0})
+        self.assertEqual(SurfHeightSensor(coord, OFFICE).native_value, 2.0)
 
 
 class TestWaterTemperatureSensor(unittest.TestCase):
@@ -304,14 +311,50 @@ class TestWaterTemperatureSensor(unittest.TestCase):
 
     def test_state_from_coops(self):
         sensor = self._make(water_temp_f=62.4)
-        state = sensor.state
+        state = sensor.native_value
         self.assertEqual(state, 62.4)
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.surf import WaterTemperatureSensor
         coord = _make_coordinator(None)
         sensor = WaterTemperatureSensor(coord, OFFICE)
-        self.assertIsNone(sensor.state)
+        self.assertIsNone(sensor.native_value)
+
+
+class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
+    """Water Temperature and Surf Height let Home Assistant convert them (#82).
+
+    Home Assistant converts only a SensorEntity that reports native_value and
+    native_unit_of_measurement with a device class; it compares the class with
+    ``is``, so it has to be the SensorDeviceClass member, not a string.
+    """
+
+    def _sensors(self):
+        from noaa_it_all.sensors.surf import SurfHeightSensor, WaterTemperatureSensor
+        data = {"forecast_text": "", "source_url": "", "water_temp_f": 62.4, "wave_height_ft": 2.0}
+        coord = _make_coordinator(data)
+        classes = _ha_sensor.SensorDeviceClass
+        return (
+            (WaterTemperatureSensor(coord, OFFICE), classes.TEMPERATURE, "°F", 62.4),
+            (SurfHeightSensor(coord, OFFICE), classes.DISTANCE, "ft", 2.0),
+        )
+
+    def test_they_are_sensor_entities_with_a_native_unit_and_device_class(self):
+        for sensor, device_class, unit, value in self._sensors():
+            with self.subTest(type(sensor).__name__):
+                self.assertIsInstance(sensor, _ha_sensor.SensorEntity)
+                self.assertIs(sensor.device_class, device_class)
+                self.assertEqual(sensor.native_unit_of_measurement, unit)
+                self.assertEqual(sensor.native_value, value)
+                # Today's decimals in a US customary install.
+                self.assertEqual(sensor.suggested_display_precision, 1)
+
+    def test_they_leave_the_state_and_unit_to_home_assistant(self):
+        """Overriding state or unit_of_measurement would bypass the conversion."""
+        for sensor, *_ in self._sensors():
+            with self.subTest(type(sensor).__name__):
+                self.assertNotIn("state", vars(type(sensor)))
+                self.assertNotIn("unit_of_measurement", vars(type(sensor)))
 
 
 # ---------------------------------------------------------------

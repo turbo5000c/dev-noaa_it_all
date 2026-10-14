@@ -64,8 +64,8 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 |---|---|
 | `sensor.noaa_ilm_surf_rip_current_risk` | `Low`, `Moderate` or `High` |
 | `binary_sensor.noaa_ilm_surf_unsafe_to_swim` | On (Unsafe) when the rip current risk is high |
-| `sensor.noaa_ilm_surf_water_temperature` | °F, if the office has a tide station |
-| `sensor.noaa_ilm_surf_surf_height` | ft, if the office has a buoy |
+| `sensor.noaa_ilm_surf_water_temperature` | °F (°C), if the office has a tide station |
+| `sensor.noaa_ilm_surf_surf_height` | ft (m), if the office has a buoy |
 
 **NOAA {ZONE} Marine** (2)
 
@@ -95,10 +95,12 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 For the coastal office of a `NOAA Surf` entry *(NOAA {OFFICE} Surf)*:
 - **Rip Current Risk**: Risk level (Low, Moderate, High) from the office's Surf Zone Forecast
 - **Unsafe to Swim**: Binary sensor that turns on when the Surf Zone Forecast gives a high rip current risk; the `risk_level` attribute has the level
-- **Water Temperature**: Water temperature in °F from the office's NOAA tide station. Only created for offices with one
-- **Surf Height**: Wave height in feet from the office's NDBC buoy. Only created for offices with one
+- **Water Temperature**: Water temperature in °F (°C) from the office's NOAA tide station. Only created for offices with one
+- **Surf Height**: Wave height in feet (meters) from the office's NDBC buoy. Only created for offices with one
 
 Rip Current Risk and Unsafe to Swim are `unknown` while the Surf Zone Forecast can't be fetched, rather than reading as safe. An entry upgraded from 0.7.x keeps any Water Temperature or Surf Height it had, read from the forecast text where the office has no station.
+
+> **Units**: Water Temperature and Surf Height are shown in your unit system: °F and ft in a US customary install, °C and m in a metric one. You can pick another unit in an entity's settings. One added before 0.10.4 keeps °F or ft until you change it there. As with the observation sensors, use `rounded=True` in templates.
 
 ## Nearshore Marine Forecast
 For the marine zone of a `NOAA Marine` entry, for example `LMZ741` on Lake Michigan *(NOAA {ZONE} Marine)*:
