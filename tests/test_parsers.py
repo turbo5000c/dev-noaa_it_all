@@ -4,6 +4,8 @@ import unittest
 
 from parsers import (
     degrees_to_cardinal,
+    meters_to_kilometers,
+    pascals_to_hectopascals,
     interpret_dst_value,
     rate_kp_index,
     calculate_aurora_visibility,
@@ -53,6 +55,15 @@ class TestUnitConversions(unittest.TestCase):
         self.assertEqual(degrees_to_cardinal(360), 'N')
         self.assertEqual(degrees_to_cardinal(45), 'NE')
         self.assertEqual(degrees_to_cardinal(225), 'SW')
+
+    def test_nws_pressure_and_visibility_in_hpa_and_km(self):
+        """The weather entity and the observation sensors share these, so they agree (#83)."""
+        self.assertEqual(pascals_to_hectopascals(101830), 1018.3)
+        self.assertEqual(pascals_to_hectopascals(101325.25), 1013.2525)
+        self.assertEqual(meters_to_kilometers(16090), 16.09)
+        self.assertEqual(meters_to_kilometers(402.34), 0.40234)
+        self.assertIsNone(pascals_to_hectopascals(None))
+        self.assertIsNone(meters_to_kilometers(None))
 
 
 # ---------------------------------------------------------------

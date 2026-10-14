@@ -15,7 +15,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
-from ..parsers import degrees_to_cardinal
+from ..parsers import degrees_to_cardinal, meters_to_kilometers, pascals_to_hectopascals
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -269,8 +269,7 @@ class BarometricPressureSensor(WeatherObservationSensor):
 
     def _convert_value(self, value):
         """Convert pascals to hectopascals, which shows inHg to 2 decimals."""
-        # NWS gives pascals to 2 decimals; the rounding only drops float noise.
-        return round(value / 100, 4)
+        return pascals_to_hectopascals(value)
 
 
 class DewpointSensor(WeatherObservationSensor):
@@ -312,8 +311,7 @@ class VisibilitySensor(WeatherObservationSensor):
 
     def _convert_value(self, value):
         """Convert meters to kilometers, which a US customary install shows in miles."""
-        # NWS gives meters to 2 decimals; the rounding only drops float noise.
-        return round(value / 1000, 5)
+        return meters_to_kilometers(value)
 
 
 class SkyConditionsSensor(WeatherObservationSensor):

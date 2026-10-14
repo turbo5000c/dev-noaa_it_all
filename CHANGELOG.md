@@ -21,8 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Home Assistant then converted them back, so the weather card could show 1018.29 hPa next to
   a Barometric Pressure of 1018.3 hPa. It now reports NWS's values as they are, and converts the
   forecast, which NWS gives in °F and mph, to °C and km/h; Home Assistant converts both to your unit
-  system once. A US customary install shows the same temperatures and pressure as before. Wind
-  speed and visibility now have Home Assistant's two decimals, such as 5.75 mph rather than 5.7.
+  system once. In a US customary install the pressure is as before. A temperature is now rounded
+  to whole °F once, from NWS's value, so about one reading in 25 shows 1 °F off from before: the
+  correctly rounded one. Wind speed and visibility have Home Assistant's two decimals, such as
+  5.75 mph rather than 5.7.
 
 Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
 and ft again, whatever unit they had, so in a metric install their history mixes the two.

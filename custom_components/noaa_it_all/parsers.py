@@ -14,6 +14,27 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # Unit conversion helpers
 # ---------------------------------------------------------------------------
 
+def pascals_to_hectopascals(pascals: Optional[float]) -> Optional[float]:
+    """Return an NWS pressure in hPa, or None.
+
+    NWS gives pascals to 2 decimals; the rounding only drops float noise. The
+    observation sensors and the weather entity both use this, so they agree.
+    """
+    if pascals is None:
+        return None
+    return round(pascals / 100, 4)
+
+
+def meters_to_kilometers(meters: Optional[float]) -> Optional[float]:
+    """Return an NWS visibility in km, or None.
+
+    NWS gives meters to 2 decimals; the rounding only drops float noise.
+    """
+    if meters is None:
+        return None
+    return round(meters / 1000, 5)
+
+
 def degrees_to_cardinal(degrees: Union[int, float]) -> str:
     """Convert degrees to cardinal direction."""
     directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
