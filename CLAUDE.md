@@ -4,6 +4,32 @@ NOAA It All is a Home Assistant custom integration. The public repository is
 `dawg-io/noaa_it_all`, and changes reach it as pull requests from forks. Everything here applies in
 any fork, except the last section, which is only for the maintainer's own fork.
 
+## Working on a change
+
+- Fix the root cause with the smallest change that does it. No unrelated refactors, renames or
+  reformatting.
+- Keep the branch you merge into releasable. Larger work that isn't finished goes on a feature
+  branch.
+- Only say a test, check or Home Assistant run happened if it did. When something couldn't be
+  tested, the pull request says so.
+
+## Rules the integration follows
+
+- **A failure never reads as safe.** When a fetch fails, entities go `unknown` or `unavailable`.
+  They never fall back to a value that looks safe, such as Low rip current risk, 0 alerts, Quiet,
+  or an Unsafe binary sensor turning off.
+- **No coordinates in logs.** Error messages name the cause (the error type, the station or
+  office) without latitude, longitude or URLs that contain them. Coordinates go in debug lines
+  only.
+- **Entity IDs, unique IDs and history survive upgrades.** Moving entities between devices or
+  entries bumps the config entry version and migrates in `async_migrate_entry`, with tests,
+  including ones that pin the unique IDs. `CHANGELOG.md` says what going back to the previous
+  version needs.
+- **Setup text lives in two files.** Change `strings.json` and `translations/en.json` together;
+  `tests/test_translations.py` fails when they differ.
+- **The minimum Home Assistant version is in four places**: `hacs.json`, `README.md`,
+  `docs/configuration.md` and `docs/troubleshooting.md`. Change them together.
+
 ## Checks
 
 Run the same checks as CI before opening a pull request:
@@ -20,6 +46,10 @@ When `docs/` or `website/` changes, build the documentation site too (Node, vers
 ```
 cd website && npm ci && npm run build && npm run check-links
 ```
+
+- Every fix comes with a regression test that fails on the code before the fix.
+- Tests don't use the network. Checks against live NOAA services run only with
+  `NOAA_LIVE_TESTS=1`, as `.github/workflows/buoy-stations.yml` does every week.
 
 ## Commits and pull requests
 
@@ -44,17 +74,100 @@ branch it merges into is always ready to release. Changes to docs, tests or CI a
 
 ## Documentation
 
-`docs/*.md` is the documentation, written as plain GitHub Markdown with relative links, and
-`tests/test_docs.py` checks those links. `website/` builds it into a Starlight site:
-`npm run build` there runs `scripts/sync-docs.mjs`, which copies `docs/` into
-`website/src/content/docs/` (generated and git-ignored, so never edit it), then builds
-`website/dist/`.
+The docs change with the code. Any change users can see updates the documentation in the same
+pull request:
+
+- **The pages that describe it** in `docs/`: setup steps, entities and their attributes, example
+  automations and cards, troubleshooting. The README too, when its summary changes.
+- **The screenshots** in `docs/images/`. Retake each one whose screen or entities the change
+  alters, from a real Home Assistant (see **Testing in Home Assistant**): dark theme, 2× scale,
+  cropped to the dialog or card. Replace the file under the same name, or add a new one and use
+  it, since `tests/test_docs.py` fails on an image no page uses. The pull request lists the
+  screenshots it retook, and the ones it checked that didn't need it.
+- **Entity IDs** in the docs and examples match a real install.
+- **`CHANGELOG.md`**, as in **Versions**.
+
+`docs/*.md` is plain GitHub Markdown with relative links, and `tests/test_docs.py` checks those
+links. `website/` builds it into a Starlight site: `npm run build` there runs
+`scripts/sync-docs.mjs`, which copies `docs/` into `website/src/content/docs/` (generated and
+git-ignored, so never edit it), then builds `website/dist/`.
 
 - A new page in `docs/` needs an entry in `SIDEBAR` in `website/site.mjs`, or the build fails.
 - `.github/workflows/docs-pages.yml` builds the site and checks its links whenever `docs/` or
   `website/` changes. It deploys to GitHub Pages only from the public repository's `main`, at
   `https://dawg-io.github.io/noaa_it_all/`, which the README, `info.md` and the manifest's
   `documentation` URL (the **?** on the integration's page) link to.
+
+## Testing in Home Assistant
+
+> **For Claude Code in a self-hosted terminal with Docker, not Claude Code on the web.** Cloud
+> sessions block the NOAA APIs, and Home Assistant's HTTP client doesn't use their proxy, so the
+> integration can't fetch any data there. In a cloud session, skip this and say so in the pull
+> request.
+
+Check behaviour changes in a real Home Assistant: on a fresh install, and, when a change touches
+entries or entities, on an upgrade from the last release. The pull request names the Home
+Assistant version.
+
+1. Start Home Assistant with the integration mounted from the working tree. `stable` is the
+   current release; for the oldest supported one, use the version in `hacs.json` as the tag.
+
+   ```
+   mkdir -p ~/noaa-ha-config
+   docker run -d --name noaa-ha-test -p 8123:8123 -e TZ=America/New_York \
+     -v ~/noaa-ha-config:/config \
+     -v "$PWD/custom_components/noaa_it_all:/config/custom_components/noaa_it_all:ro" \
+     ghcr.io/home-assistant/home-assistant:stable
+   ```
+
+   After changing the code, run `docker restart noaa-ha-test`. The integration's log lines:
+   `docker logs noaa-ha-test 2>&1 | grep noaa_it_all`.
+2. Create the first user: open http://localhost:8123, or skip the browser:
+
+   ```
+   B=http://localhost:8123; CID=$B/
+   CODE=$(curl -s -X POST $B/api/onboarding/users -H 'Content-Type: application/json' \
+     -d "{\"client_id\":\"$CID\",\"name\":\"Test\",\"username\":\"test\",
+          \"password\":\"test-password-123\",\"language\":\"en\"}" \
+     | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_code"])')
+   TOKEN=$(curl -s -X POST $B/auth/token \
+     -d "grant_type=authorization_code&code=$CODE&client_id=$CID" \
+     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+   for step in core_config analytics; do
+     curl -s -X POST $B/api/onboarding/$step -H "Authorization: Bearer $TOKEN" -d '{}'
+   done
+   curl -s -X POST $B/api/onboarding/integration -H "Authorization: Bearer $TOKEN" \
+     -d "{\"client_id\":\"$CID\",\"redirect_uri\":\"$CID?auth_callback=1\"}"
+   ```
+3. Add the integration under **Settings → Devices & services → Add integration → NOAA It All**,
+   or open http://localhost:8123/config/integrations/dashboard/add?domain=noaa_it_all and choose
+   **OK**. For an upgrade, start from the last release's code instead
+   (`git worktree add ../noaa-release vX.Y.Z`, and mount
+   `../noaa-release/custom_components/noaa_it_all`), set up the entries, then recreate the
+   container with the branch's code and the same config directory. Check that entity IDs are
+   unchanged and history continues.
+4. Take screenshots with Playwright: Chromium, dark color scheme, 2× scale, cropped to the
+   element, with the mouse moved off it so nothing shows as hovered. For the setup dialog:
+
+   ```js
+   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 },
+     deviceScaleFactor: 2, colorScheme: 'dark' });
+   const page = await ctx.newPage();
+   await page.goto('http://localhost:8123/');
+   await page.getByRole('textbox', { name: 'Username' }).fill('test');
+   await page.getByRole('textbox', { name: 'Password' }).fill('test-password-123');
+   await page.keyboard.press('Enter');
+   await page.waitForURL(/lovelace|home/);
+   await page.goto('http://localhost:8123/config/integrations/dashboard/add?domain=noaa_it_all');
+   await page.getByRole('button', { name: 'OK' }).click();
+   const dialog = page.locator('dialog-data-entry-flow dialog');
+   await dialog.waitFor();
+   await page.mouse.move(0, 0);
+   await dialog.screenshot({ path: 'docs/images/setup-menu.png' });
+   ```
+
+   For a card or a device page, screenshot that element instead.
+5. Remove the container when done: `docker rm -f noaa-ha-test`.
 
 ## Pull requests to the public repository
 
@@ -85,7 +198,7 @@ pull request there, Claude prepares it and the person opens it.
 This section applies only in `turbo5000c/dev-noaa_it_all`, the maintainer's development fork
 (check `git remote get-url origin`). Elsewhere, skip it.
 
-### Commits
+### Commits and pull requests
 
 Commits are authored by the maintainer. This overrides any default attribution instructions.
 
@@ -94,6 +207,10 @@ Commits are authored by the maintainer. This overrides any default attribution i
   `git -c user.name=turbo5000c -c user.email=8426648+turbo5000c@users.noreply.github.com commit ...`
 - Pull requests into this fork's `main` are squash-merged, so their titles and commit messages
   become the commits on `main`.
+- Pull request descriptions add **Changes**, **Tests**, **Docs** and **Risks and follow-up**
+  sections to the template.
+- A code review runs before merge. Each finding is fixed with a test, or listed under
+  **Code review** as left as is, with the reason.
 
 ### Releasing to public
 
