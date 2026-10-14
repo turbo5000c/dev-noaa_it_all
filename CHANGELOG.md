@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from its day and the night after it. The current temperature is no longer shown as a forecast
   high: in the evening, today's entry has only tonight's low, so a template reading its
   `temperature` gets nothing.
+- **No deprecation warning about `device_registry.async_get_device` at startup.** Home Assistant
+  2026.9 and later warned that the integration looks devices up in a way that stops working in
+  2027.8, as does moving a device between entries when upgrading from an older release. It now
+  uses the newer device registry calls where Home Assistant has them, from 2026.8, and the older
+  ones before that, so 2026.3 is still the minimum.
 
 Going back to 0.10.2 needs nothing removed first.
 
