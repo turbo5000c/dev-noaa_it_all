@@ -183,9 +183,9 @@ session's environment allows the hosts in step 1.
    then post each step's answer to `/api/config/config_entries/flow/<flow_id>`. For Raleigh, NC:
    `{"next_step_id": "location"}`, `{"latitude": 35.7796, "longitude": -78.6382}`,
    `{"office_code": "RAH"}`, `{"surf_office_code": "none"}` and `{"space_office_code": "RAH"}`.
-   The first location entry also adds the Hurricane entry. Entries update at setup and every 10
-   minutes after that; check `/api/states` after both for entities that read `unknown` or
-   `unavailable`.
+   The first location entry also adds the Hurricane entry. The first update runs at setup, and
+   most data updates every 10 minutes after that; check `/api/states` after both for entities that
+   read `unknown` or `unavailable`.
 4. Take screenshots with Playwright: Chromium, dark color scheme, 2× scale, cropped to the
    element, with the mouse moved off it so nothing shows as hovered. For the setup dialog:
 
