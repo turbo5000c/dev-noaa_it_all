@@ -44,7 +44,7 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 | `sensor.noaa_ilm_space_aurora_visibility_probability` | % |
 | `sensor.noaa_ilm_space_aurora_next_time` | Estimated start, e.g. `2026-10-15 00:06 UTC` |
 | `sensor.noaa_ilm_space_aurora_duration` | Hours |
-| `sensor.noaa_ilm_space_solar_radiation_storm_alerts` | Number of SWPC alerts |
+| `sensor.noaa_ilm_space_solar_radiation_storm_alerts` | Number of solar radiation storm warnings and alerts in effect |
 | `sensor.noaa_ilm_space_meteor_shower_activity` | Shower most worth watching now, or `None` |
 | `sensor.noaa_ilm_space_next_meteor_shower` | Next shower to peak |
 | `sensor.noaa_ilm_space_meteor_viewing_score` | % |
@@ -153,12 +153,11 @@ Location-aware aurora visibility predictions *(NOAA Space)*:
 
 ## Solar Radiation Storm Alerts
 Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:
-- **Solar Radiation Storm Alerts**: The number of current SWPC alerts, with solar radiation storms classified S1-S5 *(sensor.noaa_{office}_space_solar_radiation_storm_alerts)*
-  - **Storm Classification**: Automatic detection and classification of solar radiation storms (S1-S5 scale)
-  - **Expected Timing**: Start and end times for radiation storm events when available
+- **Solar Radiation Storm Alerts**: The number of SWPC solar radiation storm (S1-S5) warnings and alerts in effect *(sensor.noaa_{office}_space_solar_radiation_storm_alerts)*. These are SWPC's 10 MeV proton products: a warning counts until its valid time ends, unless SWPC extends or cancels it, and an alert counts until SWPC issues the event's summary, with one alert at most for each of S1 to S4. SWPC's other alerts, such as radio emissions, electron flux and the 100 MeV proton flux, which has no S-scale, don't count. If the alerts can't be fetched, the sensor is `unknown`
+  - **Storm Classification**: The S1-S5 scale of each warning and alert in the `alerts` attribute
+  - **Expected Timing**: When each alert's event began, and the times each warning is valid from and to
   - **Impact Assessment**: Potential impacts including satellite interference, radio blackouts, and radiation exposure risks
   - **Location Risk**: Risk assessment based on your magnetic latitude and current storm activity
-  - **Real-time Alerts**: Live monitoring of NOAA Space Weather Prediction Center alerts
 
 > **Note**: Solar radiation storm impacts vary by location and magnetic latitude. Higher latitudes (like Alaska and northern Canada) experience more severe effects, while equatorial regions are generally less affected. The integration provides location-specific risk assessments for your configured NWS office.
 

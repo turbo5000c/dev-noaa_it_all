@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statistics repair comes up. Their state now has every decimal of Home Assistant's conversion,
   such as `71.96000000000001` for 22.2 °C, and is only rounded for display: a template that prints
   one, such as `states('sensor.noaa_ilm_weather_temperature')`, needs `rounded=True` to get `72.0`.
+- **Solar Radiation Storm Alerts counts only solar radiation storms in effect.** It counted every
+  SWPC product that mentioned a coronal mass ejection or solar radiation, and every Type IV radio
+  emission and electron flux alert, however old: on 2026-10-14 it read 14, with no radiation storm
+  at all. It now counts SWPC's solar radiation storm (S1–S5) warnings until they expire or are
+  cancelled, and its alerts until SWPC issues the event's summary, one at most for each of S1 to
+  S4. If the alerts can't be fetched it reads `unknown`, not 0. In the `alerts` attribute, a
+  warning's `begin_time` and `end_time` are the times it is valid for, and `scale` is the one SWPC
+  states.
 
 Going back to 0.10.2 needs nothing removed first.
 

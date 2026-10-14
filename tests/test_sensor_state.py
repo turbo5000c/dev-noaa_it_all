@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -480,6 +481,174 @@ class TestSolarRadiationStormAlertsSensor(unittest.TestCase):
         info = sensor.device_info
         ids = list(info["identifiers"])[0]
         self.assertIn("space", ids[1])
+
+
+def _at(when):
+    """A datetime class whose now() is ``when``, a UTC time such as ``2026-01-19 19:00``."""
+    fixed = datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
+
+    class _Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed if tz is None else fixed.astimezone(tz)
+    return _Frozen
+
+
+class TestSolarRadiationStormProducts(unittest.TestCase):
+    """#78: only solar radiation storm (S-scale) products still in effect count.
+
+    space_weather_alerts.json holds real alerts.json products, newest first as
+    SWPC serves them: the January 2026 S4 storm, a cancelled warning, a
+    cancelled summary and 100 MeV products from the live feed's archived
+    copies, and the products the sensor used to count from the feed on
+    2026-10-14 (12 electron flux and 2 Type IV radio emission alerts).
+    """
+
+    def _sensor(self, when):
+        """The sensor with alerts.json as at ``when``: the products of the 30 days before it."""
+        from noaa_it_all.sensors.space_weather import SolarRadiationStormAlertsSensor
+        issued_by = datetime.fromisoformat(when)
+        feed = [a for a in _load_fixture("space_weather_alerts.json")
+                if timedelta(0) <= issued_by - datetime.fromisoformat(a["issue_datetime"]) <= timedelta(days=30)]
+        return SolarRadiationStormAlertsSensor(_make_coordinator({"space_alerts": feed}), OFFICE)
+
+    def _state(self, when):
+        sensor = self._sensor(when)
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at(when)):
+            return sensor.state, sensor.extra_state_attributes
+
+    def _ids(self, attrs):
+        return sorted(alert["product_id"] for alert in attrs["alerts"])
+
+    def test_the_feed_on_the_day_it_read_14_has_no_radiation_storm(self):
+        state, attrs = self._state("2026-10-14 08:00")
+        self.assertEqual(state, 0)
+        self.assertEqual(attrs["alerts"], [])
+
+    def test_radio_emission_and_electron_flux_alerts_do_not_count(self):
+        """Type II alerts mention coronal mass ejections; Type IV ones, solar radiation storms."""
+        from noaa_it_all.parsers import radiation_storm_products_in_effect
+        alerts = [a for a in _load_fixture("space_weather_alerts.json")
+                  if a["product_id"] in ("TIIA", "TIVA", "EF3A")]
+        self.assertTrue(any("coronal mass ejection" in a["message"].lower() for a in alerts))
+        self.assertTrue(any("solar radiation storm" in a["message"].lower() for a in alerts))
+        now = datetime(2026, 10, 14, 8, tzinfo=timezone.utc)
+        self.assertEqual(radiation_storm_products_in_effect(alerts, now), [])
+
+    def test_at_the_height_of_the_january_2026_s4_storm(self):
+        state, attrs = self._state("2026-01-19 19:00")
+        self.assertEqual(state, 5)
+        self.assertEqual(self._ids(attrs), ["P11A", "P11W", "P12A", "P13A", "P14A"])
+
+    def test_an_extended_warning_replaces_the_one_it_extends(self):
+        """Serials 617, 618 and 619 were each extended; only 620 counts."""
+        _, attrs = self._state("2026-01-19 19:00")
+        warnings = [a for a in attrs["alerts"] if a["product_id"] == "P11W"]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Serial Number: 620", warnings[0]["message_summary"])
+
+    def test_an_alert_ends_when_its_summary_is_issued(self):
+        """The S4 and S3 summaries came out at 23:21 and 01:03."""
+        state, attrs = self._state("2026-01-20 02:00")
+        self.assertEqual(state, 3)
+        self.assertEqual(self._ids(attrs), ["P11A", "P11W", "P12A"])
+
+    def test_nothing_counts_once_the_storm_is_over(self):
+        state, _ = self._state("2026-01-23 00:00")
+        self.assertEqual(state, 0)
+
+    def test_a_warning_counts_until_it_expires(self):
+        """Serial 628 was valid to 2026 Jul 31 0900 UTC."""
+        self.assertIn("P11W", self._ids(self._state("2026-07-31 08:59")[1]))
+        self.assertNotIn("P11W", self._ids(self._state("2026-07-31 09:01")[1]))
+
+    def test_a_cancelled_warning_stops_counting(self):
+        self.assertEqual(self._state("2026-06-30 16:20")[0], 1)
+        self.assertEqual(self._state("2026-06-30 16:40")[0], 0)
+
+    def test_a_summary_cancelled_for_a_wrong_time_leaves_the_event_ended(self):
+        self.assertEqual(self._state("2026-05-26 12:00")[0], 2)
+        self.assertEqual(self._state("2026-05-27 15:00")[0], 0)
+
+    def test_100_mev_products_have_no_s_scale(self):
+        state, attrs = self._state("2026-07-30 19:10")
+        self.assertEqual(state, 2)
+        self.assertEqual(self._ids(attrs), ["P11A", "P11W"])
+
+    def _products(self, *keys):
+        """Real fixture products, by (product_id, issue_datetime prefix)."""
+        fixture = _load_fixture("space_weather_alerts.json")
+        return [next(a for a in fixture if a["product_id"] == pid and a["issue_datetime"].startswith(t))
+                for pid, t in keys]
+
+    def _in_effect(self, alerts, when):
+        from noaa_it_all.parsers import radiation_storm_products_in_effect
+        now = datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
+        return radiation_storm_products_in_effect(alerts, now)
+
+    def test_a_summary_ends_only_the_event_it_summarises(self):
+        """SWPC summarised the 26 May event (over at 04:25) at 02:27 the next day.
+
+        A second S1 alert, here the 26 May one re-timed to 20:00 that evening,
+        began after that event ended, so the late summary doesn't end it.
+        """
+        first, summary = self._products(("P11A", "2026-05-26 00:35"), ("P11S", "2026-05-27 02:27"))
+        second = dict(first, issue_datetime="2026-05-26 20:05:00.000", message=first["message"]
+                      .replace("Serial Number: 365", "Serial Number: 999")
+                      .replace("Begin Time: 2026 May 26 0010 UTC", "Begin Time: 2026 May 26 2000 UTC"))
+        self.assertNotEqual(second["message"], first["message"])
+        self.assertEqual(self._in_effect([summary, second, first], "2026-05-27 03:00"), [second])
+
+    def test_a_cancelled_summary_ends_nothing(self):
+        """Summary 130 was cancelled; without 129 the 26 May alert would still be in effect."""
+        alert, cancelled, cancel = self._products(
+            ("P11A", "2026-05-26 00:35"), ("P11S", "2026-05-27 02:28"), ("P11S", "2026-05-27 14:45"))
+        self.assertEqual(self._in_effect([cancel, cancelled, alert], "2026-05-27 15:00"), [alert])
+
+    def test_only_the_newest_alert_for_a_threshold_counts(self):
+        """SWPC issued a second S1 alert on 22 January before summarising the first."""
+        state, attrs = self._state("2026-01-22 12:00")
+        self.assertEqual(state, 2)
+        self.assertEqual(self._ids(attrs), ["P11A", "P11W"])
+
+    def test_the_product_type_comes_from_its_id_not_its_wording(self):
+        (alert,) = self._products(("P11A", "2026-05-26 00:35"))
+        reworded = dict(alert, message=alert["message"].replace("ALERT: Proton", "Alert: Proton"))
+        self.assertEqual(self._in_effect([reworded], "2026-05-26 01:00"), [reworded])
+
+    def test_a_feed_that_is_not_a_list_is_unknown(self):
+        from noaa_it_all.sensors.space_weather import SolarRadiationStormAlertsSensor
+        for payload in ({}, {"error": "x"}, "x"):
+            with self.subTest(payload=payload):
+                sensor = SolarRadiationStormAlertsSensor(_make_coordinator({"space_alerts": payload}), OFFICE)
+                self.assertIsNone(sensor.state)
+
+    def test_a_product_that_fails_to_parse_still_counts(self):
+        sensor = self._sensor("2026-06-30 16:20")
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at("2026-06-30 16:20")), \
+                patch("noaa_it_all.sensors.space_weather.extract_storm_scale", side_effect=ValueError), \
+                self.assertLogs("noaa_it_all.sensors.space_weather", level="WARNING"):
+            self.assertEqual(sensor.state, 1)
+            self.assertEqual(sensor.extra_state_attributes["total_alerts"], 1)
+
+    def test_a_warning_gives_its_valid_window_and_stated_scale(self):
+        """Warning 620 states S1, though its comment mentions an upgrade to S4."""
+        _, attrs = self._state("2026-01-19 19:00")
+        (warning,) = [a for a in attrs["alerts"] if a["product_id"] == "P11W"]
+        self.assertEqual((warning["begin_time"], warning["end_time"], warning["scale"]),
+                         ("2026 Jan 18 2130 UTC", "2026 Jan 20 2359 UTC", "S1"))
+
+    def test_an_empty_field_is_not_read_from_the_next_line(self):
+        from noaa_it_all.parsers import _message_field, _swpc_time
+        self.assertIsNone(_message_field("Valid To: \r\nWarning Condition: Onset\r\n", "Valid To"))
+        self.assertEqual(_swpc_time("2026 Jan 19 2359 UTC"), datetime(2026, 1, 19, 23, 59, tzinfo=timezone.utc))
+        self.assertIsNone(_swpc_time("2026 Okt 19 2359 UTC"))
+
+    def test_a_failed_alerts_fetch_is_unknown_not_zero(self):
+        from noaa_it_all.sensors.space_weather import SolarRadiationStormAlertsSensor
+        sensor = SolarRadiationStormAlertsSensor(_make_coordinator({"space_alerts": None}), OFFICE)
+        self.assertIsNone(sensor.state)
+        self.assertEqual(sensor.extra_state_attributes, {})
 
 
 if __name__ == "__main__":

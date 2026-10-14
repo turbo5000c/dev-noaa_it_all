@@ -10,8 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from datetime import timedelta, datetime, timezone
 
 from ..const import (
-    AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES,
-    SOLAR_RADIATION_KEYWORDS, DOMAIN,
+    AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES, DOMAIN,
 )
 from ..offices import magnetic_latitude
 from ..parsers import (
@@ -28,6 +27,7 @@ from ..parsers import (
     extract_impacts,
     get_severity_level,
     assess_location_risk,
+    radiation_storm_products_in_effect,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -528,47 +528,36 @@ class SolarRadiationStormAlertsSensor(CoordinatorEntity):
         """
         return "Solar Radiation Storm Alerts"
 
-    def _get_solar_radiation_alerts(self):
-        """Filter and parse solar radiation alerts from coordinator data."""
+    def _products_in_effect(self):
+        """Return the solar radiation storm warnings and alerts in effect.
+
+        None when there is no data or the alerts fetch failed, or returned
+        something other than a list, so the sensor reads unknown rather than 0.
+        """
         if self.coordinator.data is None:
             return None
-        alerts_data = self.coordinator.data.get("space_alerts", [])
-        if not alerts_data:
-            return []
-
-        solar_radiation_alerts = []
-        for alert in alerts_data:
-            message = alert.get('message', '').lower()
-            product_id = alert.get('product_id', '')
-
-            is_solar_radiation = any(
-                keyword in message for keyword in SOLAR_RADIATION_KEYWORDS
-            )
-            is_solar_product = product_id.startswith(
-                ('S1', 'S2', 'S3', 'S4', 'S5', 'TIVA', 'EF3')
-            )
-
-            if is_solar_radiation or is_solar_product:
-                alert_info = self._parse_solar_radiation_alert(alert)
-                if alert_info:
-                    solar_radiation_alerts.append(alert_info)
-
-        return solar_radiation_alerts
+        alerts_data = self.coordinator.data.get("space_alerts")
+        if not isinstance(alerts_data, list):
+            return None
+        return radiation_storm_products_in_effect(alerts_data, datetime.now(timezone.utc))
 
     @property
     def state(self):
-        """Return the state of the sensor."""
-        alerts = self._get_solar_radiation_alerts()
-        if alerts is None:
+        """Return the number of products in effect, parsed or not."""
+        products = self._products_in_effect()
+        if products is None:
             return None
-        return len(alerts)
+        return len(products)
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        alerts = self._get_solar_radiation_alerts()
-        if alerts is None:
+        products = self._products_in_effect()
+        if products is None:
             return {}
+        alerts = [
+            info for info in map(self._parse_solar_radiation_alert, products) if info
+        ]
         office_lat = magnetic_latitude(
             self._office_code, self._latitude, self._longitude, default=45.0
         )
@@ -578,7 +567,7 @@ class SolarRadiationStormAlertsSensor(CoordinatorEntity):
             'magnetic_latitude': office_lat,
             'location_impact_risk': assess_location_risk(office_lat, alerts),
             'last_updated': datetime.now(timezone.utc).isoformat(),
-            'total_alerts': len(alerts)
+            'total_alerts': len(products)
         }
 
     @property
@@ -613,8 +602,12 @@ class SolarRadiationStormAlertsSensor(CoordinatorEntity):
             issue_datetime = alert.get('issue_datetime', '')
 
             scale = extract_storm_scale(message, product_id)
-            begin_time = extract_time_from_message(message, 'begin time')
-            end_time = extract_time_from_message(message, 'end time')
+            # A warning gives the time it is valid for.
+            begin_time = (extract_time_from_message(message, 'begin time')
+                          or extract_time_from_message(message, 'valid from'))
+            end_time = (extract_time_from_message(message, 'end time')
+                        or extract_time_from_message(message, 'now valid until')
+                        or extract_time_from_message(message, 'valid to'))
             duration = calculate_alert_duration(begin_time, end_time)
             impacts = extract_impacts(message)
 
