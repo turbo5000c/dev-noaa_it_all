@@ -410,8 +410,11 @@ space_weather_report:
           ({{ states('sensor.noaa_ilm_space_planetary_k_index_rating') }}).
           Geomagnetic storm: {{ states('sensor.noaa_ilm_space_geomagnetic_storm_interpretation') }}.
           {% if states('sensor.noaa_ilm_space_aurora_visibility_probability') | int(0) > 0 %}
-          Aurora visibility: {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%,
-          expected at {{ states('sensor.noaa_ilm_space_aurora_next_time') }}.
+          Aurora visibility: {{ states('sensor.noaa_ilm_space_aurora_visibility_probability') }}%.
+          {% endif %}
+          {% set aurora = states('sensor.noaa_ilm_space_aurora_next_time') | as_datetime(None) %}
+          {% if aurora %}
+          Aurora may be visible from {{ (aurora | as_local).strftime('%a %-I:%M %p') }}.
           {% endif %}
           Solar radiation alerts: {{ states('sensor.noaa_ilm_space_solar_radiation_storm_alerts') }}.
 ```

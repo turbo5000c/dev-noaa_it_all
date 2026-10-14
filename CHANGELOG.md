@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   S4. If the alerts can't be fetched it reads `unknown`, not 0. In the `alerts` attribute, a
   warning's `begin_time` and `end_time` are the times it is valid for, and `scale` is the one SWPC
   states.
+- **Aurora Next Time comes from SWPC's Kp forecast.** It was a guess from the current Kp, counted
+  from the time of each update (half an hour, 6 hours or about a day away), so the time never
+  arrived. It is now the start of the next 3-hour period in SWPC's 3-day planetary K-index
+  forecast whose Kp reaches the Kp your location needs, and `unknown` when none does or the
+  forecast can't be fetched. It is a timestamp sensor, so its state is an ISO time, such as
+  `2026-10-14T09:00:00+00:00`, rather than `2026-10-15 00:06 UTC`, and cards show how soon it is.
+  Its `conditions` and `confidence` attributes are gone; `predicted_kp` and `required_kp` are new.
 
 Going back to 0.10.2 needs nothing removed first.
 

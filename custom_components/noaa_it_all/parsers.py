@@ -148,6 +148,39 @@ def get_required_kp(
     return 9
 
 
+def next_aurora_period(
+    forecast: Optional[List[Dict[str, Any]]],
+    required_kp: float,
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
+    """Return the first forecast Kp period starting after ``now`` whose Kp reaches ``required_kp``.
+
+    ``forecast`` is SWPC's noaa-planetary-k-index-forecast.json: 3-hour
+    periods, each ``observed``, ``estimated`` or ``predicted``. Estimated
+    periods cover the rest of today and predicted ones the next two days, so
+    both are forecasts. The period in progress is left out: part of it is
+    already measured, and the current Kp says more about it than its
+    forecast. A period without a numeric Kp is skipped. Returns
+    ``{"start": datetime, "kp": float}``, or None when no period does.
+    """
+    found = None
+    for period in forecast or []:
+        if not isinstance(period, dict) or period.get("observed") == "observed":
+            continue
+        kp = period.get("kp")
+        if isinstance(kp, bool) or not isinstance(kp, (int, float)) or kp < required_kp:
+            continue
+        try:
+            start = datetime.fromisoformat(period["time_tag"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if start > now and (found is None or start < found["start"]):
+            found = {"start": start, "kp": kp}
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Solar radiation storm helpers
 # ---------------------------------------------------------------------------

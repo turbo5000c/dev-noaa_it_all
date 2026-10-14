@@ -5,9 +5,10 @@ solar radiation storm alerts.
 """
 
 import logging
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from datetime import timedelta, datetime, timezone
+from datetime import datetime, timezone
 
 from ..const import (
     AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES, DOMAIN,
@@ -16,11 +17,11 @@ from ..offices import magnetic_latitude
 from ..parsers import (
     interpret_dst_value,
     rate_kp_index,
-    calculate_aurora_visibility,
     calculate_aurora_duration,
     calculate_aurora_probability,
     get_visibility_class,
     get_required_kp,
+    next_aurora_period,
     extract_storm_scale,
     extract_time_from_message,
     calculate_alert_duration,
@@ -233,8 +234,12 @@ class PlanetaryKIndexSensorRating(CoordinatorEntity):
         )
 
 
-class AuroraNextTimeSensor(CoordinatorEntity):
-    """Representation of Aurora Next Time sensor for specific location.
+class AuroraNextTimeSensor(CoordinatorEntity, SensorEntity):
+    """When aurora may next be visible here, from SWPC's 3-day Kp forecast.
+
+    The state is the start of the next 3-hour forecast period whose Kp
+    reaches the Kp this location needs, or unknown when none in the forecast
+    does or the forecast can't be fetched.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
     automatically combines the device name with the entity name to
@@ -259,58 +264,45 @@ class AuroraNextTimeSensor(CoordinatorEntity):
         """
         return "Aurora Next Time"
 
-    def _compute_aurora_timing(self):
-        """Compute aurora timing state and attributes from coordinator data."""
-        if self.coordinator.data is None:
-            return None, {}
-        kp_data = self.coordinator.data.get("kp_index", [])
-        if not kp_data or len(kp_data) == 0:
-            return 'No Data', {'error': 'No Kp index data available'}
+    @property
+    def device_class(self):
+        """Return the device class: the state is a time."""
+        return SensorDeviceClass.TIMESTAMP
 
-        current_kp = kp_data[-1].get('kp_index', 0)
+    def _required_kp(self):
+        """Return the Kp aurora needs to be visible here."""
         office_lat = magnetic_latitude(self._office_code, self._latitude, self._longitude)
+        return get_required_kp(office_lat, AURORA_KP_THRESHOLDS)
 
-        aurora_possible = calculate_aurora_visibility(
-            current_kp, office_lat, AURORA_KP_THRESHOLDS
+    def _next_period(self):
+        """Return the next forecast period aurora may be visible in, or None."""
+        if self.coordinator.data is None:
+            return None
+        return next_aurora_period(
+            self.coordinator.data.get("kp_forecast"), self._required_kp(), datetime.now(timezone.utc)
         )
 
-        if aurora_possible:
-            next_time = datetime.now(timezone.utc) + timedelta(minutes=30)
-            state = next_time.strftime('%Y-%m-%d %H:%M UTC')
-            attributes = {
-                'current_kp': current_kp,
-                'magnetic_latitude': office_lat,
-                'conditions': 'Favorable',
-                'confidence': 'High' if current_kp >= 5 else 'Moderate'
-            }
-        else:
-            if current_kp < 3:
-                estimated_hours = 12 + (3 - current_kp) * 6
-            else:
-                estimated_hours = 6
-
-            next_time = datetime.now(timezone.utc) + timedelta(hours=estimated_hours)
-            state = next_time.strftime('%Y-%m-%d %H:%M UTC')
-            attributes = {
-                'current_kp': current_kp,
-                'magnetic_latitude': office_lat,
-                'conditions': 'Waiting for activity',
-                'confidence': 'Low'
-            }
-
-        return state, attributes
-
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        state, _ = self._compute_aurora_timing()
-        return state
+    def native_value(self):
+        """Return when that period starts, or None."""
+        period = self._next_period()
+        return period["start"] if period else None
 
     @property
     def extra_state_attributes(self):
-        """Return the state attributes."""
-        _, attributes = self._compute_aurora_timing()
-        return attributes
+        """Return the period's forecast Kp, the Kp needed here and the current Kp."""
+        if self.coordinator.data is None:
+            return {}
+        period = self._next_period()
+        kp_data = self.coordinator.data.get("kp_index")
+        latest = kp_data[-1] if isinstance(kp_data, list) and kp_data else None
+        current_kp = latest.get('kp_index') if isinstance(latest, dict) else None
+        return {
+            'predicted_kp': period["kp"] if period else None,
+            'required_kp': self._required_kp(),
+            'current_kp': current_kp if isinstance(current_kp, (int, float)) else None,
+            'magnetic_latitude': magnetic_latitude(self._office_code, self._latitude, self._longitude),
+        }
 
     @property
     def unique_id(self):

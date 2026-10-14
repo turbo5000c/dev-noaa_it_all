@@ -42,7 +42,7 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 | `sensor.noaa_ilm_space_geomagnetic_storm` | Dst index in nT, e.g. `-13.2` |
 | `sensor.noaa_ilm_space_geomagnetic_storm_interpretation` | `No Storm (Quiet conditions)`, `Minor Storm`, `Moderate Storm`, `Strong Storm` or `Severe Storm` |
 | `sensor.noaa_ilm_space_aurora_visibility_probability` | % |
-| `sensor.noaa_ilm_space_aurora_next_time` | Estimated start, e.g. `2026-10-15 00:06 UTC` |
+| `sensor.noaa_ilm_space_aurora_next_time` | Timestamp: start of the next forecast period with enough Kp here, or `unknown` |
 | `sensor.noaa_ilm_space_aurora_duration` | Hours |
 | `sensor.noaa_ilm_space_solar_radiation_storm_alerts` | Number of solar radiation storm warnings and alerts in effect |
 | `sensor.noaa_ilm_space_meteor_shower_activity` | Shower most worth watching now, or `None` |
@@ -145,11 +145,11 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 
 ## Aurora Visibility Alerts
 Location-aware aurora visibility predictions *(NOAA Space)*:
-- **Aurora Next Time**: Predicted timing when aurora activity may begin at your location *(sensor.noaa_{office}_space_aurora_next_time)*
+- **Aurora Next Time**: When aurora may next be visible at your location, from SWPC's 3-day Kp forecast *(sensor.noaa_{office}_space_aurora_next_time)*. The state is the start of the next 3-hour forecast period whose forecast Kp reaches the Kp your location needs; the period in progress doesn't count, as Aurora Visibility Probability goes by the Kp measured now. It is `unknown` when no period in the forecast reaches it, or the forecast can't be fetched. The forecast doesn't know about daylight, so a period during the day means after dark at the earliest. Attributes: `predicted_kp` (that period's forecast Kp), `required_kp`, `current_kp` and `magnetic_latitude`
 - **Aurora Duration**: Estimated length of aurora visibility in hours based on geomagnetic conditions *(sensor.noaa_{office}_space_aurora_duration)*
 - **Aurora Visibility Probability**: Percentage chance of aurora visibility from your specific location *(sensor.noaa_{office}_space_aurora_visibility_probability)*
 
-> **Note**: Aurora predictions are based on real-time Kp index data and the magnetic latitude of the Space entry's office (for the coastal offices) or of its location (for any other office). Northern locations (like Duluth, MN) have much higher visibility potential than southern locations (like Miami, FL).
+> **Note**: Aurora Duration and Aurora Visibility Probability are based on the current Kp index, and Aurora Next Time on SWPC's Kp forecast, each with the magnetic latitude of the Space entry's office (for the coastal offices) or of its location (for any other office). Northern locations (like Duluth, MN) have much higher visibility potential than southern locations (like Miami, FL).
 
 ## Solar Radiation Storm Alerts
 Location-aware monitoring of solar radiation storm activity *(NOAA Space)*:

@@ -1,7 +1,8 @@
 # Data Sources
 
 - **Space Weather**: NOAA Space Weather Prediction Center
-  - Aurora visibility forecasts and geomagnetic storm data
+  - Aurora visibility forecasts, from the planetary K-index and its 3-day forecast, and
+    geomagnetic storm data
   - Solar radiation storm alerts and classification (S1-S5 scale)
   - Real-time space weather alert monitoring
 - **Meteor Showers**: bundled catalog, computed locally — **not** a NOAA feed

@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from unittest.mock import MagicMock, patch
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +29,8 @@ _ha_entity.DeviceInfo = dict
 
 _ha_sensor = MagicMock()
 _ha_sensor.SensorEntity = type("SensorEntity", (), {})
+# Str enums, like Home Assistant's.
+_ha_sensor.SensorDeviceClass = StrEnum("SensorDeviceClass", {"TIMESTAMP": "timestamp"})
 
 _MOCK_MODULES = {
     "homeassistant": MagicMock(),
@@ -323,21 +326,15 @@ class TestAuroraNextTimeSensor(unittest.TestCase):
         coord = _make_coordinator(data)
         return AuroraNextTimeSensor(coord, OFFICE)
 
-    def test_state_with_data(self):
-        sensor = self._make([{"kp_index": 3.0}])
-        state = sensor.state
-        self.assertIsNotNone(state)
-        self.assertIn("UTC", state)
-
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor
         coord = _make_coordinator(None)
         sensor = AuroraNextTimeSensor(coord, OFFICE)
-        self.assertIsNone(sensor.state)
+        self.assertIsNone(sensor.native_value)
 
-    def test_state_empty_kp(self):
-        sensor = self._make([])
-        self.assertEqual(sensor.state, "No Data")
+    def test_state_without_a_forecast_is_unknown(self):
+        sensor = self._make([{"kp_index": 3.0}])
+        self.assertIsNone(sensor.native_value)
 
     def test_unique_id(self):
         sensor = self._make()
@@ -350,8 +347,12 @@ class TestAuroraNextTimeSensor(unittest.TestCase):
     def test_extra_attrs_with_data(self):
         sensor = self._make([{"kp_index": 5.0}])
         attrs = sensor.extra_state_attributes
-        self.assertIn("current_kp", attrs)
-        self.assertIn("conditions", attrs)
+        self.assertEqual(attrs["current_kp"], 5.0)
+        self.assertIn("required_kp", attrs)
+
+    def test_extra_attrs_with_a_null_current_kp(self):
+        sensor = self._make([{"kp_index": None}])
+        self.assertIsNone(sensor.extra_state_attributes["current_kp"])
 
     def test_device_info_space_group(self):
         sensor = self._make()
@@ -649,6 +650,108 @@ class TestSolarRadiationStormProducts(unittest.TestCase):
         sensor = SolarRadiationStormAlertsSensor(_make_coordinator({"space_alerts": None}), OFFICE)
         self.assertIsNone(sensor.state)
         self.assertEqual(sensor.extra_state_attributes, {})
+
+
+class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
+    """#79: the start of the next forecast period whose Kp reaches the location's threshold.
+
+    space_weather_kp_forecast.json is SWPC's 3-day Kp forecast from
+    2026-10-14 08:05 UTC, oldest first: observed periods to 03:00, estimated
+    ones for the rest of the day (3.67 at 06:00 and 09:00, then 2.67, 3.0,
+    3.33 and 3.33) and predicted ones to 2026-10-17 00:00 (at most 3.33).
+    """
+
+    NOW = "2026-10-14 08:05"
+
+    def _sensor(self, office="DLH", forecast="fixture", lat=None, lon=None):
+        from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor
+        if forecast == "fixture":
+            forecast = _load_fixture("space_weather_kp_forecast.json")
+        data = {"kp_index": [{"kp_index": 1}], "kp_forecast": forecast}
+        return AuroraNextTimeSensor(_make_coordinator(data), office, lat, lon)
+
+    def _value(self, sensor, when=None):
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at(when or self.NOW)):
+            return sensor.native_value, sensor.extra_state_attributes
+
+    def test_is_a_timestamp_sensor(self):
+        sensor = self._sensor()
+        self.assertEqual(sensor.device_class, "timestamp")
+        self.assertIsInstance(sensor, _ha_sensor.SensorEntity)
+
+    def test_a_northern_location_gets_the_next_period_with_enough_kp(self):
+        """Duluth needs Kp 3; the 09:00 period is forecast at 3.67."""
+        value, attrs = self._value(self._sensor("DLH"))
+        self.assertEqual(value, datetime(2026, 10, 14, 9, tzinfo=timezone.utc))
+        self.assertEqual(attrs["predicted_kp"], 3.67)
+        self.assertEqual(attrs["required_kp"], 3)
+
+    def test_the_period_in_progress_does_not_count(self):
+        """At 08:05 the 06:00 period was estimated at 3.67 but measured at Kp 1; it was observed at 1.67."""
+        value, _ = self._value(self._sensor("DLH"), "2026-10-14 06:30")
+        self.assertEqual(value, datetime(2026, 10, 14, 9, tzinfo=timezone.utc))
+
+    def test_periods_below_the_threshold_are_skipped(self):
+        """After 09:00 the next period at 3 or more is 15:00 (3.0)."""
+        value, _ = self._value(self._sensor("DLH"), "2026-10-14 09:30")
+        self.assertEqual(value, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+
+    def test_observed_periods_never_count(self):
+        forecast = [dict(p, observed="observed") if p["time_tag"] == "2026-10-14T09:00:00" else p
+                    for p in _load_fixture("space_weather_kp_forecast.json")]
+        value, _ = self._value(self._sensor("DLH", forecast=forecast))
+        self.assertEqual(value, datetime(2026, 10, 14, 15, tzinfo=timezone.utc))
+
+    def test_the_earliest_period_wins_whatever_the_feed_order(self):
+        forecast = list(reversed(_load_fixture("space_weather_kp_forecast.json")))
+        value, _ = self._value(self._sensor("DLH", forecast=forecast))
+        self.assertEqual(value, datetime(2026, 10, 14, 9, tzinfo=timezone.utc))
+
+    def test_the_state_and_required_kp_agree_below_magnetic_latitude_0(self):
+        """Pago Pago is about -15.4 magnetic; it needs Kp 9, and a Kp 9 forecast reaches it."""
+        forecast = [{"time_tag": "2026-10-14T12:00:00", "kp": 9.0, "observed": "predicted", "noaa_scale": "G5"}]
+        value, attrs = self._value(self._sensor("PPG", forecast=forecast, lat=-14.27, lon=-170.70))
+        self.assertEqual(attrs["required_kp"], 9)
+        self.assertLess(attrs["magnetic_latitude"], 0)
+        self.assertEqual(value, datetime(2026, 10, 14, 12, tzinfo=timezone.utc))
+
+    def test_unknown_when_no_period_reaches_the_threshold(self):
+        """Wilmington needs Kp 7; the forecast tops out at 3.67."""
+        value, attrs = self._value(self._sensor("ILM"))
+        self.assertIsNone(value)
+        self.assertEqual(attrs["required_kp"], 7)
+
+    def test_does_not_move_with_the_clock(self):
+        sensor = self._sensor("DLH")
+        self.assertEqual(self._value(sensor, "2026-10-14 08:05")[0],
+                         self._value(sensor, "2026-10-14 08:55")[0])
+
+    def test_an_odd_current_kp_payload_does_not_break_the_attributes(self):
+        from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor
+        for kp_index in ({"error": "x"}, [None], [{"kp_index": "1"}], None):
+            with self.subTest(kp_index=kp_index):
+                data = {"kp_index": kp_index, "kp_forecast": _load_fixture("space_weather_kp_forecast.json")}
+                sensor = AuroraNextTimeSensor(_make_coordinator(data), "DLH")
+                self.assertIsNone(self._value(sensor)[1]["current_kp"])
+
+    def test_a_failed_forecast_fetch_is_unknown(self):
+        value, _ = self._value(self._sensor("DLH", forecast=None))
+        self.assertIsNone(value)
+
+    def test_a_null_or_missing_kp_is_skipped(self):
+        forecast = [
+            {"time_tag": "2026-10-14T09:00:00", "kp": None, "observed": "estimated", "noaa_scale": None},
+            {"time_tag": "2026-10-14T12:00:00", "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-14T15:00:00", "kp": "5", "observed": "predicted", "noaa_scale": None},
+            {"time_tag": "2026-10-14T18:00:00", "kp": 4.0, "observed": "predicted", "noaa_scale": None},
+        ]
+        value, _ = self._value(self._sensor("DLH", forecast=forecast))
+        self.assertEqual(value, datetime(2026, 10, 14, 18, tzinfo=timezone.utc))
+
+    def test_no_data_at_all_is_unknown(self):
+        from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor
+        sensor = AuroraNextTimeSensor(_make_coordinator(None), OFFICE)
+        self.assertIsNone(self._value(sensor)[0])
 
 
 if __name__ == "__main__":
