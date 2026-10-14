@@ -5,10 +5,11 @@ solar radiation storm alerts.
 """
 
 import logging
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+import math
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ..const import (
     AURORA_KP_THRESHOLDS, SOLAR_RADIATION_STORM_SCALES, DOMAIN,
@@ -34,8 +35,47 @@ from ..parsers import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class GeomagneticSensor(CoordinatorEntity):
-    """Representation of the Geomagnetic Storm sensor.
+# A newest Dst older than this means the feed has stopped updating.
+_DST_STALE_AFTER = timedelta(hours=2)
+
+
+def _newest_dst(coordinator):
+    """Return the newest Dst sample as (nT to one decimal, its time), or None.
+
+    SWPC's Geospace model feed has a sample a minute for the last hour or so,
+    oldest first, and runs some 20 to 30 minutes ahead, as the model works
+    from solar wind measured upstream of Earth. The sample with the latest
+    time and a finite value is used, whatever the order. None when the fetch
+    failed, nothing is usable, or the newest is over two hours old.
+    """
+    if coordinator.data is None:
+        return None
+    dst_data = coordinator.data.get("dst")
+    if not isinstance(dst_data, list):
+        return None
+    newest = None
+    for sample in dst_data:
+        if not isinstance(sample, dict):
+            continue
+        value = sample.get('dst')
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            continue
+        try:
+            time = datetime.fromisoformat(sample["time_tag"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if time.tzinfo is None:
+            time = time.replace(tzinfo=timezone.utc)
+        if newest is None or time > newest[1]:
+            # Adding 0.0 turns -0.0 into 0.0.
+            newest = (round(value, 1) + 0.0, time)
+    if newest is None or datetime.now(timezone.utc) - newest[1] > _DST_STALE_AFTER:
+        return None
+    return newest
+
+
+class GeomagneticSensor(CoordinatorEntity, SensorEntity):
+    """Representation of the Geomagnetic Storm sensor: the newest Dst, in nT.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
     automatically combines the device name with the entity name to
@@ -64,14 +104,31 @@ class GeomagneticSensor(CoordinatorEntity):
         return f'noaa_{self._office_code}_geomagnetic_storm'
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        if self.coordinator.data is None:
-            return None
-        dst_data = self.coordinator.data.get("dst", [])
-        if dst_data and len(dst_data) > 0:
-            return dst_data[0].get('dst')
-        return None
+    def native_value(self):
+        """Return the newest Dst, to one decimal."""
+        newest = _newest_dst(self.coordinator)
+        return newest[0] if newest else None
+
+    @property
+    def extra_state_attributes(self):
+        """Return the time of the sample, which can be ahead of now."""
+        newest = _newest_dst(self.coordinator)
+        return {'timestamp': newest[1].isoformat()} if newest else {}
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return the unit: nanotesla."""
+        return "nT"
+
+    @property
+    def state_class(self):
+        """Return the state class, so Home Assistant keeps statistics."""
+        return SensorStateClass.MEASUREMENT
+
+    @property
+    def suggested_display_precision(self):
+        """Return how many decimals to show."""
+        return 1
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -100,15 +157,11 @@ class GeomagneticSensorInterpretation(CoordinatorEntity):
 
     @property
     def state(self):
-        """Return the interpretation of the geomagnetic storm."""
-        if self.coordinator.data is None:
+        """Return the interpretation of the newest Dst, as Geomagnetic Storm shows it."""
+        newest = _newest_dst(self.coordinator)
+        if newest is None:
             return None
-        dst_data = self.coordinator.data.get("dst", [])
-        if dst_data and len(dst_data) > 0:
-            dst_value = dst_data[0].get('dst')
-            if dst_value is not None:
-                return interpret_dst_value(dst_value)
-        return None
+        return interpret_dst_value(newest[0])
 
     @property
     def name(self):

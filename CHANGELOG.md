@@ -45,8 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forecast can't be fetched. It is a timestamp sensor, so its state is an ISO time, such as
   `2026-10-14T09:00:00+00:00`, rather than `2026-10-15 00:06 UTC`, and cards show how soon it is.
   Its `conditions` and `confidence` attributes are gone; `predicted_kp` and `required_kp` are new.
+- **Geomagnetic Storm shows the newest Dst, in nT, to one decimal.** It and Geomagnetic Storm
+  Interpretation read the oldest sample in SWPC's feed, which lists the last hour or so oldest
+  first, so they were more than an hour behind. Geomagnetic Storm also had no unit and showed every
+  decimal, such as `-7.3018999`; it is now in nT, rounded to one decimal, and keeps long-term
+  statistics, so its history shows as a graph. Its `timestamp` attribute is the time of that value,
+  which SWPC's model gives some 20 to 30 minutes ahead. Both read `unknown` if the newest value is
+  over two hours old.
 
-Going back to 0.10.2 needs nothing removed first.
+Going back to 0.10.2 needs nothing removed first. Afterwards, **Developer tools → Statistics** lists
+Geomagnetic Storm as no longer having a state class; fix it there to delete its statistics.
 
 ## [0.10.2]
 

@@ -31,6 +31,7 @@ _ha_sensor = MagicMock()
 _ha_sensor.SensorEntity = type("SensorEntity", (), {})
 # Str enums, like Home Assistant's.
 _ha_sensor.SensorDeviceClass = StrEnum("SensorDeviceClass", {"TIMESTAMP": "timestamp"})
+_ha_sensor.SensorStateClass = StrEnum("SensorStateClass", {"MEASUREMENT": "measurement"})
 
 _MOCK_MODULES = {
     "homeassistant": MagicMock(),
@@ -93,20 +94,20 @@ class TestGeomagneticSensor(unittest.TestCase):
         coord = _make_coordinator(data)
         return GeomagneticSensor(coord, OFFICE)
 
-    def test_state_returns_latest_dst(self):
-        dst_data = _load_fixture("space_weather_dst.json")
-        sensor = self._make(dst_data)
-        self.assertEqual(sensor.state, -15)
+    def test_state_of_a_whole_number_dst(self):
+        sensor = self._make([{"time_tag": "2026-10-14T08:00:00", "dst": 5}])
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at("2026-10-14 08:05")):
+            self.assertEqual(sensor.native_value, 5.0)
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import GeomagneticSensor
         coord = _make_coordinator(None)
         sensor = GeomagneticSensor(coord, OFFICE)
-        self.assertIsNone(sensor.state)
+        self.assertIsNone(sensor.native_value)
 
     def test_state_empty_dst(self):
         sensor = self._make([])
-        self.assertIsNone(sensor.state)
+        self.assertIsNone(sensor.native_value)
 
     def test_name(self):
         sensor = self._make()
@@ -133,9 +134,9 @@ class TestGeomagneticSensorInterpretation(unittest.TestCase):
         return GeomagneticSensorInterpretation(coord, OFFICE)
 
     def test_state_quiet(self):
-        sensor = self._make([{"dst": -10}])
-        state = sensor.state
-        self.assertIn("Quiet", state)
+        sensor = self._make([{"time_tag": "2026-10-14T08:00:00", "dst": -10}])
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at("2026-10-14 08:05")):
+            self.assertIn("Quiet", sensor.state)
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import GeomagneticSensorInterpretation
@@ -752,6 +753,85 @@ class TestAuroraNextTimeFromTheKpForecast(unittest.TestCase):
         from noaa_it_all.sensors.space_weather import AuroraNextTimeSensor
         sensor = AuroraNextTimeSensor(_make_coordinator(None), OFFICE)
         self.assertIsNone(self._value(sensor)[0])
+
+
+class TestDstReadsTheNewestSample(unittest.TestCase):
+    """#80: SWPC serves geospace_dst_1_hour.json oldest first; the sensors read the newest sample.
+
+    space_weather_dst.json is the end of the live feed fetched at 08:04 UTC on
+    2026-10-14, whose newest sample, at 08:27, runs ahead of the clock as the
+    Geospace model does. space_weather_dst_storm.json is the end of an
+    archived copy from the 2024-05-11 storm, when Dst went from -95.8 to
+    -117.8 nT.
+    """
+
+    LIVE = "2026-10-14 08:05"
+    STORM = "2024-05-11 23:00"
+
+    def _sensors(self, dst):
+        from noaa_it_all.sensors.space_weather import (
+            GeomagneticSensor, GeomagneticSensorInterpretation,
+        )
+        coord = _make_coordinator({"dst": dst})
+        return GeomagneticSensor(coord, OFFICE), GeomagneticSensorInterpretation(coord, OFFICE)
+
+    def _read(self, dst, when):
+        storm, interpretation = self._sensors(dst)
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at(when)):
+            return storm.native_value, interpretation.state, storm.extra_state_attributes
+
+    def test_the_fixtures_are_in_the_feed_order(self):
+        for name in ("space_weather_dst.json", "space_weather_dst_storm.json"):
+            tags = [s["time_tag"] for s in _load_fixture(name)]
+            self.assertEqual(tags, sorted(tags), name)
+
+    def test_geomagnetic_storm_is_the_newest_sample_in_nt_to_one_decimal(self):
+        storm, _ = self._sensors(_load_fixture("space_weather_dst.json"))  # -3.9576199 ... -3.5359199
+        with patch("noaa_it_all.sensors.space_weather.datetime", _at(self.LIVE)):
+            self.assertEqual(storm.native_value, -3.5)
+            self.assertEqual(storm.extra_state_attributes, {"timestamp": "2026-10-14T08:27:00+00:00"})
+        self.assertEqual(storm.native_unit_of_measurement, "nT")
+        self.assertEqual(storm.state_class, "measurement")
+        self.assertEqual(storm.suggested_display_precision, 1)
+        self.assertIsInstance(storm, _ha_sensor.SensorEntity)
+
+    def test_interpretation_is_of_the_newest_sample(self):
+        _, state, _ = self._read(_load_fixture("space_weather_dst_storm.json"), self.STORM)
+        # The oldest sample, -95.8, would read Moderate Storm.
+        self.assertEqual(state, "Strong Storm")
+
+    def test_the_newest_by_time_whatever_the_order(self):
+        value, state, _ = self._read(list(reversed(_load_fixture("space_weather_dst_storm.json"))), self.STORM)
+        self.assertEqual((value, state), (-117.8, "Strong Storm"))
+
+    def test_both_sensors_judge_the_value_shown(self):
+        """-19.96 shows as -20.0 nT, which is a Minor Storm."""
+        value, state, _ = self._read([{"time_tag": "2026-10-14T08:00:00", "dst": -19.96}], self.LIVE)
+        self.assertEqual((value, state), (-20.0, "Minor Storm"))
+
+    def test_a_value_just_below_zero_is_not_minus_zero(self):
+        value, _, _ = self._read([{"time_tag": "2026-10-14T08:00:00", "dst": -0.04}], self.LIVE)
+        self.assertEqual(str(value), "0.0")
+
+    def test_a_null_newest_sample_falls_back_to_the_one_before(self):
+        dst = [{"time_tag": "2026-10-14T08:26:00", "dst": -3.57},
+               {"time_tag": "2026-10-14T08:27:00", "dst": None}]
+        value, _, _ = self._read(dst, self.LIVE)
+        self.assertEqual(value, -3.6)
+
+    def test_a_feed_that_stopped_updating_is_unknown(self):
+        """Two hours after its newest sample, a feed served unchanged no longer reads as now."""
+        value, state, _ = self._read(_load_fixture("space_weather_dst.json"), "2026-10-14 10:30")
+        self.assertEqual((value, state), (None, None))
+
+    def test_a_failed_or_malformed_fetch_is_unknown(self):
+        for dst in (None, [], {}, {"error": "x"}, [None], [["time_tag", "dst"], ["2026-10-14 08:00:00", "-3"]],
+                    [{"time_tag": "2026-10-14T08:00:00", "dst": float("nan")}],
+                    [{"time_tag": "2026-10-14T08:00:00", "dst": float("-inf")}],
+                    [{"dst": -3.5}]):
+            with self.subTest(dst=dst):
+                value, state, attrs = self._read(dst, self.LIVE)
+                self.assertEqual((value, state, attrs), (None, None, {}))
 
 
 if __name__ == "__main__":

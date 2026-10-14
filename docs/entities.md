@@ -87,7 +87,7 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 
 ## Space Weather and Hurricane Sensors
 - **Planetary K-index**: NOAA SWPC's estimated planetary Kp, from its 1-minute feed *(NOAA Space)*
-- **Geomagnetic Storm**: The Dst index in nT, hourly from SWPC; the more negative, the stronger the storm *(NOAA Space)*
+- **Geomagnetic Storm**: The newest Dst index in nT, to one decimal, from SWPC's Geospace model, which gives a value a minute; the more negative, the stronger the storm. The model works from solar wind measured upstream of Earth, so its newest value is some 20 to 30 minutes ahead of now; the `timestamp` attribute is its time. It's `unknown` if the feed can't be fetched or its newest value is over two hours old. It keeps long-term statistics, so a history graph shows it as a line *(NOAA Space)*
 - **Hurricane Alerts**: Number of active NWS hurricane and tropical storm warnings and watches *(NOAA Hurricane)*
 - **Hurricane Activity**: Overall activity from the NWS alerts and the NHC's active storms. The state starts with the level, `Quiet`, `Low`, `Moderate` or `High`, followed by the reason, e.g. `High - 1 Active Hurricane(s)`. The `storm_details` attribute lists each active storm with its classification, intensity, position and movement *(NOAA Hurricane)*
 
@@ -247,7 +247,7 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
 
 ## Derived Space Weather Sensors
 
-- **Geomagnetic Storm Interpretation**: Plain-language reading of the Dst value
+- **Geomagnetic Storm Interpretation**: Plain-language reading of the newest Dst value
   *(sensor.noaa_{office}_space_geomagnetic_storm_interpretation)*
 - **Planetary K-Index Rating**: Plain-language reading of the Kp value
   *(sensor.noaa_{office}_space_planetary_k_index_rating)*
