@@ -171,10 +171,16 @@ class TestPlanetaryKIndexSensor(unittest.TestCase):
         return PlanetaryKIndexSensor(coord, OFFICE)
 
     def test_state_returns_latest_kp(self):
+        """SWPC lists the samples oldest first; the state is the newest, 16:53's Kp 2, not 16:47's 1."""
         kp_data = _load_fixture("space_weather_kp.json")
         sensor = self._make(kp_data)
-        # PlanetaryKIndexSensor uses kp_data[-1] (last element)
-        self.assertEqual(sensor.state, 3.00)
+        self.assertEqual(sensor.state, 2)
+        self.assertNotEqual(kp_data[0]["kp_index"], 2)
+
+    def test_the_fixture_is_in_the_feed_order(self):
+        """planetary_k_index_1m.json is oldest first (358 samples, 11:02 to 16:59 on 2026-10-14)."""
+        tags = [s["time_tag"] for s in _load_fixture("space_weather_kp.json")]
+        self.assertEqual(tags, sorted(tags))
 
     def test_state_no_data(self):
         from noaa_it_all.sensors.space_weather import PlanetaryKIndexSensor
