@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   added from now on show °C and m. Ones you already have keep °F and ft, as Home Assistant keeps
   an existing sensor's unit, unless the unit system was changed before with its option to update
   existing entities: those switch to °C and m when you upgrade. Pick another unit in the entity's
-  settings. A converted state has every decimal of the conversion, so a template that prints one needs `rounded=True`.
+  settings. A converted state has every decimal of the conversion, so a template that prints one
+  needs `rounded=True`.
 - **The weather entity's current conditions match the observation sensors in a metric Home
   Assistant.** It converted NWS's metric observations to °F, inHg, mph and miles and rounded them,
   and Home Assistant then converted them back, so the weather card could show 1018.29 hPa next to
