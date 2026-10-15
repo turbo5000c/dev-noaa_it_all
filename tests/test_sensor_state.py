@@ -402,18 +402,26 @@ class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
     def test_they_keep_a_unit_to_show_across_restarts(self):
         """#87: when Home Assistant stores no unit, the one it shows is kept.
 
-        That is ft for Surf Height in a US install, and for Water Temperature the
-        unit system's temperature unit, here a metric install's °C.
+        Home Assistant's own options, as it gives them in each unit system: none
+        for a temperature, which it shows in the system's unit; m for feet in a
+        metric install, and none for feet in a US customary one.
         """
-        for sensor, _, unit, _ in self._sensors():
-            with self.subTest(type(sensor).__name__):
+        water, height = (sensor for sensor, *_ in self._sensors())
+        metres = {"sensor.private": {"suggested_unit_of_measurement": "m"}}
+        cases = (
+            ("metric", water, "°C", None, "°C"),
+            ("metric", height, "°C", metres, "m"),
+            ("us_customary", water, "°F", None, "°F"),
+            ("us_customary", height, "°F", None, "ft"),
+        )
+        for system, sensor, temperature_unit, from_home_assistant, kept in cases:
+            with self.subTest(system=system, sensor=type(sensor).__name__):
                 sensor.hass = MagicMock()
-                sensor.hass.config.units.temperature_unit = "°C"
+                sensor.hass.config.units.temperature_unit = temperature_unit
                 with patch.object(_ha_sensor.SensorEntity, "get_initial_entity_options",
-                                  lambda self: None, create=True):
-                    shown = "°C" if unit == "°F" else unit
+                                  lambda self: from_home_assistant, create=True):
                     self.assertEqual(sensor.get_initial_entity_options(),
-                                     {"sensor.private": {"suggested_unit_of_measurement": shown}})
+                                     {"sensor.private": {"suggested_unit_of_measurement": kept}})
 
     def test_they_leave_the_state_and_unit_to_home_assistant(self):
         """Overriding state or unit_of_measurement would bypass the conversion."""

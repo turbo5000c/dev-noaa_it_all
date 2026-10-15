@@ -614,8 +614,10 @@ class TestTheUnitSurvivesARestart(unittest.TestCase):
         suggested = {"sensor.private": {"suggested_unit_of_measurement": "°F"}}
         self.assertEqual(self._initial("TemperatureSensor", suggested), suggested)
 
-    def test_a_sensor_without_a_unit_gets_none(self):
-        self.assertIsNone(self._initial("SkyConditionsSensor", None))
+    def test_sensors_home_assistant_never_converts_store_nothing(self):
+        for cls in ("HumiditySensor", "WindDirectionSensor", "SkyConditionsSensor"):
+            with self.subTest(cls):
+                self.assertIsNone(self._initial(cls, None))
 
 
 if __name__ == "__main__":

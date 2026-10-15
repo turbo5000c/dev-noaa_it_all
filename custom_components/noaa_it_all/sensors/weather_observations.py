@@ -21,7 +21,7 @@ from .units import KeepsItsUnit
 _LOGGER = logging.getLogger(__name__)
 
 
-class WeatherObservationSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
+class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
     """Base class for weather observation sensors.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -151,7 +151,7 @@ class WeatherObservationSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
         return value
 
 
-class TemperatureSensor(WeatherObservationSensor):
+class TemperatureSensor(KeepsItsUnit, WeatherObservationSensor):
     """Temperature sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -194,7 +194,7 @@ class HumiditySensor(WeatherObservationSensor):
         return round(value)
 
 
-class WindSpeedSensor(WeatherObservationSensor):
+class WindSpeedSensor(KeepsItsUnit, WeatherObservationSensor):
     """Wind speed sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -248,7 +248,7 @@ class WindDirectionSensor(WeatherObservationSensor):
         return attrs
 
 
-class BarometricPressureSensor(WeatherObservationSensor):
+class BarometricPressureSensor(KeepsItsUnit, WeatherObservationSensor):
     """Barometric pressure sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -273,7 +273,7 @@ class BarometricPressureSensor(WeatherObservationSensor):
         return pascals_to_hectopascals(value)
 
 
-class DewpointSensor(WeatherObservationSensor):
+class DewpointSensor(KeepsItsUnit, WeatherObservationSensor):
     """Dewpoint sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -292,7 +292,7 @@ class DewpointSensor(WeatherObservationSensor):
         )
 
 
-class VisibilitySensor(WeatherObservationSensor):
+class VisibilitySensor(KeepsItsUnit, WeatherObservationSensor):
     """Visibility sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -335,7 +335,7 @@ class SkyConditionsSensor(WeatherObservationSensor):
         return value if value else 'Unknown'
 
 
-class FeelsLikeSensor(WeatherObservationSensor):
+class FeelsLikeSensor(KeepsItsUnit, WeatherObservationSensor):
     """Feels-like temperature sensor (wind chill or heat index)."""
 
     # Wind chill, heat index and temperature all come from the observation

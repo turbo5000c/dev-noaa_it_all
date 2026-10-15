@@ -38,10 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. A feed that still fails reads `unknown`, as before, and the log names the cause of a timeout.
 - **A unit-system change stays after a restart.** Changing the unit system with its option to
   update existing entities converted the observation sensors, but at the next restart they went
-  back to the units they had before, such as Temperature in °F in a metric Home Assistant; Water
-  Temperature and Surf Height did the same the other way. They now keep the unit they show. A
-  change without that option leaves them as they are, temperatures included, as it does other
-  sensors. A sensor that already went back keeps its unit; pick the one you want in its settings.
+  back to the units they had before, such as Temperature in °F in a metric Home Assistant. They
+  now keep the units of such a change, as do Water Temperature and Surf Height. A sensor that
+  already went back keeps that unit until you change the unit system again with that option, to
+  the other system and back, or pick a unit in its settings, which it then keeps whatever the
+  unit system.
 
 Going back to 0.10.3 needs nothing removed first. Water Temperature and Surf Height then show °F
 and ft again, whatever unit they had, so in a metric install their history mixes the two.
