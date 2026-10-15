@@ -19,6 +19,7 @@ from ..parsers import (
     parse_rip_current_risk, parse_surf_height, parse_water_temperature,
     normalize_numeric,
 )
+from .units import KeepsItsUnit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class RipCurrentRiskSensor(CoordinatorEntity):
         )
 
 
-class SurfHeightSensor(CoordinatorEntity, SensorEntity):
+class SurfHeightSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
     """Representation of Surf Height sensor for specific NWS office location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -184,7 +185,7 @@ class SurfHeightSensor(CoordinatorEntity, SensorEntity):
         )
 
 
-class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
+class WaterTemperatureSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
     """Representation of Water Temperature sensor for specific NWS office location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant

@@ -16,11 +16,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
 from ..parsers import degrees_to_cardinal, meters_to_kilometers, pascals_to_hectopascals
+from .units import KeepsItsUnit
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
+class WeatherObservationSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
     """Base class for weather observation sensors.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant

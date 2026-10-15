@@ -573,5 +573,50 @@ class TestObservationsFollowTheUnitSystem(unittest.TestCase):
         self.assertIsNone(self._make("SkyConditionsSensor").native_unit_of_measurement)
 
 
+class TestTheUnitSurvivesARestart(unittest.TestCase):
+    """#87: a converting sensor always stores a unit to show, so a restart can't reset it.
+
+    Home Assistant's get_initial_entity_options gives None when the unit system
+    shows the native unit as it is, such as °C in a metric install. After a
+    unit-system change with "update existing entities", that left the sensor with
+    no ``sensor.private`` options, and the next start set it back to the unit the
+    registry kept from the start before: Temperature in °F in a metric install.
+    """
+
+    # The unit each shows, and stores, when Home Assistant stores none. A temperature is
+    # shown in the unit system's temperature unit, here a US customary install's °F.
+    SHOWN = {
+        "TemperatureSensor": "°F", "FeelsLikeSensor": "°F", "DewpointSensor": "°F",
+        "WindSpeedSensor": "km/h", "BarometricPressureSensor": "hPa", "VisibilitySensor": "km",
+    }
+
+    def _initial(self, cls, from_home_assistant, temperature_unit="°F"):
+        from noaa_it_all.sensors import weather_observations
+        sensor = getattr(weather_observations, cls)(_make_coordinator(None), OFFICE, LAT, LON)
+        sensor.hass = MagicMock()
+        sensor.hass.config.units.temperature_unit = temperature_unit
+        with patch.object(_ha_sensor.SensorEntity, "get_initial_entity_options",
+                          lambda self: from_home_assistant, create=True):
+            return sensor.get_initial_entity_options()
+
+    def test_the_unit_shown_is_kept_when_home_assistant_stores_none(self):
+        for cls, unit in self.SHOWN.items():
+            with self.subTest(cls):
+                self.assertEqual(self._initial(cls, None),
+                                 {"sensor.private": {"suggested_unit_of_measurement": unit}})
+
+    def test_a_temperature_keeps_the_unit_systems_temperature_unit(self):
+        """Home Assistant never stores one for a temperature; it shows the unit system's."""
+        self.assertEqual(self._initial("TemperatureSensor", None, "°C"),
+                         {"sensor.private": {"suggested_unit_of_measurement": "°C"}})
+
+    def test_a_unit_home_assistant_suggests_is_kept_as_it_is(self):
+        suggested = {"sensor.private": {"suggested_unit_of_measurement": "°F"}}
+        self.assertEqual(self._initial("TemperatureSensor", suggested), suggested)
+
+    def test_a_sensor_without_a_unit_gets_none(self):
+        self.assertIsNone(self._initial("SkyConditionsSensor", None))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -399,6 +399,22 @@ class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
                 # Today's decimals in a US customary install.
                 self.assertEqual(sensor.suggested_display_precision, 1)
 
+    def test_they_keep_a_unit_to_show_across_restarts(self):
+        """#87: when Home Assistant stores no unit, the one it shows is kept.
+
+        That is ft for Surf Height in a US install, and for Water Temperature the
+        unit system's temperature unit, here a metric install's °C.
+        """
+        for sensor, _, unit, _ in self._sensors():
+            with self.subTest(type(sensor).__name__):
+                sensor.hass = MagicMock()
+                sensor.hass.config.units.temperature_unit = "°C"
+                with patch.object(_ha_sensor.SensorEntity, "get_initial_entity_options",
+                                  lambda self: None, create=True):
+                    shown = "°C" if unit == "°F" else unit
+                    self.assertEqual(sensor.get_initial_entity_options(),
+                                     {"sensor.private": {"suggested_unit_of_measurement": shown}})
+
     def test_they_leave_the_state_and_unit_to_home_assistant(self):
         """Overriding state or unit_of_measurement would bypass the conversion."""
         for sensor, *_ in self._sensors():
