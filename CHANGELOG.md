@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **US customary units in any Home Assistant.** The observation sensors, Water Temperature, Surf
-  Height and the weather entity show °F, mph, inHg, miles and feet even in a metric Home Assistant,
-  and changing the unit system doesn't change them. For a metric unit, pick it in the entity's
-  settings; it stays after a restart, whatever the unit system. A US customary install shows the
-  sensors in the same units and decimals as before. In a metric install, sensors added under
-  0.10.3 or 0.11.0 keep the metric units they show, until you pick others in their settings or
-  change the unit system with its option to update existing entities, which sets them to US
-  customary. A weather entity added before keeps the units of the unit system.
+  Height and the weather entity show °F, mph, inHg, miles and feet even in a metric Home Assistant.
+  For a metric unit, pick it in the entity's settings; it stays after a restart, whatever the unit
+  system. A US customary install shows the sensors in the same units and decimals as before. In a
+  metric install, sensors added under 0.10.3 or 0.11.0 keep the metric units they show until you
+  pick others, or change the unit system with its option to update existing entities, which sets
+  them to US customary; a weather entity added before keeps following the unit system. Without
+  that option, a temperature sensor added before 0.11.1, Water Temperature included, shows the
+  new system's unit after a unit-system change, until the next restart.
 
 ### Fixed
 - **Water Temperature and Surf Height can be shown in °C and m.** They had no device class, so
@@ -46,9 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A unit no longer changes at a restart.** After the unit system was changed with its option to
   update existing entities, the observation sensors went back at the next restart to the units
   they had before, such as Temperature in °F in a metric Home Assistant. Home Assistant now stores
-  each one's unit, US customary or the one picked in its settings, so a restart keeps it. A
-  sensor that already went back keeps that unit until you pick one in its settings or change the
-  unit system again with that option.
+  the unit at such a change, US customary unless one is picked in the sensor's settings, so a
+  restart keeps it. A sensor that already went back keeps that unit until you pick one in its
+  settings.
 
 Going back to 0.11.0 needs nothing removed first. The sensors and the weather entity keep the
 units they show, except Water Temperature and Surf Height, which show °F and ft again whatever

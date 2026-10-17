@@ -101,12 +101,18 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
     def get_initial_entity_options(self):
         """Return US customary units for the entity's settings, for Home Assistant to store.
 
-        It stores them when it first sees the entity, as the units chosen in its
-        settings, so they are shown whatever the unit system. One added before
-        has none, and shows the units of the unit system.
+        It stores them when it first registers the entity, as the units chosen in
+        its settings, so they are shown whatever the unit system. One registered
+        before has none, and shows the units of the unit system.
+
+        Home Assistant's docstring says component base classes implement this and
+        integrations shouldn't extend it, but a weather entity has no suggested
+        units, and WeatherEntity doesn't implement it in 2026.3.0 to 2026.10.1.
+        Should it start to, its weather options are kept and the units here win.
         """
         options = dict(super().get_initial_entity_options() or {})
         options[WEATHER_DOMAIN] = {
+            **(options.get(WEATHER_DOMAIN) or {}),
             ATTR_WEATHER_TEMPERATURE_UNIT: UnitOfTemperature.FAHRENHEIT,
             ATTR_WEATHER_PRESSURE_UNIT: UnitOfPressure.INHG,
             ATTR_WEATHER_WIND_SPEED_UNIT: UnitOfSpeed.MILES_PER_HOUR,
@@ -430,8 +436,8 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
 
         NWS gives the forecast in °F, or in °C when asked for SI units, and says
         which in ``temperatureUnit``. The value isn't rounded: Home Assistant
-        converts it to the install's unit and rounds it for display, so a US
-        customary install shows NWS's whole °F.
+        converts it to the entity's temperature unit and rounds it for display,
+        so in °F it shows NWS's whole °F.
         """
         if not period:
             return None

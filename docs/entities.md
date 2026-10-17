@@ -103,7 +103,7 @@ For the coastal office of a `NOAA Surf` entry *(NOAA {OFFICE} Surf)*:
 
 Rip Current Risk and Unsafe to Swim are `unknown` while the Surf Zone Forecast can't be fetched, rather than reading as safe. An entry upgraded from 0.7.x keeps any Water Temperature or Surf Height it had, read from the forecast text where the office has no station.
 
-> **Units**: Water Temperature and Surf Height are in °F and ft in any Home Assistant, metric included, and changing the unit system doesn't change them. To see °C or m, pick it in the entity's settings; it stays after a restart. As with the observation sensors, use `rounded=True` in templates.
+> **Units**: Water Temperature and Surf Height are in °F and ft in any Home Assistant, metric included. To see °C or m, pick it in the entity's settings; it stays after a restart, whatever the unit system. As with the observation sensors, use `rounded=True` in templates, and see their **Units** note for unit-system changes.
 
 ## Nearshore Marine Forecast
 For the marine zone of a `NOAA Marine` entry, for example `LMZ741` on Lake Michigan *(NOAA {ZONE} Marine)*:
@@ -154,7 +154,7 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 
 > **Note**: Weather observations update every 10 minutes from the NWS observation station nearest your configured coordinates. If that station stops answering, or has nothing from the last two hours, the next nearest (of up to three) is used until it comes back; the `station_id` attribute shows which one.
 >
-> **Units**: NWS reports observations in metric units, and they are shown in °F, mph, inHg and miles in any Home Assistant, metric included. To see °C, km/h, hPa or km, pick it in an entity's settings; it stays after a restart. In a metric Home Assistant, sensors added under 0.10.3 or 0.11.0 keep the metric units they show, until you pick others in their settings or change the unit system with its option to update existing entities, which sets them to US customary. The state has every decimal of the conversion and is rounded for display, so in templates use `states('sensor.noaa_ilm_weather_temperature', rounded=True)`, which gives `72.0` rather than `71.96000000000001`, and `with_unit=True` to add the unit.
+> **Units**: NWS reports observations in metric units, and they are shown in °F, mph, inHg and miles in any Home Assistant, metric included. To see °C, km/h, hPa or km, pick it in an entity's settings; it stays after a restart, whatever the unit system. In a metric Home Assistant, sensors added under 0.10.3 or 0.11.0 keep the metric units they show until you pick others, or change the unit system with its option to update existing entities, which sets them to US customary. Without that option, a temperature sensor added before 0.11.1 with no unit picked, Water Temperature included, shows the new system's unit after a unit-system change, until the next restart. The state has every decimal of the conversion and is rounded for display, so in templates use `states('sensor.noaa_ilm_weather_temperature', rounded=True)`, which gives `72.0` rather than `71.96000000000001`, and `with_unit=True` to add the unit.
 >
 > A missed reading doesn't blank a sensor. If NWS leaves a field such as humidity or wind out of the newest observation, it comes from the newest one in the last two hours that has it, and that sensor's `timestamp` attribute says when it was observed. If every station fails, the last observation stays for up to an hour after the last successful refresh before the observation entities go `unavailable`. Wind direction, wind chill and heat index come from the same observation as the wind speed or temperature they go with: NWS leaves direction empty for calm or variable wind, and wind chill and heat index whenever they don't apply.
 
@@ -257,7 +257,7 @@ These sensors provide additional weather data where available from NOAA/NWS *(NO
   *(weather.noaa_{office}_weather)* — use this with the standard Weather Forecast card, and with
   `weather.get_forecasts` in templates. Note the single `weather` in the ID, not `_weather_weather`.
   It shows °F, inHg, mph and miles in any Home Assistant; pick metric units in its settings. One
-  added before 0.11.1 shows the units of your unit system. Home Assistant converts its values
+  added before 0.11.1 shows the units of your unit system until you pick others. Home Assistant converts its values
   once: it gets the observations in the metric units NWS reports them in, and the forecast, which
   NWS gives in °F and mph, converted to °C and km/h.
   Its daily forecast has one entry per date, with the day's high and the following night's low.

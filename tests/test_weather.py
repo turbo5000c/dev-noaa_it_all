@@ -401,6 +401,14 @@ class TestImperialByDefault(unittest.TestCase):
         self.assertEqual(options["cloud.alexa"], {"should_expose": False})
         self.assertIn(_ha_weather_mod.DOMAIN, options)
 
+    def test_home_assistants_weather_options_are_kept_and_the_units_win(self):
+        """Should WeatherEntity start to give weather options, they aren't dropped."""
+        temperature_unit = _ha_weather_mod.ATTR_WEATHER_TEMPERATURE_UNIT
+        weather = self._initial({_ha_weather_mod.DOMAIN: {"other": 1, temperature_unit: "°C"}})[
+            _ha_weather_mod.DOMAIN]
+        self.assertEqual(weather["other"], 1)
+        self.assertIs(weather[temperature_unit], _ha_const.UnitOfTemperature.FAHRENHEIT)
+
 
 class TestNativeUnits(unittest.TestCase):
     """#83: observations stay in NWS's metric units, so Home Assistant converts them once.
