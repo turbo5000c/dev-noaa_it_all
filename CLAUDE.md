@@ -259,7 +259,8 @@ Commits are authored by the maintainer. This overrides any default attribution i
 ### Releasing to public
 
 A release to public is a pull request from this fork's `main` into the public repository's
-`staging`, following **Pull requests to the public repository** with these differences.
+`staging`, following **Pull requests to the public repository** with these differences. It
+always starts with a test build of this fork's `main` that the maintainer tries first.
 
 When asked for a "release to public":
 
@@ -270,19 +271,30 @@ When asked for a "release to public":
      without a bump.
    - The top section of `CHANGELOG.md` is for that version and covers everything being released.
    - Version bumps go through a normal pull request into this fork's `main` first.
-2. Give the maintainer these, each title and description in its own code block to copy and paste:
+2. Make a test build of this fork's `main`, unless there is already one of that commit. The
+   maintainer installs it through HACS from this repository and tries it on their own Home
+   Assistant.
+   - A release of this fork, tagged and titled `X.Y.Z-rc.N` without a `v`, with the next free `N`
+     for the version. A regular release, not a pre-release, so HACS offers it as the latest
+     version.
+   - Its target is this fork's `main` once CI has passed there. Its notes say it is a test build
+     of `X.Y.Z`, list the changes since the last release, give a table of checks to try, and say
+     what going back needs.
+   - The release to public waits until the maintainer has tried it. A problem found in it is fixed
+     with a pull request into this fork's `main`, then a new test build, `rc.N+1`.
+3. Give the maintainer these, each title and description in its own code block to copy and paste:
    - **Pull request link**:
      `https://github.com/dawg-io/noaa_it_all/compare/staging...turbo5000c:main?expand=1`
    - **Pull request title**: `Release X.Y.Z: <one-line summary>`.
    - **Pull request description**: following `.github/PULL_REQUEST_TEMPLATE.md`, listing the
-     changes since the public `main` from `CHANGELOG.md`, grouped by version.
+     changes since the public `main` from `CHANGELOG.md`, grouped by version, and the test build.
    - **Release title**: `vX.Y.Z: <one-line summary>`.
    - **Release description**: the version's `CHANGELOG.md` entries written for users, under
      `## Added`, `## Changed` and `## Fixed`, ending with what going back to the previous version
      needs. Match the earlier releases in the public repository.
-3. Stop there. The maintainer opens the pull request, checks hassfest and HACS Validate on it
-   (they're disabled in this fork and only run on the public repository), and merges it with a
-   merge commit, not a squash, so `staging` keeps this fork's history and later releases don't
-   conflict. The `staging` → `main` pull request, the tag and the GitHub release are the
-   maintainer's. When the release changes `docs/` or `website/`, publish it after the
-   Documentation Site workflow has deployed the site from the public `main`.
+4. Stop there. Once the test build has been tried, the maintainer opens the pull request, checks
+   hassfest and HACS Validate on it (they're disabled in this fork and only run on the public
+   repository), and merges it with a merge commit, not a squash, so `staging` keeps this fork's
+   history and later releases don't conflict. The `staging` → `main` pull request, the tag and
+   the GitHub release are the maintainer's. When the release changes `docs/` or `website/`,
+   publish it after the Documentation Site workflow has deployed the site from the public `main`.
