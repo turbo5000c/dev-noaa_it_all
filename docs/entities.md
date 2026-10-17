@@ -69,12 +69,13 @@ Every entity, as created for the Wilmington (ILM) office and the `LMZ741` marine
 
 \* The unit in a metric Home Assistant. See **Units** under [Surf Sensors](#surf-sensors).
 
-**NOAA {ZONE} Marine** (2)
+**NOAA {ZONE} Marine** (3)
 
 | Entity ID | State |
 |---|---|
 | `sensor.noaa_lmz741_marine_period` | Current forecast period, e.g. `Rest Of Today` |
 | `sensor.noaa_lmz741_marine_forecast` | That period's forecast text |
+| `sensor.noaa_lmz741_marine_hazard` | Most severe advisory or warning in effect, e.g. `Small Craft Advisory`, or `None` |
 
 **NOAA Hurricane** (6)
 
@@ -102,14 +103,24 @@ For the coastal office of a `NOAA Surf` entry *(NOAA {OFFICE} Surf)*:
 
 Rip Current Risk and Unsafe to Swim are `unknown` while the Surf Zone Forecast can't be fetched, rather than reading as safe. An entry upgraded from 0.7.x keeps any Water Temperature or Surf Height it had, read from the forecast text where the office has no station.
 
-> **Units**: Water Temperature and Surf Height are shown in your unit system: °F and ft in a US customary install, °C and m in a metric one. You can pick another unit in an entity's settings. One added before 0.10.4 keeps °F or ft until you change it there, unless the unit system was changed before with its option to update existing entities. Changing the unit system with that option converts them, and they keep the new unit after a restart. As with the observation sensors, use `rounded=True` in templates.
+> **Units**: Water Temperature and Surf Height are shown in your unit system: °F and ft in a US customary install, °C and m in a metric one. You can pick another unit in an entity's settings. One added before 0.11.1 keeps °F or ft until you change it there, unless the unit system was changed before with its option to update existing entities. Changing the unit system with that option converts them, and they keep the new unit after a restart. As with the observation sensors, use `rounded=True` in templates.
 
 ## Nearshore Marine Forecast
 For the marine zone of a `NOAA Marine` entry, for example `LMZ741` on Lake Michigan *(NOAA {ZONE} Marine)*:
 - **Period**: The current forecast period, such as `Rest Of Today` *(sensor.noaa_{zone}_marine_period)*
 - **Forecast**: That period's forecast, such as `West winds 10 to 20 kt becoming northeast. Partly cloudy. Waves 1 to 2 ft.` *(sensor.noaa_{zone}_marine_forecast)*. The `periods` attribute lists every period as `name` and `detailed_forecast`, with any advisories in `headlines`
 
-If the office hasn't issued a forecast in 24 hours, both are unavailable rather than showing an old one. The forecasts come from the Great Lakes offices' Nearshore Marine Forecast (NSH).
+- **Hazard**: The most severe NWS advisory or warning in effect for the zone, such as `Small Craft Advisory` or `Gale Warning`, or `None` *(sensor.noaa_{zone}_marine_hazard)*. It comes from the zone's active NWS alerts, so it changes within minutes of NWS issuing, extending or cancelling one. Its attributes:
+  - `hazards`: every advisory and warning in effect, most severe first, each with `event`, `headline` (NWS's own summary, such as `SMALL CRAFT ADVISORY IN EFFECT FROM 4 PM THIS AFTERNOON TO 10 AM CDT THURSDAY`), `onset`, `ends` and `severity`
+  - `upcoming`: advisories and warnings already issued that haven't started yet, in the same form
+  - `watches`: watches, such as a `Gale Watch`, which never set the state
+  - `hazard_count`: how many are in effect
+
+  Storm Warning outranks Gale Warning, which outranks Small Craft Advisory; NWS replaces one with the next as the wind strengthens. Statements, and alerts NWS has cancelled or replaced, are left out.
+
+  <img width="420" alt="Hazard sensor attributes: a Small Craft Advisory in effect under hazards and a Gale Watch under watches, each with its headline, onset, end and severity" src="images/hazard-attributes.png" />
+
+If the office hasn't issued a forecast in 24 hours, Period and Forecast are unavailable rather than showing an old one. The forecasts come from the Great Lakes offices' Nearshore Marine Forecast (NSH). Hazard is unavailable when NWS alerts can't be fetched, never `None`.
 
 ## NWS Active Weather Alerts
 Real-time monitoring of National Weather Service alerts for your location *(NOAA {OFFICE} Weather)*:
@@ -143,7 +154,7 @@ Real-time weather observations from your local NWS observation station *(NOAA We
 
 > **Note**: Weather observations update every 10 minutes from the NWS observation station nearest your configured coordinates. If that station stops answering, or has nothing from the last two hours, the next nearest (of up to three) is used until it comes back; the `station_id` attribute shows which one.
 >
-> **Units**: NWS reports observations in metric units, and Home Assistant shows them in your unit system: °F, mph, inHg and miles in a US customary install, °C, km/h, hPa and km in a metric one. You can pick another unit in an entity's settings. A sensor added before 0.10.3 keeps the unit it had, which was always US customary, until you change it there, unless the unit system was changed before with its option to update existing entities. Changing the unit system with that option converts them, and from 0.10.4 they keep the new unit after a restart. The state has every decimal of the conversion and is rounded for display, so in templates use `states('sensor.noaa_ilm_weather_temperature', rounded=True)`, which gives `72.0` rather than `71.96000000000001`, and `with_unit=True` to add the unit.
+> **Units**: NWS reports observations in metric units, and Home Assistant shows them in your unit system: °F, mph, inHg and miles in a US customary install, °C, km/h, hPa and km in a metric one. You can pick another unit in an entity's settings. A sensor added before 0.10.3 keeps the unit it had, which was always US customary, until you change it there, unless the unit system was changed before with its option to update existing entities. Changing the unit system with that option converts them, and from 0.11.1 they keep the new unit after a restart. The state has every decimal of the conversion and is rounded for display, so in templates use `states('sensor.noaa_ilm_weather_temperature', rounded=True)`, which gives `72.0` rather than `71.96000000000001`, and `with_unit=True` to add the unit.
 >
 > A missed reading doesn't blank a sensor. If NWS leaves a field such as humidity or wind out of the newest observation, it comes from the newest one in the last two hours that has it, and that sensor's `timestamp` attribute says when it was observed. If every station fails, the last observation stays for up to an hour after the last successful refresh before the observation entities go `unavailable`. Wind direction, wind chill and heat index come from the same observation as the wind speed or temperature they go with: NWS leaves direction empty for calm or variable wind, and wind chill and heat index whenever they don't apply.
 
