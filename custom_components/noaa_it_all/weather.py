@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from homeassistant.components.weather import (
+    ATTR_WEATHER_PRECIPITATION_UNIT,
+    ATTR_WEATHER_PRESSURE_UNIT,
+    ATTR_WEATHER_TEMPERATURE_UNIT,
+    ATTR_WEATHER_VISIBILITY_UNIT,
+    ATTR_WEATHER_WIND_SPEED_UNIT,
+    DOMAIN as WEATHER_DOMAIN,
     WeatherEntity,
     WeatherEntityFeature,
     Forecast,
@@ -14,6 +20,7 @@ from homeassistant.const import (
     UnitOfPressure,
     UnitOfSpeed,
     UnitOfLength,
+    UnitOfPrecipitationDepth,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -69,8 +76,9 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
     """Representation of NOAA weather data.
 
     The native units are the metric ones NWS reports observations in, so Home
-    Assistant converts each observation once, to the unit system of the
-    install. NWS gives the forecast in °F and mph, which is converted to them.
+    Assistant converts each observation once, to the units in the entity's
+    settings: US customary ones unless others are chosen there. NWS gives the
+    forecast in °F and mph, which is converted to the native units.
     """
 
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
@@ -89,6 +97,23 @@ class NOAAWeather(CoordinatorEntity, WeatherEntity):
         self._office_code = office_code
         self._latitude = latitude
         self._longitude = longitude
+
+    def get_initial_entity_options(self):
+        """Return US customary units for the entity's settings, for Home Assistant to store.
+
+        It stores them when it first sees the entity, as the units chosen in its
+        settings, so they are shown whatever the unit system. One added before
+        has none, and shows the units of the unit system.
+        """
+        options = dict(super().get_initial_entity_options() or {})
+        options[WEATHER_DOMAIN] = {
+            ATTR_WEATHER_TEMPERATURE_UNIT: UnitOfTemperature.FAHRENHEIT,
+            ATTR_WEATHER_PRESSURE_UNIT: UnitOfPressure.INHG,
+            ATTR_WEATHER_WIND_SPEED_UNIT: UnitOfSpeed.MILES_PER_HOUR,
+            ATTR_WEATHER_VISIBILITY_UNIT: UnitOfLength.MILES,
+            ATTR_WEATHER_PRECIPITATION_UNIT: UnitOfPrecipitationDepth.INCHES,
+        }
+        return options
 
     async def async_added_to_hass(self) -> None:
         """Process coordinator data immediately when added to HA."""

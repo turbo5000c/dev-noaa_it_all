@@ -371,7 +371,7 @@ class TestWaterTemperatureSensor(unittest.TestCase):
         self.assertIsInstance(sensor.native_value, float)
 
 
-class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
+class TestSurfSensorUnits(unittest.TestCase):
     """Water Temperature and Surf Height let Home Assistant convert them (#82).
 
     Home Assistant converts only a SensorEntity that reports native_value and
@@ -396,32 +396,18 @@ class TestSurfSensorsFollowTheUnitSystem(unittest.TestCase):
                 self.assertIs(sensor.device_class, device_class)
                 self.assertEqual(sensor.native_unit_of_measurement, unit)
                 self.assertEqual(sensor.native_value, value)
-                # Today's decimals in a US customary install.
+                # In °F and ft, the units they suggest, as before.
                 self.assertEqual(sensor.suggested_display_precision, 1)
 
-    def test_they_keep_a_unit_to_show_across_restarts(self):
-        """#87: when Home Assistant stores no unit, the one it shows is kept.
+    def test_they_suggest_their_us_customary_unit(self):
+        """Shown in any install unless another is picked in the entity's settings.
 
-        Home Assistant's own options, as it gives them in each unit system: none
-        for a temperature, which it shows in the system's unit; m for feet in a
-        metric install, and none for feet in a US customary one.
+        Home Assistant stores it when it first sees the sensor, so the unit system
+        doesn't change it, and a restart doesn't either (#87).
         """
-        water, height = (sensor for sensor, *_ in self._sensors())
-        metres = {"sensor.private": {"suggested_unit_of_measurement": "m"}}
-        cases = (
-            ("metric", water, "°C", None, "°C"),
-            ("metric", height, "°C", metres, "m"),
-            ("us_customary", water, "°F", None, "°F"),
-            ("us_customary", height, "°F", None, "ft"),
-        )
-        for system, sensor, temperature_unit, from_home_assistant, kept in cases:
-            with self.subTest(system=system, sensor=type(sensor).__name__):
-                sensor.hass = MagicMock()
-                sensor.hass.config.units.temperature_unit = temperature_unit
-                with patch.object(_ha_sensor.SensorEntity, "get_initial_entity_options",
-                                  lambda self: from_home_assistant, create=True):
-                    self.assertEqual(sensor.get_initial_entity_options(),
-                                     {"sensor.private": {"suggested_unit_of_measurement": kept}})
+        for sensor, _, unit, _ in self._sensors():
+            with self.subTest(type(sensor).__name__):
+                self.assertEqual(sensor.suggested_unit_of_measurement, unit)
 
     def test_they_leave_the_state_and_unit_to_home_assistant(self):
         """Overriding state or unit_of_measurement would bypass the conversion."""

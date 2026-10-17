@@ -5,8 +5,9 @@ Surf Zone Forecasts (SRF product).
 
 Water temperature is in °F, as CO-OPS and the SRF text give it, and surf height
 in feet, as the SRF text gives it and NDBC's metres are converted to in
-parsers.py. With a device class, Home Assistant converts them to the unit
-system of the install, or to the unit chosen in an entity's settings.
+parsers.py. They suggest those units, so Home Assistant shows them in any
+install, and with a device class it converts them to the unit chosen in an
+entity's settings.
 """
 
 import logging
@@ -19,7 +20,6 @@ from ..parsers import (
     parse_rip_current_risk, parse_surf_height, parse_water_temperature,
     normalize_numeric,
 )
-from .units import KeepsItsUnit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class RipCurrentRiskSensor(CoordinatorEntity):
         )
 
 
-class SurfHeightSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
+class SurfHeightSensor(CoordinatorEntity, SensorEntity):
     """Representation of Surf Height sensor for specific NWS office location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -146,6 +146,11 @@ class SurfHeightSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
         return "ft"
 
     @property
+    def suggested_unit_of_measurement(self):
+        """Return feet, shown unless another unit is chosen in the entity's settings."""
+        return "ft"
+
+    @property
     def suggested_display_precision(self):
         """Return how many decimals to show, in feet."""
         return 1
@@ -185,7 +190,7 @@ class SurfHeightSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
         )
 
 
-class WaterTemperatureSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
+class WaterTemperatureSensor(CoordinatorEntity, SensorEntity):
     """Representation of Water Temperature sensor for specific NWS office location.
 
     Uses ``_attr_has_entity_name = True`` so that Home Assistant
@@ -227,6 +232,11 @@ class WaterTemperatureSensor(KeepsItsUnit, CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         """Return °F; Home Assistant converts it."""
+        return "°F"
+
+    @property
+    def suggested_unit_of_measurement(self):
+        """Return °F, shown unless another unit is chosen in the entity's settings."""
         return "°F"
 
     @property

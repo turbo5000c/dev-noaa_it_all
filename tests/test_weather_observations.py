@@ -498,13 +498,12 @@ class TestObservationTimestamps(unittest.TestCase):
 # ---------------------------------------------------------------
 # Units: NWS's metric values, converted by Home Assistant (#77)
 # ---------------------------------------------------------------
-class TestObservationsFollowTheUnitSystem(unittest.TestCase):
+class TestObservationUnits(unittest.TestCase):
     """Each sensor reports NWS's value in its metric unit, with a device class HA converts.
 
-    Home Assistant converts a sensor to the install's unit system only when it
-    is a SensorEntity reporting native_value and native_unit_of_measurement
-    with a device class. The device classes and units are the ones a US
-    customary install shows as °F, mph, inHg and mi.
+    Home Assistant converts a sensor only when it is a SensorEntity reporting
+    native_value and native_unit_of_measurement with a device class. The device
+    classes and units are ones it converts to °F, mph, inHg and mi.
     """
 
     def _make(self, cls):
@@ -521,7 +520,8 @@ class TestObservationsFollowTheUnitSystem(unittest.TestCase):
             "DewpointSensor": (15.0, "°C", "temperature", 1),
             "FeelsLikeSensor": (23.5, "°C", "temperature", 1),
             "WindSpeedSensor": (16.1, "km/h", "wind_speed", 1),
-            "BarometricPressureSensor": (1013.25, "hPa", "atmospheric_pressure", 1),
+            # In inHg, the unit it suggests: 29.92 inHg, and 1013.3 hPa when that is picked.
+            "BarometricPressureSensor": (1013.25, "hPa", "atmospheric_pressure", 2),
             "VisibilitySensor": (16.093, "km", "distance", 1),
         }
         for cls, (value, unit, device_class, precision) in cases.items():
@@ -573,51 +573,35 @@ class TestObservationsFollowTheUnitSystem(unittest.TestCase):
         self.assertIsNone(self._make("SkyConditionsSensor").native_unit_of_measurement)
 
 
-class TestTheUnitSurvivesARestart(unittest.TestCase):
-    """#87: a converting sensor always stores a unit to show, so a restart can't reset it.
+class TestImperialByDefault(unittest.TestCase):
+    """Each converting sensor suggests its US customary unit, so it shows in any install.
 
-    Home Assistant's get_initial_entity_options gives None when the unit system
-    shows the native unit as it is, such as °C in a metric install. After a
-    unit-system change with "update existing entities", that left the sensor with
-    no ``sensor.private`` options, and the next start set it back to the unit the
-    registry kept from the start before: Temperature in °F in a metric install.
+    Home Assistant stores a suggested unit as the unit to show when it first sees
+    the sensor, and again when the unit system is changed with its option to
+    update existing entities, so the unit system doesn't change it; a unit picked
+    in the entity's settings does. Stored, it also survives a restart (#87):
+    without one, a restart set a sensor back to the unit it had at the start
+    before, such as Temperature in °F in a metric install.
     """
 
-    # The unit each shows, and stores, when Home Assistant stores none. A temperature is
-    # shown in the unit system's temperature unit, here a US customary install's °F.
-    SHOWN = {
+    SUGGESTED = {
         "TemperatureSensor": "°F", "FeelsLikeSensor": "°F", "DewpointSensor": "°F",
-        "WindSpeedSensor": "km/h", "BarometricPressureSensor": "hPa", "VisibilitySensor": "km",
+        "WindSpeedSensor": "mph", "BarometricPressureSensor": "inHg", "VisibilitySensor": "mi",
     }
 
-    def _initial(self, cls, from_home_assistant, temperature_unit="°F"):
+    def _make(self, cls):
         from noaa_it_all.sensors import weather_observations
-        sensor = getattr(weather_observations, cls)(_make_coordinator(None), OFFICE, LAT, LON)
-        sensor.hass = MagicMock()
-        sensor.hass.config.units.temperature_unit = temperature_unit
-        with patch.object(_ha_sensor.SensorEntity, "get_initial_entity_options",
-                          lambda self: from_home_assistant, create=True):
-            return sensor.get_initial_entity_options()
+        return getattr(weather_observations, cls)(_make_coordinator(None), OFFICE, LAT, LON)
 
-    def test_the_unit_shown_is_kept_when_home_assistant_stores_none(self):
-        for cls, unit in self.SHOWN.items():
+    def test_converting_sensors_suggest_us_customary_units(self):
+        for cls, unit in self.SUGGESTED.items():
             with self.subTest(cls):
-                self.assertEqual(self._initial(cls, None),
-                                 {"sensor.private": {"suggested_unit_of_measurement": unit}})
+                self.assertEqual(self._make(cls).suggested_unit_of_measurement, unit)
 
-    def test_a_temperature_keeps_the_unit_systems_temperature_unit(self):
-        """Home Assistant never stores one for a temperature; it shows the unit system's."""
-        self.assertEqual(self._initial("TemperatureSensor", None, "°C"),
-                         {"sensor.private": {"suggested_unit_of_measurement": "°C"}})
-
-    def test_a_unit_home_assistant_suggests_is_kept_as_it_is(self):
-        suggested = {"sensor.private": {"suggested_unit_of_measurement": "°F"}}
-        self.assertEqual(self._initial("TemperatureSensor", suggested), suggested)
-
-    def test_sensors_home_assistant_never_converts_store_nothing(self):
+    def test_sensors_home_assistant_never_converts_suggest_none(self):
         for cls in ("HumiditySensor", "WindDirectionSensor", "SkyConditionsSensor"):
             with self.subTest(cls):
-                self.assertIsNone(self._initial(cls, None))
+                self.assertIsNone(self._make(cls).suggested_unit_of_measurement)
 
 
 if __name__ == "__main__":

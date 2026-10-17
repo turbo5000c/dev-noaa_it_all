@@ -7,21 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.1]
 
+### Changed
+- **US customary units in any Home Assistant.** The observation sensors, Water Temperature, Surf
+  Height and the weather entity show °F, mph, inHg, miles and feet even in a metric Home Assistant,
+  and changing the unit system doesn't change them. For a metric unit, pick it in the entity's
+  settings; it stays after a restart, whatever the unit system. A US customary install shows the
+  sensors in the same units and decimals as before. In a metric install, sensors added under
+  0.10.3 or 0.11.0 keep the metric units they show, until you pick others in their settings or
+  change the unit system with its option to update existing entities, which sets them to US
+  customary. A weather entity added before keeps the units of the unit system.
+
 ### Fixed
-- **Water Temperature and Surf Height follow Home Assistant's unit system.** They were always in
-  °F and feet, even in a metric Home Assistant, as the observation sensors were before 0.10.3. A US
-  customary install shows the same units and decimals as before. In a metric one, these sensors
-  added from now on show °C and m. Ones you already have keep °F and ft, as Home Assistant keeps
-  an existing sensor's unit, unless the unit system was changed before with its option to update
-  existing entities: those switch to °C and m when you upgrade. Pick another unit in the entity's
-  settings. A converted state has every decimal of the conversion, so a template that prints one
-  needs `rounded=True`.
-- **The weather entity's current conditions match the observation sensors in a metric Home
-  Assistant.** It converted NWS's metric observations to °F, inHg, mph and miles and rounded them,
-  and Home Assistant then converted them back, so the weather card could show 1018.29 hPa next to
-  a Barometric Pressure of 1018.3 hPa. It now reports NWS's values as they are, and converts the
-  forecast, which NWS gives in °F and mph, to °C and km/h; Home Assistant converts both to your unit
-  system once. In a US customary install the pressure is as before. A temperature is now rounded
+- **Water Temperature and Surf Height can be shown in °C and m.** They had no device class, so
+  Home Assistant couldn't convert them. They stay in °F and ft unless you pick another unit in
+  their settings. A converted state has every decimal of the conversion, so a template that
+  prints one needs `rounded=True`.
+- **The weather entity's current conditions match the observation sensors in metric units.** It
+  converted NWS's metric observations to °F, inHg, mph and miles and rounded them, and Home
+  Assistant then converted them back, so the weather card could show 1018.29 hPa next to a
+  Barometric Pressure of 1018.3 hPa. It now reports NWS's values as they are, and converts the
+  forecast, which NWS gives in °F and mph, to °C and km/h; Home Assistant converts both once, to
+  the units it shows. In US customary units the pressure is as before. A temperature is now rounded
   to whole °F once, from NWS's value, so about one reading in 25 shows 1 °F off from before: the
   correctly rounded one. Wind speed and visibility have Home Assistant's two decimals, such as
   5.75 mph rather than 5.7.
@@ -37,16 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served twice in one day while 0.10.3 was tested, or is empty or cut off, is fetched once more
   two seconds later, rather than its entities reading `unknown` until the next update ten minutes
   on. A feed that still fails reads `unknown`, as before, and the log names the cause of a timeout.
-- **A unit-system change stays after a restart.** Changing the unit system with its option to
-  update existing entities converted the observation sensors, but at the next restart they went
-  back to the units they had before, such as Temperature in °F in a metric Home Assistant. They
-  now keep the units of such a change, as do Water Temperature and Surf Height. A sensor that
-  already went back keeps that unit until you change the unit system again with that option, to
-  the other system and back, or pick a unit in its settings, which it then keeps whatever the
-  unit system.
+- **A unit no longer changes at a restart.** After the unit system was changed with its option to
+  update existing entities, the observation sensors went back at the next restart to the units
+  they had before, such as Temperature in °F in a metric Home Assistant. Home Assistant now stores
+  each one's unit, US customary or the one picked in its settings, so a restart keeps it. A
+  sensor that already went back keeps that unit until you pick one in its settings or change the
+  unit system again with that option.
 
-Going back to 0.11.0 needs nothing removed first. Water Temperature and Surf Height then show °F
-and ft again, whatever unit they had, so in a metric install their history mixes the two.
+Going back to 0.11.0 needs nothing removed first. The sensors and the weather entity keep the
+units they show, except Water Temperature and Surf Height, which show °F and ft again whatever
+unit was picked for them, so their history then mixes the two.
 
 ## [0.11.0]
 

@@ -5,8 +5,9 @@ temperature, humidity, wind, pressure, dewpoint, visibility, sky
 conditions, and feels-like temperature.
 
 NWS reports observations in metric units. The sensors report them as they
-are, with a device class, and Home Assistant converts them to the unit
-system of the install, or to the unit chosen in an entity's settings.
+are, with a device class, and suggest US customary units, so Home Assistant
+shows them in °F, mph, inHg and miles in any install, or in the unit chosen
+in an entity's settings.
 """
 
 import logging
@@ -16,7 +17,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..const import DOMAIN
 from ..parsers import degrees_to_cardinal, meters_to_kilometers, pascals_to_hectopascals
-from .units import KeepsItsUnit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator, office_code, observation_field, sensor_name,
                  latitude=None, longitude=None, unit=None, icon=None, device_class=None,
-                 precision=None):
+                 precision=None, suggested_unit=None):
         """Initialize the weather observation sensor."""
         super().__init__(coordinator)
         self._office_code = office_code
@@ -48,6 +48,7 @@ class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
         self._icon_name = icon
         self._device_class = device_class
         self._precision = precision
+        self._suggested_unit = suggested_unit
         self._attributes = {}
 
     @property
@@ -73,8 +74,18 @@ class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
         return self._unit
 
     @property
+    def suggested_unit_of_measurement(self):
+        """Return the US customary unit to show unless one is chosen in the entity's settings.
+
+        Home Assistant stores it when it first sees the sensor, and again when the
+        unit system is changed with its option to update existing entities, so a
+        restart doesn't change the unit either.
+        """
+        return self._suggested_unit
+
+    @property
     def suggested_display_precision(self):
-        """Return how many decimals to show, in the native unit."""
+        """Return how many decimals to show, in the suggested unit, or the native one without it."""
         return self._precision
 
     @property
@@ -151,7 +162,7 @@ class WeatherObservationSensor(CoordinatorEntity, SensorEntity):
         return value
 
 
-class TemperatureSensor(KeepsItsUnit, WeatherObservationSensor):
+class TemperatureSensor(WeatherObservationSensor):
     """Temperature sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -167,6 +178,7 @@ class TemperatureSensor(KeepsItsUnit, WeatherObservationSensor):
             icon='mdi:thermometer',
             device_class=SensorDeviceClass.TEMPERATURE,
             precision=1,
+            suggested_unit='°F',
         )
 
 
@@ -194,7 +206,7 @@ class HumiditySensor(WeatherObservationSensor):
         return round(value)
 
 
-class WindSpeedSensor(KeepsItsUnit, WeatherObservationSensor):
+class WindSpeedSensor(WeatherObservationSensor):
     """Wind speed sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -210,6 +222,7 @@ class WindSpeedSensor(KeepsItsUnit, WeatherObservationSensor):
             icon='mdi:weather-windy',
             device_class=SensorDeviceClass.WIND_SPEED,
             precision=1,
+            suggested_unit='mph',
         )
 
 
@@ -248,7 +261,7 @@ class WindDirectionSensor(WeatherObservationSensor):
         return attrs
 
 
-class BarometricPressureSensor(KeepsItsUnit, WeatherObservationSensor):
+class BarometricPressureSensor(WeatherObservationSensor):
     """Barometric pressure sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -262,18 +275,19 @@ class BarometricPressureSensor(KeepsItsUnit, WeatherObservationSensor):
             longitude=longitude,
             unit='hPa',
             icon='mdi:gauge',
-            # Atmospheric pressure, rather than pressure, is shown in inHg in a
-            # US customary install.
+            # Atmospheric pressure, rather than pressure, converts to inHg.
             device_class=SensorDeviceClass.ATMOSPHERIC_PRESSURE,
-            precision=1,
+            # In inHg; Home Assistant shows hPa to 1 decimal.
+            precision=2,
+            suggested_unit='inHg',
         )
 
     def _convert_value(self, value):
-        """Convert pascals to hectopascals, which shows inHg to 2 decimals."""
+        """Convert pascals to hectopascals."""
         return pascals_to_hectopascals(value)
 
 
-class DewpointSensor(KeepsItsUnit, WeatherObservationSensor):
+class DewpointSensor(WeatherObservationSensor):
     """Dewpoint sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -289,10 +303,11 @@ class DewpointSensor(KeepsItsUnit, WeatherObservationSensor):
             icon='mdi:water',
             device_class=SensorDeviceClass.TEMPERATURE,
             precision=1,
+            suggested_unit='°F',
         )
 
 
-class VisibilitySensor(KeepsItsUnit, WeatherObservationSensor):
+class VisibilitySensor(WeatherObservationSensor):
     """Visibility sensor."""
 
     def __init__(self, coordinator, office_code, latitude=None, longitude=None):
@@ -308,10 +323,11 @@ class VisibilitySensor(KeepsItsUnit, WeatherObservationSensor):
             icon='mdi:eye',
             device_class=SensorDeviceClass.DISTANCE,
             precision=1,
+            suggested_unit='mi',
         )
 
     def _convert_value(self, value):
-        """Convert meters to kilometers, which a US customary install shows in miles."""
+        """Convert meters to kilometers."""
         return meters_to_kilometers(value)
 
 
@@ -335,7 +351,7 @@ class SkyConditionsSensor(WeatherObservationSensor):
         return value if value else 'Unknown'
 
 
-class FeelsLikeSensor(KeepsItsUnit, WeatherObservationSensor):
+class FeelsLikeSensor(WeatherObservationSensor):
     """Feels-like temperature sensor (wind chill or heat index)."""
 
     # Wind chill, heat index and temperature all come from the observation
@@ -355,6 +371,7 @@ class FeelsLikeSensor(KeepsItsUnit, WeatherObservationSensor):
             icon='mdi:thermometer-lines',
             device_class=SensorDeviceClass.TEMPERATURE,
             precision=1,
+            suggested_unit='°F',
         )
 
     def _extract_value(self, properties):

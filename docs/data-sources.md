@@ -32,7 +32,7 @@
   radar images from radar.weather.gov, and the office's Area Forecast Discussion (AFD)
 - **Weather Observations**: National Weather Service observation stations (weather.gov API)
   - Real-time temperature, humidity, wind, pressure, and sky conditions
-  - Metric values from NWS, shown in your Home Assistant unit system
+  - Metric values from NWS, shown in US customary units unless you pick others in an entity's settings
 
 ## Update Frequency
 Most entities, images included, update every 10 minutes to provide current conditions while

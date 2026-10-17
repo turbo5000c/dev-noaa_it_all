@@ -370,6 +370,38 @@ class TestDailyForecast(unittest.TestCase):
         self.assertEqual(_highs_and_lows(forecasts), [("2026-10-14", 75, 52), ("2026-10-15", 77, 50)])
 
 
+class TestImperialByDefault(unittest.TestCase):
+    """A new weather entity shows US customary units in any install.
+
+    A weather entity has no suggested units, so the entity's own unit settings
+    are stored when Home Assistant first sees it; it shows the unit system's
+    units without them. Picking others in its settings replaces them.
+    """
+
+    def _initial(self, from_home_assistant=None):
+        from noaa_it_all.weather import NOAAWeather
+        entity = NOAAWeather(_make_coordinator(None), _make_coordinator(None), OFFICE, LAT, LON)
+        with patch.object(_ha_weather_mod.WeatherEntity, "get_initial_entity_options",
+                          lambda self: from_home_assistant, create=True):
+            return entity.get_initial_entity_options()
+
+    def test_its_settings_start_with_us_customary_units(self):
+        self.assertEqual(self._initial(), {
+            _ha_weather_mod.DOMAIN: {
+                _ha_weather_mod.ATTR_WEATHER_TEMPERATURE_UNIT: _ha_const.UnitOfTemperature.FAHRENHEIT,
+                _ha_weather_mod.ATTR_WEATHER_PRESSURE_UNIT: _ha_const.UnitOfPressure.INHG,
+                _ha_weather_mod.ATTR_WEATHER_WIND_SPEED_UNIT: _ha_const.UnitOfSpeed.MILES_PER_HOUR,
+                _ha_weather_mod.ATTR_WEATHER_VISIBILITY_UNIT: _ha_const.UnitOfLength.MILES,
+                _ha_weather_mod.ATTR_WEATHER_PRECIPITATION_UNIT: _ha_const.UnitOfPrecipitationDepth.INCHES,
+            },
+        })
+
+    def test_home_assistants_own_options_are_kept(self):
+        options = self._initial({"cloud.alexa": {"should_expose": False}})
+        self.assertEqual(options["cloud.alexa"], {"should_expose": False})
+        self.assertIn(_ha_weather_mod.DOMAIN, options)
+
+
 class TestNativeUnits(unittest.TestCase):
     """#83: observations stay in NWS's metric units, so Home Assistant converts them once.
 
