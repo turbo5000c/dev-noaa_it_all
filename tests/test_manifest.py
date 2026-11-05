@@ -396,18 +396,26 @@ class TestReadmeImages(unittest.TestCase):
                     "Use https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path> instead."
                 )
 
-    def test_no_install_count_badges(self):
-        """Install-count badges were removed because they never showed a real number.
-
-        The GitHub downloads badge counts release assets, and releases carried
-        none before 0.11.2, so it always read 0. The analytics "Tracked Installs"
-        badge did not render a working count either.
-        """
+    def test_no_analytics_install_badge(self):
+        """The analytics "Tracked Installs" badge was removed: it never rendered a working count."""
         for url in self.urls:
-            self.assertNotIn("img.shields.io/github/downloads", url,
-                             f"The docs have a release-download badge: {url}")
             self.assertNotIn("analytics.home-assistant.io", url,
                              f"The docs have an analytics install badge: {url}")
+
+    def test_download_badge_counts_the_release_zip(self):
+        """The downloads badge counts release assets, so it needs the zip HACS installs from.
+
+        Before 0.11.2 releases had no assets and the badge always read 0, so it was removed.
+        """
+        badges = [url for url in self.urls if "img.shields.io/github/downloads" in url]
+        self.assertEqual(
+            [url.split("?")[0] for url in badges],
+            ["https://img.shields.io/github/downloads/dawg-io/noaa_it_all/total"],
+            "README.md should have one total-downloads badge for dawg-io/noaa_it_all",
+        )
+        with open(os.path.join(_REPO, "hacs.json")) as f:
+            self.assertIs(json.load(f).get("zip_release"), True,
+                          "Without a release zip the downloads badge reads 0")
 
 
 if __name__ == "__main__":
