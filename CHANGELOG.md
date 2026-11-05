@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **HACS shows a download count.** Each release has a `noaa_it_all.zip` of the integration, and
-  HACS installs from it instead of the source code, so the Downloads column in HACS counts
-  downloads from this release on. A manual install can use the zip too. The integration itself is
+  HACS installs from it instead of the source code, and its Downloads column shows how many
+  times the latest release's zip was downloaded. A manual install can use the zip too. The integration itself is
   unchanged, and going back to 0.11.1 needs nothing extra.
 
 ## [0.11.1]
