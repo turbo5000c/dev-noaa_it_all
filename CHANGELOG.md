@@ -5,6 +5,14 @@ All notable changes to NOAA It All for Home Assistant will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2]
+
+### Changed
+- **HACS shows a download count.** Each release has a `noaa_it_all.zip` of the integration, and
+  HACS installs from it instead of the source code, so the Downloads column in HACS counts
+  downloads from this release on. A manual install can use the zip too. The integration itself is
+  unchanged, and going back to 0.11.1 needs nothing extra.
+
 ## [0.11.1]
 
 ### Changed

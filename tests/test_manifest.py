@@ -197,6 +197,26 @@ class TestHacsJson(unittest.TestCase):
     def test_country(self):
         self.assertEqual(self.hacs.get("country"), "US")
 
+    def test_installs_from_a_release_zip(self):
+        """HACS counts downloads only of a release asset, so it installs from one.
+
+        Installing from the source archive left the HACS Downloads column at "-".
+        """
+        self.assertIs(self.hacs.get("zip_release"), True)
+        self.assertEqual(self.hacs.get("filename"), "noaa_it_all.zip")
+
+    def test_releases_get_the_zip_hacs_installs(self):
+        """Every published release needs the zip, or HACS can't install that version."""
+        path = os.path.join(_REPO, ".github", "workflows", "release-zip.yml")
+        self.assertTrue(os.path.isfile(path), "no workflow attaches the zip to releases")
+        with open(path, encoding="utf-8") as f:
+            workflow = f.read()
+        self.assertRegex(workflow, r"release:\s*\n\s*types: \[published\]")
+        self.assertIn("gh release upload", workflow)
+        self.assertIn(f'$GITHUB_WORKSPACE/{self.hacs["filename"]}', workflow)
+        # The files go at the top of the zip: HACS unpacks it into custom_components/noaa_it_all.
+        self.assertIn("cd custom_components/noaa_it_all\n", workflow)
+
 
 # ---------------------------------------------------------------------------
 # Helpers for PNG introspection (no third-party dependencies required)
@@ -371,9 +391,9 @@ class TestReadmeImages(unittest.TestCase):
     def test_no_install_count_badges(self):
         """Install-count badges were removed because they never showed a real number.
 
-        The GitHub downloads badge counts release assets, and hacs.json sets
-        zip_release false, so releases carry none and it always read 0. The
-        analytics "Tracked Installs" badge did not render a working count either.
+        The GitHub downloads badge counts release assets, and releases carried
+        none before 0.11.2, so it always read 0. The analytics "Tracked Installs"
+        badge did not render a working count either.
         """
         for url in self.urls:
             self.assertNotIn("img.shields.io/github/downloads", url,
