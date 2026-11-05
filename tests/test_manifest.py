@@ -205,6 +205,14 @@ class TestHacsJson(unittest.TestCase):
         self.assertIs(self.hacs.get("zip_release"), True)
         self.assertEqual(self.hacs.get("filename"), "noaa_it_all.zip")
 
+    def test_default_branch_is_not_offered(self):
+        """With zip_release, HACS fetches the zip for whatever ref is picked, and a branch has none.
+
+        Picking main in HACS's version list would look for releases/download/main/noaa_it_all.zip
+        and fail, so hacs.json hides the default branch.
+        """
+        self.assertIs(self.hacs.get("hide_default_branch"), True)
+
     def test_releases_get_the_zip_hacs_installs(self):
         """Every published release needs the zip, or HACS can't install that version."""
         path = os.path.join(_REPO, ".github", "workflows", "release-zip.yml")

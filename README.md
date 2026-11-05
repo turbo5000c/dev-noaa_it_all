@@ -40,8 +40,9 @@ Requires Home Assistant **2026.3.0** or newer.
 
 ### Manual Installation
 1. Download `noaa_it_all.zip` from the latest release on [GitHub Releases](https://github.com/dawg-io/noaa_it_all/releases)
-2. Unzip it into a new `custom_components/noaa_it_all` folder in your Home Assistant configuration directory
-3. Restart Home Assistant
+2. Delete any existing `custom_components/noaa_it_all` folder, so no files from an older version are left behind
+3. Unzip the zip into a new `custom_components/noaa_it_all` folder in your Home Assistant configuration directory
+4. Restart Home Assistant
 
 ## Getting Started
 
